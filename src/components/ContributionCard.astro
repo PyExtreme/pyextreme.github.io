@@ -10,6 +10,7 @@ interface Contribution {
 	status: ContributionStatus;
 	issueUrl?: string;
 	prUrl?: string;
+	commitUrl?: string;
 	shortSummary: string;
 	concepts: string[];
 	detailHref?: string;
@@ -49,8 +50,9 @@ const statusClass = contribution.status.toLowerCase().replaceAll(' ', '-');
 		<div>
 			<dt>Links</dt>
 			<dd class="contribution-links">
-				{contribution.issueUrl ? <a href={contribution.issueUrl}>Issue ↗</a> : <span>Issue not supplied</span>}
-				{contribution.prUrl ? <a href={contribution.prUrl}>PR ↗</a> : <span>PR not supplied</span>}
+				{contribution.issueUrl && <a href={contribution.issueUrl}>Issue ↗</a>}
+				{contribution.prUrl && <a href={contribution.prUrl}>PR ↗</a>}
+				{contribution.commitUrl && <a href={contribution.commitUrl}>Commit ↗</a>}
 			</dd>
 		</div>
 	</div>

@@ -13,6 +13,7 @@ interface Contribution {
 	status: ContributionStatus;
 	issueUrl?: string;
 	prUrl?: string;
+	commitUrl?: string;
 	shortSummary: string;
 	concepts: string[];
 	detailHref?: string;
@@ -28,6 +29,7 @@ const contributions: Contribution[] = [
 		technicalArea: 'LLM inference infrastructure',
 		status: 'Implementation',
 		issueUrl: 'https://github.com/vllm-project/vllm/issues/57650',
+		commitUrl: 'https://github.com/vllm-project/vllm/compare/main...PyExtreme:vllm:fix/engine-core-init-worker-cleanup',
 		shortSummary: 'Deterministic rollback for executor, scheduler, and GC state when EngineCore startup fails after resource acquisition.',
 		concepts: ['Process lifecycle', 'Resource ownership', 'Exception safety'],
 		detailHref: '/open-source/vllm-57650/',
