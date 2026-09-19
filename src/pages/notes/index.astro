@@ -1,0 +1,27 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Notes | Ankit Jha">
+	<main class="listing-page">
+		<header class="page-header">
+			<p class="eyebrow">Notes</p>
+			<h1>Engineering notes</h1>
+			<p>Writing on inference, production RAG, distributed systems, and the practical work of operating AI.</p>
+		</header>
+		<section class="placeholder" aria-label="Engineering notes placeholder">
+			<span class="project-number">01</span>
+			<p>Notes coming soon.</p>
+		</section>
+	</main>
+</BaseLayout>
+
+<style>
+	.listing-page { padding: 112px 0 160px; }
+	.page-header { max-width: 620px; margin-bottom: 72px; }
+	.page-header h1 { margin-bottom: 24px; font-size: clamp(48px, 8vw, 88px); }
+	.page-header > p:last-child { max-width: 470px; color: var(--muted); line-height: 1.7; }
+	.placeholder { display: flex; gap: 28px; padding: 24px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+	.placeholder p { margin: 0; color: var(--muted); }
+	@media (max-width: 640px) { .listing-page { padding: 80px 0 110px; } }
+</style>

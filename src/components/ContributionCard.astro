@@ -1,0 +1,102 @@
+---
+type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'PR Open' | 'Merged' | 'Closed';
+
+interface Contribution {
+	project: string;
+	issueNumber: string;
+	title: string;
+	contributionType: string;
+	technicalArea: string;
+	status: ContributionStatus;
+	issueUrl?: string;
+	prUrl?: string;
+	shortSummary: string;
+	concepts: string[];
+	detailHref?: string;
+	isPlaceholder?: boolean;
+}
+
+interface Props {
+	contribution: Contribution;
+}
+
+const { contribution } = Astro.props;
+const statusClass = contribution.status.toLowerCase().replaceAll(' ', '-');
+---
+
+<article class:list={['contribution-card', { 'is-placeholder': contribution.isPlaceholder }]}>
+	<header class="contribution-header">
+		<div>
+			<p class="contribution-project">{contribution.project}</p>
+			<h2>{contribution.detailHref ? <a href={contribution.detailHref}>{contribution.title}</a> : contribution.title}</h2>
+		</div>
+		<span class:list={['status', statusClass]}>{contribution.status}</span>
+	</header>
+
+	<div class="contribution-fields">
+		<div>
+			<dt>Issue</dt>
+			<dd>{contribution.issueNumber}</dd>
+		</div>
+		<div>
+			<dt>Type</dt>
+			<dd>{contribution.contributionType}</dd>
+		</div>
+		<div>
+			<dt>Technical area</dt>
+			<dd>{contribution.technicalArea}</dd>
+		</div>
+		<div>
+			<dt>Links</dt>
+			<dd class="contribution-links">
+				{contribution.issueUrl ? <a href={contribution.issueUrl}>Issue ↗</a> : <span>Issue not supplied</span>}
+				{contribution.prUrl ? <a href={contribution.prUrl}>PR ↗</a> : <span>PR not supplied</span>}
+			</dd>
+		</div>
+	</div>
+
+	<div class="contribution-summary">
+		<div>
+			<dt>Summary</dt>
+			<dd>{contribution.shortSummary}</dd>
+		</div>
+		<div>
+			<dt>Concepts / systems</dt>
+			<dd>{contribution.concepts.join(' · ')}</dd>
+		</div>
+	</div>
+
+	{contribution.isPlaceholder && <p class="placeholder-label">Placeholder contribution</p>}
+</article>
+
+<style>
+	.contribution-card { position: relative; padding: 28px 0 32px; border-top: 1px solid var(--line); }
+	.contribution-card:last-child { border-bottom: 1px solid var(--line); }
+	.contribution-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+	.contribution-project, dt, .placeholder-label { margin: 0 0 8px; color: var(--muted); font: 11px 'DM Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase; }
+	.contribution-header h2 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: -0.05em; }
+	.contribution-header h2 a { text-decoration: none; }
+	.contribution-header h2 a:hover { text-decoration: underline; text-underline-offset: 5px; }
+	.status { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line); color: var(--ink); font: 11px 'DM Mono', monospace; }
+	.status.investigating { border-color: #b8c3be; }
+	.status.reproduced, .status.implementation { border-color: #adbca4; }
+	.status.pr-open { border-color: #9caaa5; }
+	.status.merged { border-color: #819a78; }
+	.status.closed { color: var(--muted); }
+	.contribution-fields, .contribution-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+	.contribution-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+	dl, dt, dd { margin: 0; }
+	dd { color: #3f4946; font-size: 14px; line-height: 1.6; }
+	.contribution-links { display: flex; flex-wrap: wrap; gap: 12px; }
+	.contribution-links a { color: var(--ink); text-underline-offset: 4px; }
+	.contribution-links span { color: var(--muted); }
+	.placeholder-label { margin-top: 28px; margin-bottom: 0; color: var(--ink); }
+	@media (max-width: 720px) {
+		.contribution-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 22px; }
+	}
+	@media (max-width: 520px) {
+		.contribution-header { display: block; }
+		.status { display: inline-block; margin-top: 16px; }
+		.contribution-fields, .contribution-summary { grid-template-columns: 1fr; gap: 20px; }
+	}
+</style>

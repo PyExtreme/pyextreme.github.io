@@ -1,0 +1,67 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ContributionCard from '../../components/ContributionCard.astro';
+
+type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'PR Open' | 'Merged' | 'Closed';
+
+interface Contribution {
+	project: string;
+	issueNumber: string;
+	title: string;
+	contributionType: string;
+	technicalArea: string;
+	status: ContributionStatus;
+	issueUrl?: string;
+	prUrl?: string;
+	shortSummary: string;
+	concepts: string[];
+	detailHref?: string;
+	isPlaceholder?: boolean;
+}
+
+const contributions: Contribution[] = [
+	{
+		project: 'vLLM',
+		issueNumber: '#57650',
+		title: 'Exception-safe EngineCore initialization',
+		contributionType: 'Lifecycle correctness',
+		technicalArea: 'LLM inference infrastructure',
+		status: 'Implementation',
+		issueUrl: 'https://github.com/vllm-project/vllm/issues/57650',
+		shortSummary: 'Deterministic rollback for executor, scheduler, and GC state when EngineCore startup fails after resource acquisition.',
+		concepts: ['Process lifecycle', 'Resource ownership', 'Exception safety'],
+		detailHref: '/open-source/vllm-57650/',
+	},
+];
+---
+
+<BaseLayout title="Open Source | Ankit Jha">
+	<main class="listing-page">
+		<header class="page-header">
+			<p class="eyebrow">Open source</p>
+			<h1>Contributions</h1>
+			<p>A structured record of work across AI infrastructure projects, including vLLM, llm-d, llm-d-router, SGLang, and related systems.</p>
+		</header>
+		<section class="contributions" aria-labelledby="contributions-title">
+			<div class="list-heading">
+				<p class="eyebrow">Contribution log</p>
+				<h2 id="contributions-title">Issues, systems, and fixes</h2>
+			</div>
+			<div class="contribution-list">
+				{contributions.map((contribution) => <ContributionCard contribution={contribution} />)}
+			</div>
+		</section>
+	</main>
+</BaseLayout>
+
+<style>
+	.listing-page { padding: 112px 0 160px; }
+	.page-header { max-width: 620px; margin-bottom: 72px; }
+	.page-header h1 { margin-bottom: 24px; font-size: clamp(48px, 8vw, 88px); }
+	.page-header > p:last-child { max-width: 470px; color: var(--muted); line-height: 1.7; }
+	.list-heading { margin-bottom: 36px; }
+	.list-heading .eyebrow { margin-bottom: 14px; }
+	.list-heading h2 { font-size: clamp(28px, 5vw, 46px); }
+	.contribution-list { max-width: 100%; }
+	@media (max-width: 640px) { .listing-page { padding: 80px 0 110px; } }
+</style>

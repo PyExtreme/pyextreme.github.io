@@ -1,0 +1,26 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ProjectCard from '../../components/ProjectCard.astro';
+---
+
+<BaseLayout title="Projects | Ankit Jha">
+	<main class="listing-page">
+		<header class="page-header">
+			<p class="eyebrow">Projects</p>
+			<h1>Selected work</h1>
+			<p>Notes on building and operating AI systems. Detailed case studies will be added as each project is documented.</p>
+		</header>
+		<div class="project-list">
+			<ProjectCard number="01" title="Marketlane Research RAG" description="Case study placeholder" href="/projects/marketlane-research-rag/" />
+			<ProjectCard number="02" title="Marketlane Daily Scan" description="Case study placeholder" href="/projects/marketlane-daily-scan/" />
+		</div>
+	</main>
+</BaseLayout>
+
+<style>
+	.listing-page { padding: 112px 0 160px; }
+	.page-header { max-width: 620px; margin-bottom: 72px; }
+	.page-header h1 { margin-bottom: 24px; font-size: clamp(48px, 8vw, 88px); }
+	.page-header > p:last-child { max-width: 470px; color: var(--muted); line-height: 1.7; }
+	@media (max-width: 640px) { .listing-page { padding: 80px 0 110px; } }
+</style>

@@ -1,0 +1,67 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ProjectCard from '../components/ProjectCard.astro';
+---
+
+<BaseLayout title="Ankit Jha | AI Systems Engineer">
+	<main>
+		<section class="hero" aria-labelledby="intro-title">
+			<p class="eyebrow">Ankit Jha</p>
+			<h1 id="intro-title">AI Systems<br /><em>Engineer</em></h1>
+			<p class="hero-summary">LLM Serving <span aria-hidden="true">·</span> RAG <span aria-hidden="true">·</span> Inference <span aria-hidden="true">·</span> Distributed AI Systems</p>
+			<p class="hero-description">I build and understand production AI systems, with a focus on how inference, retrieval, and distributed components behave in operation.</p>
+		</section>
+
+		<section class="section-block" aria-labelledby="selected-work-title">
+			<div class="section-heading">
+				<p class="eyebrow">01 / Selected work</p>
+				<h2 id="selected-work-title">Systems in progress</h2>
+			</div>
+			<div class="project-list">
+				<ProjectCard number="01" title="Marketlane Research RAG" description="Case study placeholder" href="/projects/marketlane-research-rag/" />
+				<ProjectCard number="02" title="Marketlane Daily Scan" description="Case study placeholder" href="/projects/marketlane-daily-scan/" />
+				<ProjectCard number="03" title="Open Source Contributions" description="A record of work in open-source AI infrastructure." href="/open-source/" />
+			</div>
+		</section>
+
+		<section class="section-block areas" aria-labelledby="areas-title">
+			<div class="section-heading">
+				<p class="eyebrow">02 / Technical areas</p>
+				<h2 id="areas-title">What I work on</h2>
+			</div>
+			<ul class="area-list">
+				<li>LLM Serving</li>
+				<li>RAG</li>
+				<li>Routing</li>
+				<li>Scheduling</li>
+				<li>Evaluation</li>
+				<li>Observability</li>
+				<li>Distributed Systems</li>
+			</ul>
+		</section>
+
+		<section class="section-block notes-preview" aria-labelledby="notes-title">
+			<div class="section-heading">
+				<p class="eyebrow">03 / Latest</p>
+				<h2 id="notes-title">Engineering notes</h2>
+			</div>
+			<a class="notes-placeholder" href="/notes/">
+				<span class="project-number">01</span>
+				<span>
+					<strong>Notes on production AI systems</strong>
+					<span>Writing placeholder</span>
+				</span>
+				<span class="project-arrow" aria-hidden="true">↗</span>
+			</a>
+		</section>
+	</main>
+</BaseLayout>
+
+<style>
+	.notes-placeholder { display: grid; grid-template-columns: 1fr 2fr auto; gap: 24px; align-items: center; padding: 26px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); text-decoration: none; }
+	.notes-placeholder:hover strong { text-decoration: underline; text-underline-offset: 5px; }
+	.notes-placeholder strong, .notes-placeholder span span { display: block; }
+	.notes-placeholder strong { margin-bottom: 6px; font-size: 18px; letter-spacing: -0.04em; }
+	.notes-placeholder span span { color: var(--muted); font-size: 13px; }
+	@media (max-width: 640px) { .notes-placeholder { grid-template-columns: 42px 1fr 20px; gap: 12px; } }
+</style>
