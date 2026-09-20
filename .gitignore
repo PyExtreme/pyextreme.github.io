@@ -22,3 +22,7 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# Local project source briefs
+marketlaneai.md
+marketlane research rag.md
