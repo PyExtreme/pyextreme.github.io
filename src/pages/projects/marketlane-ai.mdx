@@ -1,0 +1,72 @@
+---
+title: MarketLane AI | Ankit Jha
+description: An agentic market-intelligence system that turns a broad NSE universe into a concise, evidence-backed daily scan.
+---
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+<BaseLayout title="MarketLane AI | Ankit Jha" description="An agentic market-intelligence system that turns a broad NSE universe into a concise, evidence-backed daily scan.">
+<div class="article">
+
+<p class="eyebrow">Project / AI systems / Market intelligence</p>
+
+# MarketLane AI
+
+<p class="article-lede">An agentic stock-market intelligence system that helps active NSE investors move from a broad market universe to a short, evidence-backed list of setups worth reviewing.</p>
+
+## The problem
+
+Technical research rarely starts with a single ticker. It starts with a market-sized coverage problem: hundreds of names, changing sector leadership, uneven market regimes, and too much context for a trader to reconstruct from scratch every day.
+
+MarketLane is designed as infrastructure for that workflow. It combines deterministic market computation with retrieval-augmented AI and specialist reasoning, so the system can scan broadly without treating every chart as an isolated prompt.
+
+## How the engine works
+
+The system begins with an operator-defined NSE universe. It normalizes the session, symbols, and available research corpus, then runs deterministic prefilters to identify names with enough technical structure to merit further inference.
+
+```text
+NSE universe
+    → deterministic prefilter
+    → contextual retrieval
+    → specialist technical reasoning
+    → evidence verification
+    → opportunity ranking
+    → Daily Scan
+```
+
+This routing matters. Model calls are concentrated on names where additional reasoning can actually change the decision, rather than sending every ticker through one expensive general-purpose analysis step.
+
+## Retrieval before reasoning
+
+A chart is not evaluated in a vacuum. Before reasoning begins, MarketLane assembles relevant context: prior scans, historical behaviour, sector leadership, broader market conditions, and comparable technical structures.
+
+That retrieval layer gives the model a working memory for the decision. The result is not simply a description of the latest chart; it is a finding anchored in the name's history and the market environment surrounding it.
+
+## Specialized analysis, not a single prompt
+
+For the candidates that survive prefiltering, specialist stages examine the technical picture: trend and moving-average structure, volume and participation, momentum confirmation, and supported swing patterns. A regime-aware layer then assesses those findings against the wider NSE tape and leadership context.
+
+The same chart can mean different things in a supportive market and a hostile one. Treating stock-level signals and market-level conditions as a single decision frame is central to the system's design.
+
+## Evidence is part of the product
+
+Generated findings pass through a verification layer that checks for weak support, contradictory claims, and schema failures. Names that do not meet that bar do not become opportunities merely because a model produced an interesting narrative.
+
+The surviving setups are ranked across the universe by the quality of their evidence, technical structure, participation, and market context. The Daily Scan is therefore an ordered, controlled output—not an unfiltered record of every name the models considered.
+
+| Layer | Role in the decision |
+| --- | --- |
+| Deterministic computation | Establishes repeatable technical conditions and broad coverage. |
+| Contextual retrieval | Supplies the relevant history, sector view, and market regime. |
+| Specialist reasoning | Interprets chart structure and confirmation signals. |
+| Verification | Filters unsupported or internally inconsistent findings. |
+| Ranking | Produces a concise opportunity set for the research desk. |
+
+## Why this framing matters
+
+MarketLane is not a chatbot that comments on a chart after the fact. It is a market-intelligence workflow with memory, verification, and ranking built into the path from discovery to review. Operators retain control over the universe, coverage, and final decision; the system makes that attention allocation more systematic.
+
+<p class="backlink"><a href="/projects/">← Back to projects</a></p>
+
+</div>
+</BaseLayout>
