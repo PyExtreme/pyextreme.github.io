@@ -1,74 +1,1027 @@
 ---
 title: MarketLane AI | Ankit Jha
-description: An agentic market-intelligence system that turns a broad NSE universe into a concise, evidence-backed daily scan.
+description: AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support.
 ---
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
 
-<BaseLayout title="MarketLane AI | Ankit Jha" description="An agentic market-intelligence system that turns a broad NSE universe into a concise, evidence-backed daily scan.">
-<div class="article">
-
-<p class="eyebrow">Project / AI systems / Market intelligence</p>
+<BaseLayout title="MarketLane AI | Ankit Jha" description="AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support.">
+<div class="article contribution-note">
 
 # MarketLane AI
 
-<p class="article-lede">An agentic stock-market intelligence system that helps active NSE investors move from a broad market universe to a short, evidence-backed list of setups worth reviewing.</p>
+**AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support.**
 
-## The problem
+**Live Product:** [staging.marketlaneai.com](https://staging.marketlaneai.com)
 
-Technical research rarely starts with a single ticker. It starts with a market-sized coverage problem: hundreds of names, changing sector leadership, uneven market regimes, and too much context for a trader to reconstruct from scratch every day.
+---
 
-MarketLane is designed as infrastructure for that workflow. It combines deterministic market computation with retrieval-augmented AI and specialist reasoning, so the system can scan broadly without treating every chart as an isolated prompt.
+## Overview
 
-## The agentic execution model
+MarketLane AI is an AI-powered market intelligence platform I designed and built to explore how modern AI systems can improve the way investors and traders discover, analyze, and monitor opportunities in public markets.
 
-The system begins with an operator-defined NSE universe. It normalizes the session, symbols, and available research corpus, then runs deterministic prefilters to identify names with enough technical structure to merit further inference. A scan-aware suppression step compares the current price state with the last review, avoiding a repeat model pass when the evidence has not meaningfully changed.
+The core idea is simple:
+
+> Financial markets produce far more information than a human can continuously process. MarketLane turns market data, technical signals, company context, and AI reasoning into a structured decision-support system.
+
+Instead of building another stock screener or wrapping an LLM around financial data, I designed MarketLane as an **AI-native research and market intelligence system**.
+
+The platform brings together:
+
+* market-data pipelines
+* quantitative screening
+* technical-analysis engines
+* AI-assisted market interpretation
+* stock-level intelligence
+* signal detection
+* alerting
+* structured research workflows
+* portfolio/watchlist context
+* LLM-powered reasoning
+
+into a unified product.
+
+---
+
+# Why I Built It
+
+Most investing tools fall into one of two categories.
+
+Traditional screeners are excellent at filtering structured data but provide little interpretation.
+
+AI assistants are good at language and reasoning, but frequently lack reliable market context, deterministic calculations, and structured workflows.
+
+MarketLane explores the architecture between these two worlds.
 
 ```text
-NSE universe
-    → deterministic prefilter + scan-aware suppression
-    → contextual retrieval
-    → parallel specialist agents
-    → risk intelligence
-    → evidence verification
-    → opportunity ranking
-    → Daily Scan
+Traditional Market Data
+        ↓
+Quantitative / Technical Analysis
+        ↓
+Signal & Opportunity Detection
+        ↓
+Context Construction
+        ↓
+AI Reasoning
+        ↓
+Investor Decision Support
 ```
 
-This is an orchestrated DAG, not a single prompt. Feature generation, retrieval, and independent specialist stages overlap where their dependencies allow, so wall-clock latency follows the critical path rather than the sum of every task. Model calls are concentrated on names where additional reasoning can actually change the decision, rather than sending every ticker through one expensive general-purpose analysis step.
+The objective is not for an LLM to predict the market.
 
-## Retrieval before reasoning
+The objective is to build an intelligence layer capable of answering:
 
-A chart is not evaluated in a vacuum. Before reasoning begins, MarketLane assembles relevant context: prior scans, historical behaviour, sector leadership, broader market conditions, and comparable technical structures.
+```text
+What is happening?
 
-That retrieval layer gives the model a working memory for the decision. The result is not simply a description of the latest chart; it is a finding anchored in the name's history and the market environment surrounding it.
+Why is it interesting?
 
-## Specialized analysis, not a single prompt
+What changed?
 
-For the candidates that survive prefiltering, a technical agent examines trend, moving-average structure, volume, and momentum; a pattern agent evaluates supported swing geometry; and a market agent assesses the broader NSE tape and leadership context. These stages emit compact structured findings instead of adding to a shared free-form conversation.
+Which stocks deserve attention?
 
-An independent risk stage then looks for extension, conflicting signals, and a usable invalidation level. Attractive structure alone is not enough: the setup needs a clear way to be wrong. The same chart can mean different things in a supportive market and a hostile one, so stock-level signals and market-level conditions are treated as one decision frame.
+What evidence supports the signal?
 
-## Evidence is part of the product
+What should I investigate next?
+```
 
-Generated findings pass through a verification layer that checks for weak support, contradictory claims, and schema failures. Names that do not meet that bar do not become opportunities merely because a model produced an interesting narrative.
+---
 
-The surviving setups are ranked across the universe by the quality of their evidence, technical structure, participation, and market context. The Daily Scan is therefore an ordered, controlled output—not an unfiltered record of every name the models considered.
+# Product Architecture
 
-| Layer | Role in the decision |
-| --- | --- |
-| Deterministic computation | Establishes repeatable technical conditions and broad coverage. |
-| Contextual retrieval | Supplies the relevant history, sector view, and market regime. |
-| Specialist reasoning | Interprets chart structure and confirmation signals. |
-| Risk intelligence | Tests extension, conflicts, and a defined invalidation. |
-| Verification | Filters unsupported or internally inconsistent findings. |
-| Ranking | Produces a concise opportunity set for the research desk. |
+At a high level, I designed MarketLane around five layers.
 
-## Why this framing matters
+```text
+                         MarketLane AI
 
-MarketLane is not a chatbot that comments on a chart after the fact. It is a market-intelligence workflow with memory, routing, specialist agents, verification, and ranking built into the path from discovery to review. Operators retain control over the universe, coverage, scan launch/cancellation, and final decision; the system makes that attention allocation more systematic.
+┌──────────────────────────────────────────────────────────────┐
+│                         Product UI                           │
+│                                                              │
+│ Dashboards · Screeners · Stock Intelligence · Alerts         │
+│ Charts · AI Analysis · Watchlists · Research Workflows       │
+└───────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Intelligence Layer                        │
+│                                                              │
+│ AI reasoning · Signal explanation · Context construction     │
+│ Market summaries · Structured insight generation             │
+└───────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     Analytics Engine                         │
+│                                                              │
+│ Technical indicators · Screeners · Trend detection           │
+│ Momentum · Volume · Price structure · Pattern analysis       │
+└───────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Market Data Layer                         │
+│                                                              │
+│ Prices · OHLCV · Fundamentals · Historical observations      │
+│ Symbol metadata · Derived features                           │
+└───────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     Platform Layer                           │
+│                                                              │
+│ APIs · Cloud infrastructure · Storage · Caching              │
+│ Scheduled jobs · Monitoring · Deployment                     │
+└──────────────────────────────────────────────────────────────┘
+```
 
-<p class="backlink"><a href="/projects/">← Back to projects</a></p>
+The important architectural decision is that **the LLM is not the system of record**.
+
+Market calculations, technical indicators, filtering, and deterministic computations remain outside the model.
+
+The model operates over structured context produced by the rest of the platform.
+
+---
+
+# 1. Market Data Pipeline
+
+Market intelligence starts with reliable data.
+
+The platform is designed around an ingestion and transformation pipeline similar to:
+
+```text
+External Market Data
+        ↓
+Ingestion
+        ↓
+Validation / Normalization
+        ↓
+Historical Storage
+        ↓
+Feature Computation
+        ↓
+Market Intelligence APIs
+        ↓
+Product + AI Layer
+```
+
+Rather than asking an LLM to derive quantitative information from raw text, MarketLane computes market features programmatically.
+
+Examples include:
+
+* price returns
+* moving averages
+* relative volume
+* volatility
+* momentum
+* trend structure
+* breakout conditions
+* support/resistance context
+* price-relative indicators
+* market regime information
+
+This creates a clean separation between:
+
+```text
+Deterministic computation
+            vs
+Probabilistic reasoning
+```
+
+That separation is one of the most important architectural principles in the system.
+
+---
+
+# 2. Screening Engine
+
+A major part of the platform is an extensible screening layer.
+
+Instead of implementing screeners directly inside individual UI pages, the system models screening as a reusable computation layer.
+
+Conceptually:
+
+```text
+Universe
+   ↓
+Market Features
+   ↓
+Conditions / Rules
+   ↓
+Ranking
+   ↓
+Candidate Stocks
+   ↓
+Context Enrichment
+```
+
+This makes it possible to build screens around combinations of:
+
+* momentum
+* price trend
+* volume
+* volatility
+* breakouts
+* moving-average structures
+* relative performance
+* technical setups
+* fundamental constraints
+
+The broader engineering idea is to treat a screener as a **query over derived market state**, rather than a collection of hard-coded pages.
+
+---
+
+# 3. Signal Detection
+
+MarketLane separates **data** from **signals**.
+
+A price increase is data.
+
+A price increase accompanied by abnormal volume, a resistance breakout, improving momentum, and sector strength may constitute a signal worth investigating.
+
+The signal layer therefore operates over derived market features.
+
+```text
+Raw observations
+      ↓
+Derived features
+      ↓
+Signal conditions
+      ↓
+Signal confidence/context
+      ↓
+User-facing opportunity
+```
+
+This architecture allows MarketLane to evolve from simple technical screens toward richer multi-factor intelligence without tightly coupling those rules to the frontend.
+
+---
+
+# 4. AI Intelligence Layer
+
+The AI layer converts structured market information into something a human can quickly reason about.
+
+MarketLane uses **Vertex AI for model inference**, while the application itself is deployed separately on AWS.
+
+This resulted in a deliberately cloud-agnostic model boundary:
+
+```text
+MarketLane Application
+        │
+        │ structured context
+        ▼
+Model Gateway / AI Layer
+        │
+        ▼
+Vertex AI
+        │
+        ▼
+Structured AI Response
+        │
+        ▼
+Validation / Rendering
+```
+
+Instead of simply submitting:
+
+```text
+"Analyze AAPL"
+```
+
+the system can construct a richer context containing information such as:
+
+```text
+symbol
+price context
+recent returns
+trend
+volume
+volatility
+technical indicators
+identified signals
+relevant historical context
+```
+
+The LLM becomes a **reasoning and interpretation layer on top of deterministic analytics**, rather than being responsible for performing every calculation itself.
+
+---
+
+# 5. AI Output Design
+
+Free-form LLM responses quickly become difficult to use in a product.
+
+MarketLane therefore treats AI responses as structured application data.
+
+Conceptually:
+
+```json
+{
+  "summary": "...",
+  "market_structure": "...",
+  "bullish_signals": [],
+  "bearish_signals": [],
+  "risks": [],
+  "important_levels": [],
+  "observations": []
+}
+```
+
+Structured generation provides several advantages:
+
+* predictable rendering
+* easier validation
+* safer downstream processing
+* reusable components
+* consistent user experience
+* simpler evaluation
+* easier model replacement
+
+It also creates a clear contract between the AI layer and the product layer.
+
+---
+
+# 6. AI Is Not the Calculation Engine
+
+One architectural principle I intentionally adopted is:
+
+> Never use an LLM for calculations that deterministic software can perform reliably.
+
+For example:
+
+```text
+Moving average calculation → deterministic code
+
+Volume percentile → deterministic code
+
+Price return → deterministic code
+
+Signal detection → rules / analytics
+
+Signal interpretation → LLM
+
+Natural-language explanation → LLM
+```
+
+This reduces hallucination risk while making the system significantly easier to debug.
+
+It also lets individual components evolve independently.
+
+---
+
+# 7. Stock Intelligence
+
+At the stock level, the goal is to build a consolidated intelligence surface rather than force users to jump between disconnected tools.
+
+A stock can conceptually be represented as:
+
+```text
+Stock
+│
+├── Price / Chart
+├── Market Structure
+├── Technical Indicators
+├── Momentum
+├── Volume
+├── Signals
+├── AI Interpretation
+├── Watchlist Context
+└── Research
+```
+
+The UI is designed so that quantitative information remains visible while AI provides an additional reasoning layer.
+
+That distinction matters.
+
+The AI should explain the market state—not hide it.
+
+---
+
+# 8. Market Intelligence Architecture
+
+The longer-term architecture treats individual observations as part of a market-event system.
+
+```text
+Market Data
+    ↓
+Feature Computation
+    ↓
+Signal Detection
+    ↓
+Market Events
+    ↓
+Ranking / Prioritization
+    ↓
+AI Interpretation
+    ↓
+Alerts / Dashboard / Research
+```
+
+An event may represent something such as:
+
+```text
+breakout_detected
+volume_anomaly
+momentum_acceleration
+trend_reversal
+support_break
+resistance_break
+technical_setup_detected
+```
+
+This event-driven model allows the same underlying market intelligence to power multiple product experiences.
+
+For example:
+
+```text
+signal
+  ├── dashboard
+  ├── stock page
+  ├── alert
+  ├── daily market scan
+  └── AI analysis
+```
+
+instead of implementing independent logic for every feature.
+
+---
+
+# 9. Designing for Scale
+
+Although MarketLane started as a founder-built product, I designed its architecture around boundaries that could support a much larger system.
+
+The core separation is:
+
+```text
+Data ingestion
+
+Feature computation
+
+Signal engine
+
+AI intelligence
+
+API layer
+
+Product UI
+```
+
+This means computationally expensive workloads can eventually move independently into asynchronous or distributed workers without forcing a complete rewrite of the product.
+
+For example:
+
+```text
+             ┌── Real-time APIs
+             │
+Market Data ─┼── Scheduled Analytics
+             │
+             └── Async Signal Processing
+                       │
+                       ▼
+                Intelligence Store
+                       │
+              ┌────────┴────────┐
+              │                 │
+             API            AI Layer
+```
+
+The architecture is intended to support future workloads such as:
+
+* larger stock universes
+* intraday market scans
+* scheduled intelligence jobs
+* event-triggered alerts
+* asynchronous AI analysis
+* portfolio-level reasoning
+
+without coupling them directly to user requests.
+
+---
+
+# 10. Caching and Cost-Aware AI
+
+Financial applications repeatedly request overlapping information.
+
+For example:
+
+```text
+AAPL technical context
+market regime
+sector context
+latest derived features
+```
+
+may be reused across several requests.
+
+A production architecture therefore benefits from separating:
+
+```text
+slow-changing context
+fast-changing market context
+user-specific context
+```
+
+This creates opportunities for:
+
+* application caching
+* precomputed market features
+* context reuse
+* prompt caching
+* reduced model input
+* asynchronous pre-generation
+
+The goal is to avoid treating every AI request as an entirely independent workload.
+
+---
+
+# 11. Reliability
+
+An AI financial product cannot treat:
+
+```text
+HTTP 200
+```
+
+as equivalent to:
+
+```text
+correct intelligence generated
+```
+
+There are several independent failure modes:
+
+```text
+data unavailable
+
+stale market data
+
+feature computation failure
+
+AI provider failure
+
+invalid structured response
+
+partial output
+
+timeout
+
+rate limit
+
+frontend rendering failure
+```
+
+A stronger reliability model therefore separates:
+
+```text
+request success
+
+data validity
+
+AI generation success
+
+schema validity
+
+product delivery
+```
+
+This is an architectural pattern I have become particularly interested in while building production AI systems.
+
+---
+
+# 12. Observability
+
+A production version of the system needs visibility across the entire request path.
+
+```text
+User
+ ↓
+Frontend
+ ↓
+MarketLane API
+ ↓
+Market data / analytics
+ ↓
+Context builder
+ ↓
+LLM request
+ ↓
+Response validation
+ ↓
+User
+```
+
+Important system-level signals include:
+
+### API
+
+* request latency
+* error rate
+* endpoint throughput
+
+### Market Data
+
+* ingestion failures
+* stale symbols
+* processing duration
+* data freshness
+
+### AI
+
+* inference latency
+* prompt tokens
+* completion tokens
+* model errors
+* structured-output failures
+
+### Product
+
+* analysis requests
+* stock searches
+* screener usage
+* alert interactions
+
+This is especially useful for AI products because latency or failures can originate well outside the application's own backend.
+
+---
+
+# 13. Evaluation
+
+One of the harder problems in an AI market-intelligence system is determining whether the generated analysis is actually useful.
+
+I think about evaluation across multiple layers.
+
+### Deterministic correctness
+
+Can the system correctly calculate:
+
+* indicators
+* price changes
+* screening conditions
+* signals?
+
+These should be unit-testable.
+
+### Grounding
+
+Does the AI response remain consistent with the structured market context provided to it?
+
+### Structured-output reliability
+
+Does generation conform to the expected schema?
+
+### Consistency
+
+Do semantically equivalent queries produce materially consistent conclusions?
+
+### Product usefulness
+
+Does the generated analysis help users identify important information faster than inspecting the raw data themselves?
+
+Separating these evaluation categories prevents vague measures such as "the AI answer looks good" from becoming the quality standard.
+
+---
+
+# 14. Security Boundaries
+
+External model APIs are treated as dependencies rather than trusted internal components.
+
+Important boundaries include:
+
+```text
+User Input
+   ↓
+Input validation
+   ↓
+Context construction
+   ↓
+Prompt boundary
+   ↓
+Model provider
+   ↓
+Structured validation
+   ↓
+Application
+```
+
+Application secrets and provider credentials remain server-side.
+
+The frontend interacts with MarketLane APIs rather than directly exposing privileged model credentials.
+
+---
+
+# 15. Multi-Cloud Architecture
+
+One interesting engineering decision in MarketLane is the use of multiple cloud platforms for different responsibilities.
+
+```text
+                  MarketLane
+
+                       │
+             Application Platform
+                       │
+                      AWS
+                       │
+              AI abstraction layer
+                       │
+                  Vertex AI
+                       │
+                     GCP
+```
+
+This required keeping the model layer sufficiently isolated from the rest of the application.
+
+The resulting boundary has another useful property: the product does not have to be architecturally tied to one LLM provider.
+
+Conceptually:
+
+```text
+Application
+     ↓
+AI service interface
+     ↓
+Model provider
+```
+
+rather than:
+
+```text
+Application
+     ↓
+provider-specific logic everywhere
+```
+
+---
+
+# 16. MarketLane Research
+
+I later extended the MarketLane ecosystem with a separate product:
+
+**MarketLane Research**
+
+`research.marketlaneai.com`
+
+While the main MarketLane application focuses primarily on:
+
+```text
+market discovery
+signals
+screening
+technical intelligence
+```
+
+MarketLane Research focuses on:
+
+```text
+financial documents
+SEC filings
+earnings material
+evidence retrieval
+RAG
+source-grounded analysis
+```
+
+The two systems represent complementary intelligence paths.
+
+```text
+                     MarketLane AI
+
+            ┌──────────────┴──────────────┐
+            │                             │
+     Market Intelligence             Research
+            │                             │
+   Price / Signals / TA          Filings / Documents
+            │                             │
+   Quantitative Context            Retrieved Evidence
+            │                             │
+   AI Interpretation                RAG Reasoning
+            │                             │
+            └──────────────┬──────────────┘
+                           │
+                    Investor Intelligence
+```
+
+The long-term architecture allows both structured market data and unstructured financial evidence to contribute to the same research experience.
+
+---
+
+# System Design Principles
+
+Several engineering principles emerged while building MarketLane.
+
+### 1. Deterministic before probabilistic
+
+If conventional software can compute something reliably, don't ask an LLM to compute it.
+
+### 2. Context quality > bigger prompts
+
+Better structured context usually matters more than blindly sending more tokens.
+
+### 3. AI should be a component, not the architecture
+
+The product needs to remain functional and understandable outside of the model itself.
+
+### 4. Separate computation from interpretation
+
+Analytics determine what happened.
+
+AI helps explain why it may matter.
+
+### 5. Build around reusable intelligence
+
+A signal should be capable of powering dashboards, alerts, research, and AI analysis rather than being implemented repeatedly.
+
+### 6. Treat AI output as application data
+
+Schema, validation, versioning, evaluation, and observability matter.
+
+---
+
+# Engineering Challenges
+
+Building MarketLane required thinking through problems beyond simply integrating an LLM API.
+
+Some of the most interesting areas included:
+
+* designing an AI-native financial product
+* integrating structured market information with LLM reasoning
+* separating deterministic analytics from probabilistic interpretation
+* designing reusable market signals
+* building AI context dynamically
+* controlling model cost and latency
+* making model responses usable by application code
+* designing for partial failure
+* creating interfaces between AWS-hosted workloads and GCP-hosted AI services
+* evolving a founder-built system toward production-grade architecture
+
+---
+
+# Production Architecture Direction
+
+The architecture is being evolved toward a more complete market-intelligence platform.
+
+```text
+                    External Data Sources
+                             │
+                             ▼
+                     Ingestion Layer
+                             │
+                    ┌────────┴────────┐
+                    │                 │
+              Historical Data     Event Stream
+                    │                 │
+                    └────────┬────────┘
+                             ▼
+                    Feature Pipeline
+                             │
+              ┌──────────────┼───────────────┐
+              │              │               │
+           Signals       Screeners       Market State
+              │              │               │
+              └──────────────┼───────────────┘
+                             ▼
+                     Intelligence Layer
+                             │
+                 ┌───────────┴──────────┐
+                 │                      │
+           Deterministic              LLM
+            Analytics               Reasoning
+                 │                      │
+                 └───────────┬──────────┘
+                             ▼
+                       MarketLane API
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+    Dashboard            Alerts              Research
+```
+
+Areas I am actively interested in taking further include:
+
+* event-driven market intelligence
+* real-time signal pipelines
+* portfolio-level AI reasoning
+* market-regime detection
+* hybrid quantitative + semantic retrieval
+* evaluation pipelines for financial LLM outputs
+* agentic research workflows
+* observability for AI systems
+* personalized signal ranking
+* low-latency AI serving
+
+---
+
+# What MarketLane Demonstrates
+
+MarketLane is less interesting to me as a stock-market application than as an engineering problem.
+
+It combines several areas I want to work deeply on:
+
+```text
+AI Engineering
+        ×
+Distributed Systems
+        ×
+Financial Data
+        ×
+LLM Systems
+        ×
+Product Engineering
+```
+
+It required thinking simultaneously about:
+
+* data architecture
+* quantitative computation
+* AI system boundaries
+* model integration
+* application architecture
+* cloud deployment
+* reliability
+* evaluation
+* product UX
+
+That combination is what makes MarketLane one of the most useful systems I have built for developing my approach to production AI engineering.
+
+---
+
+# Technology Areas
+
+The project touches several engineering domains:
+
+**AI / LLM Systems**
+
+* Vertex AI
+* structured generation
+* context engineering
+* LLM orchestration
+* prompt design
+* output validation
+* AI evaluation
+
+**Financial Intelligence**
+
+* equities
+* technical analysis
+* market signals
+* screeners
+* historical market data
+* market-state computation
+
+**Backend / Systems**
+
+* APIs
+* asynchronous processing
+* caching
+* scheduled workloads
+* data pipelines
+* service boundaries
+
+**Infrastructure**
+
+* AWS-hosted product infrastructure
+* GCP / Vertex AI
+* cloud deployment
+* monitoring
+* secrets management
+
+**Product**
+
+* financial dashboards
+* stock intelligence
+* AI-assisted analysis
+* alerts
+* screening workflows
+
+---
+
+# Related Project
+
+### MarketLane Research
+
+**Enterprise financial RAG and evidence-grounded equity research**
+
+`research.marketlaneai.com`
+
+MarketLane Research explores the other side of financial intelligence: extracting evidence from filings, earnings material, and financial documents and making that information queryable through retrieval-augmented generation.
+
+Together:
+
+```text
+MarketLane
+
+Structured Market Intelligence
++
+Unstructured Financial Research
++
+AI Reasoning
+```
+
+form the foundation for a broader AI-native investment intelligence platform.
+
+---
+
+## Built by
+
+**Ankit Jha**
+
+AI / ML Engineer focused on production AI systems, LLM infrastructure, retrieval systems, inference, and applied machine learning.
 
 </div>
 </BaseLayout>

@@ -1,71 +1,1282 @@
 ---
-title: MarketLane Research RAG | Ankit Jha
-description: A retrieval-augmented research layer that assembles market memory before MarketLane reasons about a setup.
+title: MarketLane Research | Ankit Jha
+description: Production AI infrastructure for institutional-grade, evidence-grounded equity research.
 ---
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
 
-<BaseLayout title="MarketLane Research RAG | Ankit Jha" description="A retrieval-augmented research layer that assembles market memory before MarketLane reasons about a setup.">
-<div class="article">
+<BaseLayout title="MarketLane Research | Ankit Jha" description="Production AI infrastructure for institutional-grade, evidence-grounded equity research.">
+<div class="article contribution-note">
 
-<p class="eyebrow">Project / RAG systems / Market intelligence</p>
+# MarketLane Research
 
-# MarketLane Research RAG
+## Production AI Infrastructure for Institutional-Grade Equity Research
 
-<p class="article-lede">A retrieval layer that turns prior market observations into decision-ready context for an agentic NSE research workflow.</p>
+MarketLane Research is an AI-native equity intelligence platform designed to turn fragmented financial information into structured, traceable research.
 
-## The retrieval problem
+The system combines:
 
-An individual chart has too little context to support a dependable research decision. The relevant evidence is distributed across previous scans, the current market regime, sector leadership, a security's own technical history, and comparable setups. Asking a model to infer that context from a chart alone makes each analysis stateless and difficult to audit.
+* SEC regulatory filings
+* financial statements and XBRL facts
+* investor materials
+* market data
+* multi-period financial analysis
+* document-level retrieval
+* deterministic financial calculations
+* temporal reasoning
+* grounded LLM synthesis
 
-MarketLane Research RAG makes that context explicit. It assembles a bounded research packet before specialist reasoning begins, so the system can explain not only what it sees now, but why the current setup matters relative to recent market behaviour.
+into a single research interface capable of answering questions that normally require an analyst to move repeatedly between filings, spreadsheets, financial databases, and company disclosures.
 
-## What the system retrieves
+The core engineering problem is not simply document search.
 
-The retrieval corpus is built from structured MarketLane observations rather than a generic document dump. Each scan can retain the market state, setup family, technical evidence, invalidation, verification result, and promotion decision for a name. Those records become usable memory for later scans.
+It is building a system that can determine:
 
-For an eligible candidate, the context builder selects evidence across four layers:
+**which company → which reporting period → which filing → which section → which financial fact → which calculation → which supporting evidence**
 
-| Source | Question it answers |
-| --- | --- |
-| Prior scans | What did MarketLane observe previously, and has the state changed enough to revisit? |
-| Market regime | Is the broad NSE tape supportive, defensive, or internally conflicted? |
-| Sector leadership | Is the move aligned with participation in the relevant group? |
-| Comparable structures | Which recent or historical setups resemble the current pattern and regime? |
+before generating an answer.
 
-The result is a compact, attributable packet—not a long conversational history. Retrieval output is passed forward as structured evidence that downstream agents can inspect, challenge, and cite in their conclusions.
+---
 
-## Retrieval sits behind deterministic gates
+# The Problem
 
-RAG is not the first operation in the pipeline. A local prefilter evaluates technical structure, participation, and price-state changes before the system spends inference or retrieves deep context. If a security remains structurally broken, lacks participation, or has not materially changed since its previous review, it is suppressed early.
+Traditional financial research is fragmented across multiple systems.
 
-That ordering is an engineering decision as much as a cost decision: it prevents stale context from becoming a reason to re-analyse an unchanged chart. The system reserves richer retrieval and agent work for the subset of the universe where new information could alter the research decision.
+A single question such as:
+
+> How has Microsoft's operating margin changed over the last four quarters, and what did management say drove the change?
+
+can require:
+
+1. identifying the correct fiscal periods;
+2. retrieving revenue and operating income for each quarter;
+3. normalizing reported financial concepts;
+4. calculating margins consistently;
+5. locating the relevant MD&A commentary across several filings;
+6. separating current-period commentary from historical discussion;
+7. comparing changes across quarters;
+8. linking conclusions back to primary-source evidence.
+
+Generic RAG architectures are poorly suited to this problem.
+
+A vector database can retrieve semantically similar text, but it cannot reliably provide:
+
+* exact financial numbers;
+* fiscal-period normalization;
+* deterministic arithmetic;
+* latest/previous filing resolution;
+* multi-document comparison;
+* evidence lineage;
+* structured table reasoning;
+* financial metric consistency.
+
+MarketLane Research therefore treats financial intelligence as a **multi-source evidence orchestration problem**, rather than a conventional chatbot problem.
+
+---
+
+# System Architecture
 
 ```text
-Stored market observations
-    → candidate-specific context assembly
-    → compact evidence packet
-    → specialist agents and risk review
-    → verification and ranked decision
+                            USER QUERY
+                                │
+                                ▼
+                       Query Understanding
+                                │
+               ┌────────────────┼─────────────────┐
+               │                │                 │
+               ▼                ▼                 ▼
+          Entity/Period       Intent         Metric Detection
+           Resolution       Classification
+               │                │                 │
+               └────────────────┼─────────────────┘
+                                ▼
+                         Research Planner
+                                │
+          ┌─────────────────────┼─────────────────────┐
+          │                     │                     │
+          ▼                     ▼                     ▼
+   Filing Intelligence   Structured Financials   Market Intelligence
+          │                     │                     │
+          ▼                     ▼                     ▼
+   Hybrid Retrieval        SEC XBRL Facts        Market Data APIs
+   Dense + Lexical              │                     │
+          │                     ▼                     │
+          │              Financial Calculator         │
+          │                     │                     │
+          └─────────────────────┼─────────────────────┘
+                                ▼
+                       Evidence Assembly
+                                │
+                                ▼
+                          Reranking Layer
+                                │
+                                ▼
+                       Grounded Reasoning
+                                │
+                                ▼
+                      Citation Validation
+                                │
+                                ▼
+                       Research Response
 ```
 
-## Designed for agentic hand-offs
+The architecture deliberately separates **retrieval, numerical truth, calculation and reasoning**.
 
-The RAG layer is an input to an orchestrated system, not an end-user chat feature. Technical, pattern, market-context, and risk stages receive the context they need for their particular responsibility. They return compact findings—setup, evidence, risks, and invalidation—rather than appending unbounded prose to a shared prompt.
+The language model is not treated as the database, calculator, or source of financial truth.
 
-This keeps the hand-offs inspectable and limits context growth. It also lets independent work proceed in parallel where the dependency graph allows: feature generation, candidate retrieval, and specialist analysis are coordinated as stages of a scan rather than serialized as one monolithic prompt.
+---
 
-## Evaluation loop
+# 1. Multi-Layer Financial Data Plane
 
-Retrieval quality is connected to downstream outcomes. A promoted setup is stored alongside its evidence and invalidation so subsequent price behaviour can be joined back to the original decision. Withheld promotions and verification failures are retained too; they are useful labelled signals, not discarded model output.
+MarketLane Research uses different systems for different classes of information.
 
-Over time, this gives the research layer a basis for evaluating whether retrieved contexts and setup signals were useful under particular regimes. The goal is not to claim automatic trading certainty. It is to make the research process progressively more evidence-aware, testable, and specific to the desk's workflow.
+### Narrative evidence
 
-## Why it matters
+SEC filings and company disclosures provide qualitative context:
 
-MarketLane Research RAG gives the agentic pipeline memory without confusing memory for authority. Retrieval provides the historical and market context; specialist agents interpret it; verification checks whether the resulting thesis is internally supported; and the operator retains control over the final decision.
+* management discussion and analysis;
+* risk factors;
+* operating commentary;
+* liquidity discussion;
+* business trends;
+* capital expenditure commentary;
+* segment performance;
+* strategic priorities.
 
-<p class="backlink"><a href="/projects/">← Back to projects</a></p>
+These are handled through the document retrieval layer.
+
+### Numerical truth
+
+Structured financial values are sourced from XBRL and normalized financial facts.
+
+Examples include:
+
+* revenue;
+* operating income;
+* net income;
+* EPS;
+* cash flow from operations;
+* capex;
+* gross profit;
+* assets;
+* cash;
+* debt.
+
+These values bypass the document-generation path whenever structured data is available.
+
+### Market context
+
+Price and market information can be independently queried through MarketLane's market-data layer.
+
+This allows research questions to combine fundamentals with market behavior without placing market time-series inside the RAG corpus.
+
+---
+
+# 2. Financial Document Intelligence Pipeline
+
+MarketLane Research uses document-type-aware ingestion rather than routing every document through the same parser.
+
+```text
+                        Incoming Document
+                                │
+                ┌───────────────┴───────────────┐
+                │                               │
+            SEC HTML                      Complex PDF
+                │                               │
+                ▼                               ▼
+       Structural HTML Parser               Docling
+                │                               │
+                │                      Parse Quality Checks
+                │                               │
+                │                       ┌───────┴────────┐
+                │                       │                │
+                │                     PASS             FALLBACK
+                │                       │                │
+                └───────────────────────┼────────────────┘
+                                        ▼
+                             Normalized Document Model
+```
+
+SEC HTML is parsed structurally instead of first being converted into flat text.
+
+The normalized document representation preserves:
+
+* filing sections;
+* heading hierarchy;
+* paragraphs;
+* tables;
+* document order;
+* fiscal metadata;
+* company metadata;
+* source locations;
+* document lineage.
+
+The same normalized representation can be produced from PDFs, allowing downstream retrieval to remain independent of the original document format.
+
+---
+
+# 3. Structural Financial Chunking
+
+Financial reports contain strong document hierarchy.
+
+For example:
+
+```text
+10-Q
+ └── Item 2 — Management's Discussion and Analysis
+      └── Results of Operations
+           └── Intelligent Cloud
+                └── Revenue
+```
+
+MarketLane preserves this hierarchy rather than treating the filing as an arbitrary token stream.
+
+The retrieval architecture supports parent-child representations:
+
+```text
+Parent section
+~1,500–2,500 tokens
+
+        │
+        ├── Child chunk
+        ├── Child chunk
+        ├── Child chunk
+        └── Child chunk
+             ~400–700 tokens
+```
+
+Smaller units improve search precision, while parent context allows the reasoning layer to recover surrounding financial context.
+
+Tables are preserved as atomic evidence wherever possible rather than being split blindly across chunks.
+
+---
+
+# 4. Hybrid Retrieval
+
+Semantic similarity alone is insufficient for financial documents.
+
+Queries often contain exact language such as:
+
+* ASC 606;
+* deferred revenue;
+* operating margin;
+* fiscal Q3 2026;
+* $14.2 billion;
+* Intelligent Cloud;
+* remaining performance obligations.
+
+MarketLane combines two retrieval systems.
+
+```text
+                         Query
+                           │
+                ┌──────────┴──────────┐
+                │                     │
+                ▼                     ▼
+           Dense Search          Lexical Search
+            pgvector           PostgreSQL FTS
+                │                     │
+                └──────────┬──────────┘
+                           ▼
+                  Reciprocal Rank Fusion
+                           │
+                           ▼
+                    Candidate Evidence
+                           │
+                           ▼
+                        Reranker
+                           │
+                           ▼
+                   Final Evidence Set
+```
+
+Dense retrieval captures semantic similarity.
+
+Lexical retrieval captures exact financial terminology, named concepts and numerical references.
+
+Metadata filtering restricts the search space before ranking using dimensions such as:
+
+* ticker;
+* filing type;
+* filing date;
+* reporting period;
+* document;
+* filing section;
+* fiscal year;
+* fiscal quarter.
+
+---
+
+# 5. Temporal Financial Reasoning
+
+Financial research is inherently temporal.
+
+Queries such as:
+
+> latest 10-Q
+
+> previous annual filing
+
+> last four quarters
+
+> compared with the same period last year
+
+cannot safely depend on model memory.
+
+MarketLane resolves temporal expressions against filing metadata and structured reporting periods.
+
+For example:
+
+```text
+"Microsoft's latest 10-Q"
+
+          ↓
+
+ticker = MSFT
+form = 10-Q
+selector = LATEST
+
+          ↓
+
+database resolution
+
+          ↓
+
+specific SEC accession
+```
+
+The resolved filing becomes a retrieval constraint.
+
+This prevents semantic search from accidentally returning highly similar but outdated disclosures.
+
+---
+
+# 6. Structured Financial Reasoning
+
+A core design principle is:
+
+> **RAG retrieves explanations. Structured systems provide numbers.**
+
+For example:
+
+> What was Microsoft's operating margin last quarter?
+
+does not require the model to search paragraphs for two numbers and perform division.
+
+Instead:
+
+```text
+get_financial_facts(
+    ticker=MSFT,
+    metrics=[
+        revenue,
+        operating_income
+    ],
+    period=latest_quarter
+)
+
+          ↓
+
+deterministic calculator
+
+          ↓
+
+operating_margin
+```
+
+Supported deterministic operations can include:
+
+* percentage change;
+* year-over-year growth;
+* quarter-over-quarter growth;
+* margins;
+* basis-point movement;
+* difference;
+* aggregation;
+* CAGR;
+* return calculations.
+
+The language model receives calculated results rather than being responsible for financial arithmetic.
+
+---
+
+# 7. Research Orchestration
+
+MarketLane Research uses tool-based orchestration for questions requiring several evidence sources.
+
+Core research tools include:
+
+```text
+search_filings()
+
+get_financial_facts()
+
+calculate()
+
+compare_filings()
+
+get_market_data()
+```
+
+Consider:
+
+> How has Microsoft's operating margin changed over the last four quarters and why?
+
+The research plan can decompose this into:
+
+```text
+1. Resolve MSFT and the four relevant reporting periods
+
+2. Retrieve revenue by period
+
+3. Retrieve operating income by period
+
+4. Calculate operating margin deterministically
+
+5. Search corresponding filings for margin drivers
+
+6. Rerank management commentary
+
+7. Align quantitative changes with qualitative evidence
+
+8. Generate a cited synthesis
+```
+
+This separation creates a much more controllable research system than allowing an LLM to reason over an unrestricted context window.
+
+---
+
+# 8. Filing Change Intelligence
+
+One of the core workflows in MarketLane Research is longitudinal filing analysis.
+
+Instead of asking the model to read two complete filings simultaneously, the system first aligns their structure.
+
+```text
+Latest Filing                    Previous Filing
+      │                                │
+      ▼                                ▼
+Section Extraction                Section Extraction
+      │                                │
+      └──────────── Section Alignment ─┘
+                         │
+                         ▼
+                 Evidence Retrieval
+                         │
+                         ▼
+                   Change Analysis
+```
+
+This supports questions such as:
+
+* What risks were added?
+* What risks disappeared?
+* How did management's AI capex language change?
+* What changed in liquidity commentary?
+* What shifted in demand expectations?
+* Did management become more cautious?
+* Which business areas received greater emphasis?
+
+The output can be represented as a structured change set:
+
+```text
+Topic
+
+Previous disclosure
+
+Current disclosure
+
+Material change
+
+Evidence from previous filing
+
+Evidence from current filing
+```
+
+---
+
+# 9. Cross-Company Research
+
+The same architecture supports research across multiple companies.
+
+Example:
+
+> Compare Nvidia and AMD management commentary around data-center demand over the last four quarters.
+
+The engine resolves:
+
+```text
+NVDA
+  ├── Q1
+  ├── Q2
+  ├── Q3
+  └── Q4
+
+AMD
+  ├── Q1
+  ├── Q2
+  ├── Q3
+  └── Q4
+```
+
+Retrieval operates within each company's reporting context before the evidence sets are merged.
+
+This reduces the risk of cross-company evidence contamination and enables structured comparative research.
+
+---
+
+# 10. Evidence-First Generation
+
+The reasoning model never receives anonymous text blobs.
+
+Each piece of context is represented as explicit evidence.
+
+```text
+E1
+Company: Microsoft
+Form: 10-Q
+Period: FY2026 Q2
+Section: MD&A
+Source: <SEC filing>
+Text: ...
+
+E2
+Company: Microsoft
+Form: 10-Q
+Period: FY2026 Q1
+Section: Results of Operations
+Source: <SEC filing>
+Text: ...
+```
+
+The model can cite only evidence IDs provided by the retrieval system.
+
+The response layer subsequently maps those IDs back to:
+
+* SEC filing;
+* document;
+* filing section;
+* reporting period;
+* source URL;
+* document location.
+
+This creates explicit lineage from answer → evidence → source document.
+
+---
+
+# 11. Citation Validation
+
+Citation generation and citation validation are separate operations.
+
+Before returning an answer, the system can verify:
+
+```text
+Does the referenced evidence exist?
+
+Did it belong to the retrieved context?
+
+Does the cited source correspond to the correct company?
+
+Does it correspond to the correct reporting period?
+
+Does a numerical statement match structured financial data?
+
+Are key research claims supported by evidence?
+```
+
+Unsupported evidence references can therefore be rejected before reaching the final response.
+
+---
+
+# 12. Incremental SEC Ingestion
+
+The research corpus is designed to update incrementally as companies publish new filings.
+
+```text
+Cloud Scheduler
+       │
+       ▼
+SEC Filing Discovery
+       │
+       ▼
+New Filing Detection
+       │
+       ▼
+Raw Document Storage
+       │
+       ▼
+Parsing
+       │
+       ▼
+Normalization
+       │
+       ▼
+Chunking
+       │
+       ▼
+Embeddings
+       │
+       ▼
+Search Index
+```
+
+Each document moves through an explicit ingestion state machine:
+
+```text
+DISCOVERED
+    ↓
+DOWNLOADED
+    ↓
+PARSED
+    ↓
+NORMALIZED
+    ↓
+CHUNKED
+    ↓
+EMBEDDED
+    ↓
+INDEXED
+```
+
+Processing is designed to be idempotent.
+
+A retry should not create duplicate documents, duplicate chunks or unnecessary embedding calls.
+
+Version metadata can track:
+
+* parser version;
+* chunker version;
+* embedding model;
+* embedding dimension;
+* document hash;
+* chunk hash.
+
+This makes selective reprocessing possible as the pipeline evolves.
+
+---
+
+# 13. Cloud Architecture
+
+MarketLane's existing product and the research platform remain independently deployable.
+
+```text
+                      marketlaneai.com
+                            │
+                    Cloudflare DNS
+                            │
+               ┌────────────┴────────────┐
+               │                         │
+               ▼                         ▼
+     app.marketlaneai.com      research.marketlaneai.com
+               │                         │
+              AWS                 GCP HTTPS Layer
+                                         │
+                              ┌──────────┴───────────┐
+                              │                      │
+                            Web API              Research API
+                              │                      │
+                           Cloud Run              Cloud Run
+                                                     │
+                       ┌─────────────────────────────┼──────────────┐
+                       │                             │              │
+                       ▼                             ▼              ▼
+                    Vertex AI                  Cloud SQL          GCS
+                 Gemini + Embeddings       Postgres/pgvector
+```
+
+The architecture intentionally minimizes cross-cloud coupling.
+
+Research workloads remain primarily on GCP.
+
+Existing MarketLane infrastructure is accessed only when the research query requires information already owned by the core platform, such as market-data functionality.
+
+---
+
+# 14. Storage Architecture
+
+Different data classes are stored independently.
+
+### Object storage
+
+GCS stores:
+
+```text
+raw SEC filings
+
+normalized documents
+
+complex PDF sources
+
+evaluation artifacts
+
+processing artifacts
+```
+
+### PostgreSQL
+
+Cloud SQL stores:
+
+```text
+companies
+
+document metadata
+
+sections
+
+chunks
+
+financial facts
+
+ingestion state
+
+retrieval metadata
+```
+
+### pgvector
+
+The same PostgreSQL layer provides vector retrieval for the initial corpus.
+
+This avoids introducing an additional vector database before scale requires one.
+
+The retrieval abstraction is intentionally storage-independent so the indexing layer can later move to a distributed retrieval system without changing research orchestration.
+
+---
+
+# 15. Evaluation Architecture
+
+MarketLane Research treats evaluation as part of the system rather than a post-launch manual check.
+
+The evaluation suite separates:
+
+### Retrieval quality
+
+```text
+Recall@1
+
+Recall@5
+
+Recall@10
+
+MRR
+```
+
+### Grounding
+
+```text
+citation precision
+
+citation coverage
+
+evidence attribution
+
+unsupported claim rate
+```
+
+### Financial correctness
+
+```text
+numeric accuracy
+
+calculation accuracy
+
+reporting-period accuracy
+
+temporal correctness
+```
+
+### System performance
+
+```text
+retrieval latency
+
+reranking latency
+
+generation latency
+
+end-to-end latency
+
+token consumption
+
+cost per research request
+```
+
+---
+
+# 16. Retrieval Ablation Framework
+
+The system is structured so retrieval configurations can be benchmarked independently.
+
+For example:
+
+```text
+A
+fixed token chunks
++
+dense retrieval
+
+B
+structural chunks
++
+dense retrieval
+
+C
+structural chunks
++
+hybrid retrieval
+
+D
+structural chunks
++
+hybrid retrieval
++
+reranking
+```
+
+Each experiment produces an immutable evaluation artifact.
+
+This makes architecture decisions measurable instead of subjective.
+
+External datasets such as FinanceBench can also be used to measure financial retrieval against third-party evidence annotations.
+
+---
+
+# 17. Observability
+
+Each research request can be traced across the entire inference path.
+
+A request trace can include:
+
+```text
+trace_id
+
+original query
+
+resolved companies
+
+resolved reporting periods
+
+research plan
+
+tool calls
+
+retrieved chunk IDs
+
+dense ranks
+
+lexical ranks
+
+fusion ranks
+
+reranker scores
+
+financial facts retrieved
+
+calculations executed
+
+model invocation
+
+token usage
+
+retrieval latency
+
+model latency
+
+end-to-end latency
+
+citations
+
+final status
+```
+
+This provides enough visibility to investigate whether a poor answer originated from:
+
+```text
+query understanding
+
+temporal resolution
+
+retrieval
+
+ranking
+
+missing source data
+
+financial normalization
+
+calculation
+
+generation
+```
+
+rather than treating every failure as an LLM failure.
+
+---
+
+# 18. Reliability Model
+
+AI systems fail differently from traditional APIs.
+
+MarketLane Research therefore separates failure classes such as:
+
+```text
+source acquisition failure
+
+document parse failure
+
+partial extraction
+
+embedding failure
+
+indexing failure
+
+retrieval miss
+
+reranker degradation
+
+tool failure
+
+insufficient evidence
+
+citation validation failure
+
+LLM generation failure
+```
+
+Ingestion failures can be retried independently from online research requests.
+
+Unavailable evidence should result in an explicit insufficient-evidence response rather than unsupported generation.
+
+---
+
+# 19. Cost-Aware AI Infrastructure
+
+The architecture is designed around selective use of expensive inference.
+
+Examples:
+
+**Document parsing**
+
+```text
+SEC HTML
+→ deterministic parser
+
+Complex PDF
+→ document AI parser
+
+Poor extraction
+→ expensive fallback
+```
+
+**Query execution**
+
+```text
+simple financial fact
+→ structured lookup
+
+retrieval question
+→ hybrid search
+
+complex research question
+→ retrieval + reranking + LLM synthesis
+```
+
+**Indexing**
+
+```text
+unchanged chunk hash
+→ skip embedding
+
+new/changed chunk
+→ embed
+```
+
+This prevents high-cost models from becoming the default implementation for operations that can be handled deterministically.
+
+---
+
+# 20. Enterprise Evolution
+
+The current architecture is intentionally modular so individual components can evolve independently as corpus size, research complexity and query volume increase.
+
+The design can extend toward:
+
+### Retrieval infrastructure
+
+```text
+pgvector
+        ↓
+distributed vector retrieval
+        ↓
+partitioned / multi-stage retrieval
+```
+
+### Data processing
+
+```text
+scheduled ingestion
+        ↓
+event-driven ingestion
+        ↓
+distributed document-processing workers
+```
+
+### Model infrastructure
+
+```text
+single-provider inference
+        ↓
+model routing
+        ↓
+task-specific model selection
+        ↓
+fallback and resilience policies
+```
+
+### Research engine
+
+```text
+single-company analysis
+        ↓
+cross-company research
+        ↓
+sector intelligence
+        ↓
+portfolio-level research
+```
+
+The important property is that these changes do not require redesigning the financial evidence model itself.
+
+---
+
+# Representative Research Workflows
+
+## Fundamental Analysis
+
+> How has Amazon AWS operating income changed over the last three quarters and what drove the change?
+
+Uses:
+
+```text
+structured financial data
+
+quarter resolution
+
+deterministic calculations
+
+multi-filing retrieval
+
+management commentary
+
+citations
+```
+
+---
+
+## Management Commentary Analysis
+
+> Compare management's AI infrastructure commentary across Microsoft's last four reporting periods.
+
+Uses:
+
+```text
+temporal resolution
+
+multi-document retrieval
+
+semantic + lexical retrieval
+
+reranking
+
+longitudinal synthesis
+```
+
+---
+
+## Filing Intelligence
+
+> What risk factors were materially added or removed from Nvidia's latest annual filing?
+
+Uses:
+
+```text
+document resolution
+
+section alignment
+
+filing diff
+
+evidence comparison
+
+dual-source citations
+```
+
+---
+
+## Competitive Intelligence
+
+> Compare Nvidia and AMD's commentary about data-center demand.
+
+Uses:
+
+```text
+multi-company retrieval
+
+company-level evidence isolation
+
+temporal alignment
+
+comparative synthesis
+```
+
+---
+
+## Market Reaction Research
+
+> What changed fundamentally after the latest earnings release and how did the stock trade over the following five sessions?
+
+Uses:
+
+```text
+SEC filings
+
+structured fundamentals
+
+MarketLane market data
+
+financial calculations
+
+multi-source synthesis
+```
+
+---
+
+# What Makes MarketLane Research Different
+
+The goal is not to build a better chatbot.
+
+It is to build a **financial evidence engine** capable of transforming heterogeneous financial information into reproducible research.
+
+The architecture is based on several principles:
+
+**LLMs reason; databases provide facts.**
+
+**Retrieval finds evidence; it does not determine financial truth.**
+
+**Arithmetic is deterministic.**
+
+**Time is explicit.**
+
+**Every meaningful claim should be traceable.**
+
+**Document structure should survive ingestion.**
+
+**Evaluation should determine architecture choices.**
+
+**AI failures must be observable.**
+
+These constraints turn the system from a conventional RAG application into infrastructure for programmable financial research.
+
+---
+
+# Technology
+
+```text
+AI
+Vertex AI
+Gemini
+Vertex embeddings
+
+Retrieval
+PostgreSQL
+pgvector
+full-text retrieval
+hybrid search
+reciprocal rank fusion
+reranking
+
+Document Intelligence
+SEC EDGAR
+XBRL
+structural HTML parsing
+Docling
+table-aware normalization
+
+Backend
+Python
+FastAPI
+Pydantic
+SQLAlchemy
+Alembic
+
+Infrastructure
+Google Cloud Run
+Cloud Run Jobs
+Cloud Scheduler
+Cloud SQL
+Google Cloud Storage
+Secret Manager
+Cloud Logging
+Cloud Monitoring
+
+Platform Integration
+Cloudflare
+AWS-hosted MarketLane services
+market-data APIs
+```
+
+---
+
+# Product Direction
+
+MarketLane Research is intended to become the intelligence layer behind MarketLane.
+
+The long-term opportunity is larger than SEC search.
+
+The same evidence architecture can support:
+
+```text
+public filings
+
+company announcements
+
+earnings materials
+
+transcripts
+
+macro data
+
+market data
+
+alternative datasets
+
+internal research
+
+portfolio data
+```
+
+while keeping one consistent research interface above them.
+
+The eventual system can continuously transform new information into:
+
+```text
+structured facts
+
+retrievable evidence
+
+company timelines
+
+change detection
+
+cross-company comparisons
+
+research signals
+
+portfolio-level intelligence
+```
+
+The objective is to move financial research from a workflow dominated by manual discovery and document navigation toward a system where complex questions can be expressed directly and answered with transparent evidence.
+
+**MarketLane Research is the architecture for that transition.**
 
 </div>
 </BaseLayout>
