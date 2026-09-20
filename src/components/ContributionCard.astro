@@ -3,6 +3,8 @@ type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'P
 
 interface Contribution {
 	project: string;
+	repository?: string;
+	repositoryUrl?: string;
 	issueNumber: string;
 	title: string;
 	contributionType: string;
@@ -28,7 +30,9 @@ const statusClass = contribution.status.toLowerCase().replaceAll(' ', '-');
 <article class:list={['contribution-card', { 'is-placeholder': contribution.isPlaceholder }]}>
 	<header class="contribution-header">
 		<div>
-			<p class="contribution-project">{contribution.project}</p>
+			<p class="contribution-project">
+				{contribution.repositoryUrl ? <a href={contribution.repositoryUrl}>{contribution.repository ?? contribution.project} ↗</a> : (contribution.repository ?? contribution.project)}
+			</p>
 			<h2>{contribution.detailHref ? <a href={contribution.detailHref}>{contribution.title}</a> : contribution.title}</h2>
 		</div>
 		<span class:list={['status', statusClass]}>{contribution.status}</span>
@@ -76,6 +80,7 @@ const statusClass = contribution.status.toLowerCase().replaceAll(' ', '-');
 	.contribution-card:last-child { border-bottom: 1px solid var(--line); }
 	.contribution-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
 	.contribution-project, dt, .placeholder-label { margin: 0 0 8px; color: var(--muted); font: 11px 'DM Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase; }
+	.contribution-project a { color: var(--ink); font-weight: 500; text-underline-offset: 4px; }
 	.contribution-header h2 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: -0.05em; }
 	.contribution-header h2 a { text-decoration: none; }
 	.contribution-header h2 a:hover { text-decoration: underline; text-underline-offset: 5px; }
