@@ -1,10 +1,71 @@
 ---
-title: Marketlane Research RAG
-description: Case study placeholder for Marketlane Research RAG.
+title: MarketLane Research RAG | Ankit Jha
+description: A retrieval-augmented research layer that assembles market memory before MarketLane reasons about a setup.
 ---
 
-# Marketlane Research RAG
+import BaseLayout from '../../layouts/BaseLayout.astro';
 
-> Case study placeholder.
+<BaseLayout title="MarketLane Research RAG | Ankit Jha" description="A retrieval-augmented research layer that assembles market memory before MarketLane reasons about a setup.">
+<div class="article">
 
-Project details, architecture, and outcomes will be added here.
+<p class="eyebrow">Project / RAG systems / Market intelligence</p>
+
+# MarketLane Research RAG
+
+<p class="article-lede">A retrieval layer that turns prior market observations into decision-ready context for an agentic NSE research workflow.</p>
+
+## The retrieval problem
+
+An individual chart has too little context to support a dependable research decision. The relevant evidence is distributed across previous scans, the current market regime, sector leadership, a security's own technical history, and comparable setups. Asking a model to infer that context from a chart alone makes each analysis stateless and difficult to audit.
+
+MarketLane Research RAG makes that context explicit. It assembles a bounded research packet before specialist reasoning begins, so the system can explain not only what it sees now, but why the current setup matters relative to recent market behaviour.
+
+## What the system retrieves
+
+The retrieval corpus is built from structured MarketLane observations rather than a generic document dump. Each scan can retain the market state, setup family, technical evidence, invalidation, verification result, and promotion decision for a name. Those records become usable memory for later scans.
+
+For an eligible candidate, the context builder selects evidence across four layers:
+
+| Source | Question it answers |
+| --- | --- |
+| Prior scans | What did MarketLane observe previously, and has the state changed enough to revisit? |
+| Market regime | Is the broad NSE tape supportive, defensive, or internally conflicted? |
+| Sector leadership | Is the move aligned with participation in the relevant group? |
+| Comparable structures | Which recent or historical setups resemble the current pattern and regime? |
+
+The result is a compact, attributable packet—not a long conversational history. Retrieval output is passed forward as structured evidence that downstream agents can inspect, challenge, and cite in their conclusions.
+
+## Retrieval sits behind deterministic gates
+
+RAG is not the first operation in the pipeline. A local prefilter evaluates technical structure, participation, and price-state changes before the system spends inference or retrieves deep context. If a security remains structurally broken, lacks participation, or has not materially changed since its previous review, it is suppressed early.
+
+That ordering is an engineering decision as much as a cost decision: it prevents stale context from becoming a reason to re-analyse an unchanged chart. The system reserves richer retrieval and agent work for the subset of the universe where new information could alter the research decision.
+
+```text
+Stored market observations
+    → candidate-specific context assembly
+    → compact evidence packet
+    → specialist agents and risk review
+    → verification and ranked decision
+```
+
+## Designed for agentic hand-offs
+
+The RAG layer is an input to an orchestrated system, not an end-user chat feature. Technical, pattern, market-context, and risk stages receive the context they need for their particular responsibility. They return compact findings—setup, evidence, risks, and invalidation—rather than appending unbounded prose to a shared prompt.
+
+This keeps the hand-offs inspectable and limits context growth. It also lets independent work proceed in parallel where the dependency graph allows: feature generation, candidate retrieval, and specialist analysis are coordinated as stages of a scan rather than serialized as one monolithic prompt.
+
+## Evaluation loop
+
+Retrieval quality is connected to downstream outcomes. A promoted setup is stored alongside its evidence and invalidation so subsequent price behaviour can be joined back to the original decision. Withheld promotions and verification failures are retained too; they are useful labelled signals, not discarded model output.
+
+Over time, this gives the research layer a basis for evaluating whether retrieved contexts and setup signals were useful under particular regimes. The goal is not to claim automatic trading certainty. It is to make the research process progressively more evidence-aware, testable, and specific to the desk's workflow.
+
+## Why it matters
+
+MarketLane Research RAG gives the agentic pipeline memory without confusing memory for authority. Retrieval provides the historical and market context; specialist agents interpret it; verification checks whether the resulting thesis is internally supported; and the operator retains control over the final decision.
+
+<p class="backlink"><a href="/projects/">← Back to projects</a></p>
+
+</div>
+</BaseLayout>
