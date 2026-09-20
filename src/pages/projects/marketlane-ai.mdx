@@ -20,21 +20,22 @@ Technical research rarely starts with a single ticker. It starts with a market-s
 
 MarketLane is designed as infrastructure for that workflow. It combines deterministic market computation with retrieval-augmented AI and specialist reasoning, so the system can scan broadly without treating every chart as an isolated prompt.
 
-## How the engine works
+## The agentic execution model
 
-The system begins with an operator-defined NSE universe. It normalizes the session, symbols, and available research corpus, then runs deterministic prefilters to identify names with enough technical structure to merit further inference.
+The system begins with an operator-defined NSE universe. It normalizes the session, symbols, and available research corpus, then runs deterministic prefilters to identify names with enough technical structure to merit further inference. A scan-aware suppression step compares the current price state with the last review, avoiding a repeat model pass when the evidence has not meaningfully changed.
 
 ```text
 NSE universe
-    → deterministic prefilter
+    → deterministic prefilter + scan-aware suppression
     → contextual retrieval
-    → specialist technical reasoning
+    → parallel specialist agents
+    → risk intelligence
     → evidence verification
     → opportunity ranking
     → Daily Scan
 ```
 
-This routing matters. Model calls are concentrated on names where additional reasoning can actually change the decision, rather than sending every ticker through one expensive general-purpose analysis step.
+This is an orchestrated DAG, not a single prompt. Feature generation, retrieval, and independent specialist stages overlap where their dependencies allow, so wall-clock latency follows the critical path rather than the sum of every task. Model calls are concentrated on names where additional reasoning can actually change the decision, rather than sending every ticker through one expensive general-purpose analysis step.
 
 ## Retrieval before reasoning
 
@@ -44,9 +45,9 @@ That retrieval layer gives the model a working memory for the decision. The resu
 
 ## Specialized analysis, not a single prompt
 
-For the candidates that survive prefiltering, specialist stages examine the technical picture: trend and moving-average structure, volume and participation, momentum confirmation, and supported swing patterns. A regime-aware layer then assesses those findings against the wider NSE tape and leadership context.
+For the candidates that survive prefiltering, a technical agent examines trend, moving-average structure, volume, and momentum; a pattern agent evaluates supported swing geometry; and a market agent assesses the broader NSE tape and leadership context. These stages emit compact structured findings instead of adding to a shared free-form conversation.
 
-The same chart can mean different things in a supportive market and a hostile one. Treating stock-level signals and market-level conditions as a single decision frame is central to the system's design.
+An independent risk stage then looks for extension, conflicting signals, and a usable invalidation level. Attractive structure alone is not enough: the setup needs a clear way to be wrong. The same chart can mean different things in a supportive market and a hostile one, so stock-level signals and market-level conditions are treated as one decision frame.
 
 ## Evidence is part of the product
 
@@ -59,12 +60,13 @@ The surviving setups are ranked across the universe by the quality of their evid
 | Deterministic computation | Establishes repeatable technical conditions and broad coverage. |
 | Contextual retrieval | Supplies the relevant history, sector view, and market regime. |
 | Specialist reasoning | Interprets chart structure and confirmation signals. |
+| Risk intelligence | Tests extension, conflicts, and a defined invalidation. |
 | Verification | Filters unsupported or internally inconsistent findings. |
 | Ranking | Produces a concise opportunity set for the research desk. |
 
 ## Why this framing matters
 
-MarketLane is not a chatbot that comments on a chart after the fact. It is a market-intelligence workflow with memory, verification, and ranking built into the path from discovery to review. Operators retain control over the universe, coverage, and final decision; the system makes that attention allocation more systematic.
+MarketLane is not a chatbot that comments on a chart after the fact. It is a market-intelligence workflow with memory, routing, specialist agents, verification, and ranking built into the path from discovery to review. Operators retain control over the universe, coverage, scan launch/cancellation, and final decision; the system makes that attention allocation more systematic.
 
 <p class="backlink"><a href="/projects/">← Back to projects</a></p>
 
