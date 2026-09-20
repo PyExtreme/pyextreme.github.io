@@ -6,6 +6,8 @@ type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'P
 
 interface Contribution {
 	project: string;
+	repository?: string;
+	repositoryUrl?: string;
 	issueNumber: string;
 	title: string;
 	contributionType: string;
@@ -23,6 +25,8 @@ interface Contribution {
 const contributions: Contribution[] = [
 	{
 		project: 'vLLM',
+		repository: 'vllm-project/vllm',
+		repositoryUrl: 'https://github.com/vllm-project/vllm',
 		issueNumber: '#57650',
 		title: 'Exception-safe EngineCore initialization',
 		contributionType: 'Lifecycle correctness',
@@ -34,6 +38,21 @@ const contributions: Contribution[] = [
 		concepts: ['Process lifecycle', 'Resource ownership', 'Exception safety'],
 		detailHref: '/open-source/vllm-57650/',
 	},
+	{
+		project: 'llm-d',
+		repository: 'llm-d/llm-d-router',
+		repositoryUrl: 'https://github.com/llm-d/llm-d-router',
+		issueNumber: '#2488',
+		title: 'Advisory flow-control band headroom',
+		contributionType: 'Flow-control feedback',
+		technicalArea: 'LLM request routing',
+		status: 'PR Open',
+		issueUrl: 'https://github.com/llm-d/llm-d-router/issues/2488',
+		prUrl: 'https://github.com/llm-d/llm-d-router/pull/2945',
+		shortSummary: 'Expose live request headroom for the effective priority band through an advisory response header.',
+		concepts: ['Flow control', 'Envoy ext_proc', 'Response-time sampling'],
+		detailHref: '/open-source/llm-d-router-2488/',
+	},
 ];
 ---
 
@@ -42,7 +61,7 @@ const contributions: Contribution[] = [
 		<header class="page-header">
 			<p class="eyebrow">Open source</p>
 			<h1>Contributions</h1>
-			<p>A structured record of work across AI infrastructure projects, including vLLM, llm-d, llm-d-router, SGLang, and related systems.</p>
+			<p>A structured record of work across AI infrastructure projects and open-source serving systems.</p>
 		</header>
 		<section class="contributions" aria-labelledby="contributions-title">
 			<div class="list-heading">

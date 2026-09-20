@@ -1,0 +1,104 @@
+---
+title: Advisory Flow-Control Band Headroom in llm-d-router
+description: A response-time advisory header that exposes live request headroom for the effective flow-control band in llm-d-router.
+---
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+<BaseLayout title="Advisory Flow-Control Band Headroom in llm-d-router" description="A response-time advisory header that exposes live request headroom for the effective flow-control band in llm-d-router.">
+<div class="article contribution-note">
+
+<p class="eyebrow"><a href="https://github.com/llm-d/llm-d-router">llm-d/llm-d-router</a> / Issue #2488</p>
+
+# Advisory Flow-Control Band Headroom in llm-d-router
+
+<p class="article-lede">A response-time advisory header that exposes current request headroom for the priority band that actually handled a request.</p>
+
+## Repository context
+
+[`llm-d/llm-d-router`](https://github.com/llm-d/llm-d-router) is the request-routing and endpoint-selection component in the llm-d serving stack. It handles inference routing, endpoint discovery, scheduling, flow control, admission control, prioritization, fairness, Envoy `ext_proc` integration, and serving metadata.
+
+This contribution operates across the flow-control admission and `ext_proc` response-header paths:
+
+```text
+Client → Gateway / Envoy → llm-d Router / EPP → Model server / vLLM
+                              ├─ admission
+                              ├─ scheduling
+                              └─ endpoint selection
+```
+
+## The issue
+
+Issue [#2488](https://github.com/llm-d/llm-d-router/issues/2488) asks the router to expose the advisory response header:
+
+```text
+x-llm-d-flow-band-headroom-requests
+```
+
+For a bounded priority band, the value is the configured request capacity minus the band's current length, clamped to zero. A band with capacity `100` and length `81` therefore reports `19`. The value is advisory rather than a reservation: multiple clients can observe the same headroom concurrently.
+
+This gives an upstream asynchronous dispatcher feedback from the router instead of requiring it to discover capacity by submitting work until requests are rejected.
+
+## Response-time sampling
+
+The value must be read during Envoy's `ext_proc` response-headers phase. Queue occupancy can change substantially while the model processes the request, so admission-time caching would be stale.
+
+The design separates two concerns:
+
+```text
+Admission time: remember which band handled the request
+Response time:  read how full that band is now
+```
+
+## Effective priority propagation
+
+The subtle part is identifying the band that actually admitted the request. A request may ask for priority `5`, while the flow controller falls back to priority `0` because band `5` is not provisioned. Recomputing that fallback during response processing is unsafe because the control plane may provision band `5` in the meantime.
+
+The implementation keeps requested priority and effective flow-control priority separate. `FlowController` returns the effective `FlowKey` from the enqueue path, while the admission controller stores that effective priority in `RequestContext` only after successful dispatch.
+
+```text
+requested FlowKey: { priority: 5 }
+effective FlowKey: { priority: 0 }
+```
+
+Rejected, expired, or cancelled requests do not receive an admitted-band value.
+
+## Response header behavior
+
+The response layer uses a narrow, read-only capacity interface:
+
+```text
+CapacityReader
+    CapacitySnapshot(priority)
+```
+
+At response-header time it reads the live snapshot for the effective priority and computes headroom from request capacity and queue length. The header is omitted when the band is unbounded, the request was not admitted through flow control, the effective band cannot be resolved, snapshot reading fails, or no capacity reader is available. Capacity lookup failure does not turn a successful inference request into an error.
+
+The header is EPP-owned. Any backend-provided copy is removed or replaced so a model server cannot spoof the advisory signal.
+
+## Tests
+
+The focused coverage includes normal dispatch, priority fallback, bounded remaining capacity, full and over-capacity bands, unbounded capacity, missing bands, snapshot errors, non-admitted requests, backend-header ownership, shared registry wiring, and explicit response-time sampling.
+
+A response-time regression test changes the observed queue length before response generation and verifies that the emitted value uses the newer observation rather than the admission-time snapshot.
+
+## Why it matters
+
+The change provides a direct feedback loop from router state to an upstream dispatch gate:
+
+```text
+router response → remaining band capacity → dispatch window adjustment
+```
+
+It is more than HTTP-header plumbing: the implementation carries the correct flow-control identity across request lifecycle boundaries while keeping the capacity value a live response-time observation.
+
+## Links
+
+- [llm-d/llm-d-router repository](https://github.com/llm-d/llm-d-router)
+- [Issue #2488](https://github.com/llm-d/llm-d-router/issues/2488)
+- [Pull request #2945](https://github.com/llm-d/llm-d-router/pull/2945)
+
+<p class="backlink"><a href="/open-source/">← Back to open-source contributions</a></p>
+
+</div>
+</BaseLayout>
