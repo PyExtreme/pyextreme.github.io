@@ -53,6 +53,21 @@ const contributions: Contribution[] = [
 		concepts: ['Flow control', 'Envoy ext_proc', 'Response-time sampling'],
 		detailHref: '/open-source/llm-d-router-2488/',
 	},
+	{
+		project: 'vLLM Router',
+		repository: 'vllm-project/router',
+		repositoryUrl: 'https://github.com/vllm-project/router',
+		issueNumber: '#299',
+		title: 'Persistent worker state for discovered P/D routing',
+		contributionType: 'Routing lifecycle correctness',
+		technicalArea: 'LLM inference routing',
+		status: 'PR Open',
+		issueUrl: 'https://github.com/vllm-project/router/issues/299',
+		prUrl: 'https://github.com/vllm-project/router/pull/311',
+		shortSummary: 'Preserve discovered prefill/decode worker state across routing decisions, synchronize cache-aware membership with registration lifetimes, and track phase-correct load through cancellation and streaming response completion.',
+		concepts: ['Persistent worker identity', 'P/D disaggregation', 'Cache-aware routing', 'Service discovery', 'Concurrency', 'RAII', 'Streaming lifecycle'],
+		detailHref: '/open-source/vllm-router-299-portfolio/',
+	},
 ];
 ---
 
