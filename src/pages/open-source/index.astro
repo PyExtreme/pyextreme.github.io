@@ -3,6 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import ContributionCard from '../../components/ContributionCard.astro';
 
 type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'PR Open' | 'Merged' | 'Closed';
+type ContributionComplexity = 'Simple' | 'Medium' | 'Hard';
 
 interface Contribution {
 	project: string;
@@ -13,6 +14,8 @@ interface Contribution {
 	contributionType: string;
 	technicalArea: string;
 	status: ContributionStatus;
+	date: string;
+	complexity: ContributionComplexity;
 	issueUrl?: string;
 	prUrl?: string;
 	commitUrl?: string;
@@ -32,6 +35,8 @@ const contributions: Contribution[] = [
 		contributionType: 'Lifecycle correctness',
 		technicalArea: 'LLM inference infrastructure',
 		status: 'Implementation',
+		date: '2026-09-19',
+		complexity: 'Hard',
 		issueUrl: 'https://github.com/vllm-project/vllm/issues/57650',
 		commitUrl: 'https://github.com/vllm-project/vllm/compare/main...PyExtreme:vllm:fix/engine-core-init-worker-cleanup',
 		shortSummary: 'Deterministic rollback for executor, scheduler, and GC state when EngineCore startup fails after resource acquisition.',
@@ -47,6 +52,8 @@ const contributions: Contribution[] = [
 		contributionType: 'Flow-control feedback',
 		technicalArea: 'LLM request routing',
 		status: 'PR Open',
+		date: '2026-09-20',
+		complexity: 'Medium',
 		issueUrl: 'https://github.com/llm-d/llm-d-router/issues/2488',
 		prUrl: 'https://github.com/llm-d/llm-d-router/pull/2945',
 		shortSummary: 'Expose live request headroom for the effective priority band through an advisory response header.',
@@ -62,6 +69,8 @@ const contributions: Contribution[] = [
 		contributionType: 'Routing lifecycle correctness',
 		technicalArea: 'LLM inference routing / Prefill-Decode disaggregation',
 		status: 'PR Open',
+		date: '2026-09-25',
+		complexity: 'Hard',
 		issueUrl: 'https://github.com/vllm-project/router/issues/299',
 		prUrl: 'https://github.com/vllm-project/router/pull/311',
 		shortSummary: 'Persistent discovery workers, generation-aware lifecycle reconciliation, cache-aware membership, and phase-correct load accounting for vLLM prefill/decode routing.',
@@ -69,6 +78,8 @@ const contributions: Contribution[] = [
 		detailHref: '/open-source/vllm-router-299-portfolio/',
 	},
 ];
+
+contributions.sort((a, b) => b.date.localeCompare(a.date));
 ---
 
 <BaseLayout title="Open Source | Ankit Jha">
@@ -83,7 +94,25 @@ const contributions: Contribution[] = [
 				<p class="eyebrow">Contribution log</p>
 				<h2 id="contributions-title">Issues, systems, and fixes</h2>
 			</div>
-			<div class="contribution-list">
+			<div class="contribution-controls" aria-label="Contribution filters">
+				<label>
+					<span>Sort by date</span>
+					<select id="date-sort">
+						<option value="desc" selected>Latest first</option>
+						<option value="asc">Oldest first</option>
+					</select>
+				</label>
+				<label>
+					<span>Complexity</span>
+					<select id="complexity-filter">
+						<option value="All" selected>All complexities</option>
+						<option value="Simple">Simple</option>
+						<option value="Medium">Medium</option>
+						<option value="Hard">Hard</option>
+					</select>
+				</label>
+			</div>
+			<div class="contribution-list" id="contribution-list">
 				{contributions.map((contribution) => <ContributionCard contribution={contribution} />)}
 			</div>
 		</section>
@@ -98,6 +127,33 @@ const contributions: Contribution[] = [
 	.list-heading { margin-bottom: 36px; }
 	.list-heading .eyebrow { margin-bottom: 14px; }
 	.list-heading h2 { font-size: clamp(28px, 5vw, 46px); }
+	.contribution-controls { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 36px; }
+	.contribution-controls label { display: grid; gap: 8px; color: var(--muted); font: 11px 'DM Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase; }
+	.contribution-controls select { min-width: 170px; padding: 10px 32px 10px 12px; border: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--paper); font: 12px 'DM Mono', monospace; text-transform: none; }
 	.contribution-list { max-width: 100%; }
 	@media (max-width: 640px) { .listing-page { padding: 80px 0 110px; } }
 </style>
+
+<script>
+	const list = document.querySelector<HTMLElement>('#contribution-list');
+	const dateSort = document.querySelector<HTMLSelectElement>('#date-sort');
+	const complexityFilter = document.querySelector<HTMLSelectElement>('#complexity-filter');
+
+	if (list && dateSort && complexityFilter) {
+		const cards = Array.from(list.querySelectorAll<HTMLElement>('.contribution-card'));
+
+		const updateContributions = () => {
+			const direction = dateSort.value === 'asc' ? 1 : -1;
+			const complexity = complexityFilter.value;
+			cards
+				.sort((a, b) => direction * (a.dataset.date ?? '').localeCompare(b.dataset.date ?? ''))
+				.forEach((card) => {
+					card.hidden = complexity !== 'All' && card.dataset.complexity !== complexity;
+					list.append(card);
+				});
+		};
+
+		dateSort.addEventListener('change', updateContributions);
+		complexityFilter.addEventListener('change', updateContributions);
+	}
+</script>
