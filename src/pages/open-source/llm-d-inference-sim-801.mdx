@@ -1,0 +1,320 @@
+---
+title: Fixing a Cross-Request Data Race in llm-d-inference-sim
+description: Stopping a streaming goroutine from writing to a pooled fasthttp RequestCtx after client disconnect, which caused unrelated requests to fail with 404 or 500.
+---
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+<BaseLayout title="Fixing a Cross-Request Data Race in llm-d-inference-sim" description="Stopping a streaming goroutine from writing to a pooled fasthttp RequestCtx after client disconnect, which caused unrelated requests to fail with 404 or 500.">
+<div class="article contribution-note">
+
+<p class="eyebrow"><a href="https://github.com/llm-d/llm-d-inference-sim">llm-d/llm-d-inference-sim</a> / Issue #801</p>
+
+# Fixing a Cross-Request Data Race in llm-d-inference-sim
+
+<p class="article-lede">A streaming goroutine kept writing to a request object that fasthttp had already recycled for another client. Moving ownership back to the server fixed all three affected paths, and the compiler now enforces it.</p>
+
+| Field | Details |
+| --- | --- |
+| Project | [llm-d-inference-sim](https://github.com/llm-d/llm-d-inference-sim), an open source vLLM simulator in the llm-d project |
+| Issue | [#801](https://github.com/llm-d/llm-d-inference-sim/issues/801) |
+| Pull request | [#803: Stop stream goroutine from using ctx after SetBodyStream](https://github.com/llm-d/llm-d-inference-sim/pull/803) |
+| Stack | Go, fasthttp, Server-Sent Events (SSE), Ginkgo/Gomega, Go race detector, Python (reproducer) |
+## TL;DR
+
+When a client disconnected in the middle of a streaming response, a background goroutine kept writing to a
+request object that the HTTP server had already recycled for a *different* client. As a result, unrelated
+requests, such as Prometheus scrapes of `/metrics`, intermittently got `404 Not Found` or `500` instead of `200`.
+
+The fix moves ownership of the request object back to the server once streaming starts. The streaming
+goroutine no longer has access to the request at all, and the Go compiler now enforces that.
+
+| Metric | Before (main) | After (fix) |
+|---|---|---|
+| Non-200 `/metrics` responses after 20 cancelled streams (40 requests, 3 trials) | 6, 7, 7 | **0, 0, 0** |
+| Normal streams completing with `200` + `[DONE]` afterwards (out of 20) | 16, 18, 16 | **20, 20, 20** |
+| Data races reported by `go build -race` in one reproducer run | 69 | **0** |
+| New regression tests | n/a | Fail on main, pass on fix (30/30 runs under `-race`) |
+| Integration suite (`pkg/tests`) | n/a | 819 passed, 0 failed |
+
+The "before" numbers come from the issue report; the "after" numbers were measured locally with the same reproducer.
+
+
+## 1. Context
+
+`llm-d-inference-sim` imitates the HTTP and gRPC API of vLLM, a production LLM inference server, without
+loading a real model. Teams use it to load-test routers and gateways, run integration tests, and reproduce
+production scenarios on a laptop with no GPU.
+
+Because it's a **testing tool**, correctness matters more than usual. A simulator that sends wrong status
+codes under load makes the *system under test* look broken. That leads to false alarms in benchmarks and
+wasted debugging time for its users.
+
+## 2. The Problem
+
+### Symptom
+
+The bug was reported by a community member, who found it in a load-generator benchmark. When the load
+generator hit its deadline and closed its open streams, the **next** `/metrics` scrape sometimes failed.
+
+- On `main`: `404 Not Found` for `GET /metrics` and even `POST /v1/completions`
+- On release v0.11.2: `500` for `GET /metrics`, but with a complete, valid metrics body
+
+The expected behavior was simple: one client disconnecting should affect only that client.
+
+### Why it was hard to see
+
+- **Intermittent.** Only some requests failed, depending on timing.
+- **Non-local.** The failing request (`/metrics`) had nothing to do with the request that caused the failure
+  (a cancelled completion stream on a different TCP connection).
+- **Contradictory signals.** A `500` status with a perfectly valid response body points to something
+  outside the handler that produced the body.
+
+These are the hallmarks of a **data race on shared, pooled memory**.
+
+## 3. Background Concepts
+
+### 3.1 Streaming with a pipe and a background goroutine
+
+The server streams tokens using Server-Sent Events. The handler doesn't produce the whole response at once:
+
+```
+Handler goroutine                        Background streaming goroutine
+-----------------                        ------------------------------
+create io.Pipe (reader pr, writer pw)
+start goroutine  --------------------->  loop: write next SSE chunk to pw
+ctx.Response.SetBodyStream(pr)                 (one chunk per generated token)
+return                                   write [DONE], close pw
+
+fasthttp copies pr -> TCP socket
+```
+
+The key point is that **the handler returns before the response is finished**. The goroutine outlives it.
+
+### 3.2 Object pooling in fasthttp
+
+fasthttp is built for high throughput and avoids allocating per request. Each request is served with a
+`*fasthttp.RequestCtx` taken from a `sync.Pool`. When the request finishes, fasthttp resets the ctx and returns
+it to the pool, so the next request on *any* connection may receive the same object.
+
+This creates an implicit **ownership contract**: application code may use `ctx` only while fasthttp considers
+the request active. After that, the memory belongs to someone else.
+
+### 3.3 HTTP status lines are one-shot
+
+Once `SetBodyStream` is called, fasthttp sends `HTTP/1.1 200 OK` and the SSE headers before reading any body
+bytes. After that point, a status code can't be changed. A late `SetStatusCode(500)` can never reach the
+original client.
+
+## 4. Root Cause Analysis
+
+### 4.1 The failure sequence
+
+| Time | Client A (streaming) | Server | Client B (Prometheus) |
+|---|---|---|---|
+| t0 | `POST /v1/completions`, `stream: true` | Pool gives **ctx #7** to A; handler starts the goroutine and returns | |
+| t1 | Receives first tokens | Goroutine writes chunks into the pipe | |
+| t2 | **Closes the socket** | fasthttp's socket write fails; it closes the pipe, **resets ctx #7 and returns it to the pool** | |
+| t3 | | Pool gives **ctx #7 to B** | `GET /metrics` |
+| t4 | | Goroutine's next write fails with `io: read/write on closed pipe` | |
+| t5 | | Goroutine "reports" the error: **reads `ctx.Path()` and writes status 500 into ctx #7** | |
+| t6 | | | Receives 404 or 500 |
+
+### 4.2 The faulty code path
+
+```go
+// Inside the streaming goroutine, after a failed write:
+func (c *Communication) chunkSendFailed(ctx *fasthttp.RequestCtx, msg string, err error) {
+    ...
+    c.sendError(ctx, &errToSend, false) // touches a ctx that may belong to another request
+}
+
+func (c *Communication) sendError(ctx *fasthttp.RequestCtx, err *api.Error, ...) {
+    data, _ := json.Marshal(c.errorBody(ctx, *err, false)) // ctx.Path(): parses and caches the URI
+    ctx.SetStatusCode(err.Code)                            // writes status into the shared object
+    ctx.SetBody(data)                                      // writes body into the shared object
+}
+```
+
+An audit of the goroutine found **three** paths that reached `ctx`, not just the one in the report:
+
+| Path | Trigger | ctx access |
+|---|---|---|
+| A | Write fails after client disconnect | `ctx.Path()`, `SetStatusCode`, `SetBody` |
+| B | Simulator emits an error mid-stream | `ctx.Path()` (to choose the error format per API family) |
+| C | Defensive "missing choice" guard after the stream loop | `ctx.Path()`, `SetStatusCode`, `SetBody` |
+
+Fixing only path A, the one in the reproducer, would have left the same bug in two other places.
+
+### 4.3 Why two different symptoms
+
+- **v0.11.2 (500):** The late `SetStatusCode(500)` landed on a recycled ctx. The `/metrics` handler
+  (Prometheus via `fasthttpadaptor`) doesn't set a status on success, so it inherited the stale 500 while
+  writing a correct body.
+- **main (404):** A newer change added `ctx.Path()` to the error path. `Path()` lazily parses and caches the
+  URI, so it **mutates** the ctx. Called concurrently with fasthttp's reset, it most likely leaves a wrong
+  cached path behind, and the router answers 404. The race detector confirmed the concurrent access, though
+  the exact interleaving wasn't traced instruction by instruction.
+
+### 4.4 Evidence
+
+- A race-enabled build reported 69 data races in one run, all through
+  `sendOrFail -> chunkSendFailed -> sendError` racing with `fasthttp.(*Server).releaseCtx -> (*RequestCtx).reset`.
+- A controlled experiment in the issue (making `chunkSendFailed` log only) eliminated all failures.
+
+## 5. Solution Design
+
+### 5.1 Guiding principle
+
+> A goroutine that outlives an HTTP handler must not hold a reference to the request object.
+> Copy out what it needs *before* it starts.
+
+### 5.2 Options considered
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Patch only path A (log instead of `sendError`) | Rejected as incomplete | Paths B and C keep the same race |
+| Add a mutex around ctx access | Rejected | fasthttp's own reset doesn't take our lock; it can't protect memory we don't own |
+| Make the handler wait for the goroutine before returning | Rejected | Defeats streaming; fasthttp only starts sending the body after the handler returns |
+| Make `/metrics` set its status explicitly | Rejected | Hides one symptom; other endpoints and the race remain. The project's contributing guide discourages speculative hardening. |
+| **Remove `ctx` from the goroutine's scope entirely** | **Chosen** | Fixes all three paths and lets the compiler prevent regressions |
+
+### 5.3 The changes
+
+**1. Write failures are logged, not "reported" to the client.** The status line was already sent, and the
+client is gone, so there's no one to report to. Logging keeps the only useful outcome, which is operator
+visibility.
+
+```go
+// chunkSendFailed logs a failed write to the stream. The client has already
+// received the status line, so nothing more can be reported to it.
+func (c *Communication) chunkSendFailed(msg string, err error) { ... c.logger.Error(...) }
+```
+
+**2. Request data is captured before the goroutine starts.** The only thing the goroutine needed from
+`ctx` was the URL path, used to choose the error format (`/v1/messages`, `/v1/responses` or default).
+That's now computed once, while the handler still owns ctx, and passed in as a plain value:
+
+```go
+func (c *Communication) sendStream(ctx *fasthttp.RequestCtx, ...) {
+    pr, pw := io.Pipe()
+    route := errorRoute(string(ctx.Path())) // safe: handler still owns ctx
+
+    go func() {
+        ... c.sendStreamErrorAndDone(route, w, respBuilder, response.Err) ...
+    }()
+
+    ctx.Response.SetBodyStream(pr, -1)
+}
+```
+
+**3. Errors after the stream starts travel through the stream.** The missing-choice guard now sends an SSE
+error frame plus the stream terminator, the same as every other mid-stream error. Before, it silently cut
+the stream, so a real client never learned what went wrong.
+
+**4. Compile-time enforcement.** `ctx` was removed from the signatures of every streaming helper
+(`sendOrFail`, `emitResponseChunks`, `finalizeStream`, `chunkSendFailed`, `sendStreamErrorAndDone`).
+With no `ctx` in scope, a future change can't reintroduce the bug without visibly changing a function
+signature in code review.
+
+**Scope:** two files, about 110 lines added, all in `pkg/communication/`. No new dependencies, no API
+changes, no unrelated refactoring.
+
+## 6. Testing Strategy
+
+### 6.1 Test first, and prove the test can fail
+
+The new white-box test simulates a client disconnect deterministically, without sockets or sleeps:
+
+1. Start a real simulator and send a streaming request.
+2. Call `sendStream` with a fresh `RequestCtx`. Nothing reads the pipe, so the goroutine blocks on its
+   first write.
+3. **Close the read end of the pipe.** This is exactly what fasthttp does when the client disconnects.
+4. Wait, using a captured logger (`funcr`), until the "closed pipe" failure is logged.
+5. Assert with `Consistently` that the ctx still holds `200` and `text/event-stream`.
+
+To show the test really detects the bug, I ran it against unmodified `main` in a **separate git
+worktree**, which leaves the working branch untouched. It failed as expected (`Expected 500 to equal 200`)
+and the race detector flagged the access.
+
+### 6.2 Fixing a test that encoded the bug
+
+An existing test for the missing-choice guard **asserted the buggy behavior**: it expected status 500 on the
+ctx and a forcibly closed stream. Its own comment admitted that a real client could never observe that
+500. The test was rewritten to check what a client actually receives: an error frame and `[DONE]` in the
+stream body, with the status unchanged. It still guards against the original concern, a nil-pointer
+panic in the goroutine.
+
+### 6.3 Verification matrix
+
+| Level | What | Result |
+|---|---|---|
+| Unit (white-box) | New disconnect test + rewritten missing-choice test, `-race`, 30 repeated runs | 30/30 pass |
+| Package | `pkg/communication` with `-race` | Pass |
+| Integration | `pkg/tests` (real HTTP server, all endpoints) | 819 passed, 0 failed |
+| End to end | Issue's Python reproducer vs a `-race` server binary, 3 fresh-server trials | 0 non-200, 20/20 streams, 0 races |
+| Static | `gofmt`, `golangci-lint`, `go vet`, `go mod tidy` | Clean |
+
+## 7. Challenges Along the Way
+
+| Challenge | How it was handled |
+|---|---|
+| Intermittent, timing-dependent bug | Used the race detector for deterministic proof instead of relying on reproduction counts alone |
+| Simulating a disconnect in a unit test without flaky sleeps | Closed the pipe's read end directly, reproducing fasthttp's behavior exactly |
+| Verifying a new test fails on the old code without disturbing the work in progress | Temporary `git worktree` on `main` with only the test file copied in |
+| Ginkgo doesn't allow `go test -count=N` | Compiled the test binary once (`go test -race -c`) and looped it 30 times |
+| `make format` rewrites files in place | Used read-only equivalents (`gofmt -l`, `golangci-lint fmt --diff`) during review |
+| `make presubmit` needed an `upstream` remote and signed commits | Added the upstream remote; configured SSH commit signing alongside DCO sign-off |
+| An existing test encoded the incorrect behavior | Rewrote it around client-observable behavior while keeping its original purpose |
+| Precise 404 mechanism wasn't traced line by line | Documented it as the most likely mechanism, backed by the race report, rather than overstating certainty |
+
+## 8. Engineering Practices
+
+- **Scope discipline.** One issue, one PR. Unrelated observations, such as one error-level log line per
+  client disconnect, were noted for separate follow-up instead of being folded in.
+- **Evidence over assertion.** Every claim in the PR is backed by a command output: failing-then-passing tests,
+  race detector results and the end-to-end reproducer.
+- **Open source etiquette.** Followed the project's contributing guide: an issue-linked PR, the PR template, DCO
+  sign-off, signed commits, the presubmit gate, and credit to the reporter's analysis.
+- **Root cause over symptom.** Fixed the ownership violation itself instead of making `/metrics`
+  immune to stale statuses.
+
+## 9. Skills Demonstrated
+
+| Area | Specifics |
+|---|---|
+| Concurrency | Goroutine lifetimes, data races, happens-before reasoning, Go race detector |
+| Systems / networking | HTTP/1.1 response lifecycle, SSE streaming, TCP disconnect semantics, `io.Pipe` back-pressure |
+| Performance-oriented design | `sync.Pool` object reuse and the ownership contracts it imposes |
+| API design | Making invariants compiler-enforced by narrowing function signatures |
+| Debugging | Turning an intermittent, non-local symptom into a deterministic, proven root cause |
+| Testing | Test-first regression tests, deterministic fault injection, `Eventually`/`Consistently` assertions, proving tests fail on the buggy code |
+| Tooling | git worktrees, Ginkgo, golangci-lint, SSH commit signing, Makefile-driven CI gates |
+| Communication | Root-cause write-up, trade-off analysis, a scoped and reviewable PR |
+
+## 10. Key Takeaways
+
+1. **Pooled objects have lifetimes, not just types.** The type system said `ctx` was valid; the runtime said it
+   belonged to someone else. Respecting implicit ownership contracts is part of using a high-performance library.
+2. **A goroutine that outlives its creator must own its inputs.** Copy values in; never share request-scoped
+   pointers.
+3. **Audit the pattern, not just the reported line.** The report pointed at one call path; two more had the
+   same defect.
+4. **A test is only evidence if it can fail.** Running the new tests against the unfixed code proved they
+   detect the bug.
+5. **Tests can encode bugs.** An existing test was asserting behavior no real client could observe. Testing
+   client-visible behavior keeps tests honest.
+
+
+_Bug report and initial root-cause analysis by the issue reporter. Fix, test design and verification by the author._
+
+## Links
+
+- [llm-d/llm-d-inference-sim repository](https://github.com/llm-d/llm-d-inference-sim)
+- [Issue #801](https://github.com/llm-d/llm-d-inference-sim/issues/801)
+- [Pull request #803](https://github.com/llm-d/llm-d-inference-sim/pull/803)
+
+<p class="backlink"><a href="/open-source/">← Back to open-source contributions</a></p>
+
+</div>
+</BaseLayout>
