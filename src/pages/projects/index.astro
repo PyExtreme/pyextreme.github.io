@@ -1,27 +1,27 @@
 ---
+import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
 import ProjectCard from '../../components/ProjectCard.astro';
+
+const projects = (await getCollection('projects', ({ data }) => !data.draft)).sort((a, b) => a.data.order - b.data.order);
 ---
 
-<BaseLayout title="Projects | Ankit Jha">
-	<main class="listing-page">
-		<header class="page-header">
-			<p class="eyebrow">Projects</p>
-			<h1>Selected work</h1>
-			<p>Notes on building and operating AI systems. Detailed case studies will be added as each project is documented.</p>
-		</header>
+<BaseLayout title="Projects" description="Case studies on building and operating production AI systems: market intelligence, retrieval infrastructure, and agent evaluation.">
+	<main id="main" class="listing-page">
+		<PageHeader eyebrow="Projects" title="Case studies">
+			<p>Systems I designed and built, written up with the architecture, the trade-offs, and what the results showed.</p>
+		</PageHeader>
 		<div class="project-list">
-			<ProjectCard number="01" title="MarketLane AI" description="Agentic stock-market intelligence for active NSE investors" href="/projects/marketlane-ai/" />
-			<ProjectCard number="02" title="MarketLane Research RAG" description="A retrieval system for evidence-grounded market research" href="/projects/marketlane-research-rag/" />
-			<ProjectCard number="03" title="AI Incident Commander" description="A pre-registered test of multi-agent vs single-agent incident diagnosis" href="/projects/ai-incident-commander/" />
+			{projects.map((project, index) => (
+				<ProjectCard
+					number={String(index + 1).padStart(2, '0')}
+					title={project.data.title}
+					description={project.data.description}
+					href={`/projects/${project.id}/`}
+					chips={[project.data.kind, String(project.data.year), ...project.data.stack.slice(0, 3)]}
+				/>
+			))}
 		</div>
 	</main>
 </BaseLayout>
-
-<style>
-	.listing-page { padding: 112px 0 160px; }
-	.page-header { max-width: 620px; margin-bottom: 72px; }
-	.page-header h1 { margin-bottom: 24px; font-size: clamp(48px, 8vw, 88px); }
-	.page-header > p:last-child { max-width: 470px; color: var(--muted); line-height: 1.7; }
-	@media (max-width: 640px) { .listing-page { padding: 80px 0 110px; } }
-</style>

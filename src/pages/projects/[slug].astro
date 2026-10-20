@@ -1,0 +1,61 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TableOfContents from '../../components/TableOfContents.astro';
+import '../../styles/prose.css';
+import '../../styles/article.css';
+
+export async function getStaticPaths() {
+	const projects = await getCollection('projects', ({ data }) => !data.draft);
+	return projects.map((project) => ({ params: { slug: project.id }, props: { project } }));
+}
+
+const { project } = Astro.props;
+const { data } = project;
+const { Content, headings } = await render(project);
+const words = (project.body ?? '').split(/\s+/).filter(Boolean).length;
+const minutes = Math.max(1, Math.round(words / 220));
+const pageTitle = data.headline ?? data.title;
+const eyebrow = [data.kind, String(data.year), data.headline ? data.title : null].filter(Boolean).join(' · ');
+---
+
+<BaseLayout title={pageTitle} description={data.description} type="article">
+	<main id="main" class="article-page">
+		<header class="article-header">
+			<p class="eyebrow">{eyebrow}</p>
+			<h1 class="display-1">{pageTitle}</h1>
+			{data.lede && <p class="lede">{data.lede}</p>}
+			<dl class="article-meta">
+				{data.stack.length > 0 && (
+					<div>
+						<dt>Stack</dt>
+						<dd><ul class="chip-list">{data.stack.map((item) => <li class="chip">{item}</li>)}</ul></dd>
+					</div>
+				)}
+				{data.outcome && (
+					<div>
+						<dt>Outcome</dt>
+						<dd>{data.outcome}</dd>
+					</div>
+				)}
+				<div>
+					<dt>Reading time</dt>
+					<dd>{minutes} min{data.updated && ` · updated ${data.updated}`}</dd>
+				</div>
+				{data.links.length > 0 && (
+					<div>
+						<dt>Links</dt>
+						<dd class="article-links">
+							{data.links.map((link) => <a href={link.href} target="_blank" rel="noopener noreferrer">{link.label}<span aria-hidden="true"> ↗</span></a>)}
+						</dd>
+					</div>
+				)}
+			</dl>
+		</header>
+		<div class="article-layout">
+			<aside class="article-aside"><TableOfContents headings={headings} /></aside>
+			<div class="prose"><Content /></div>
+		</div>
+		<p class="backlink"><a href="/projects/">← All projects</a></p>
+	</main>
+</BaseLayout>
