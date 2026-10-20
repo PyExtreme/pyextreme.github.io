@@ -7,6 +7,32 @@
 
 ---
 
+## 0. Implementation status (branch `ui/high-severity-fixes`, 2026-10-20)
+
+Everything rated **High** in this review has been implemented on the branch, plus the Critical items that needed no information from the author. Items still open are listed at the end.
+
+**Done**
+
+- Content now lives in two Astro content collections (`src/content/projects`, `src/content/contributions`) with Zod schemas. Both detail routes (`src/pages/projects/[slug].astro`, `src/pages/open-source/[slug].astro`) render the layout, metadata, a table of contents, reading time and a back link from the data. The vLLM Router #299 write-up, previously shipped with no layout, now renders like every other page at `/open-source/vllm-router-299/`.
+- One `<h1>` per page everywhere. The MarketLane case studies' 25 and 27 h1 headings are now h2/h3. Both pages have a sticky table of contents on desktop.
+- Stylesheet split into `src/styles/global.css`, `prose.css`, `article.css`; page-specific rules moved into scoped component styles. New components: `PageHeader`, `StatStrip`, `StatusPill`, `TableOfContents`, `SiteFooter`. Full article type scale (h2/h3/h4, blockquote, hr, tables in ink, code).
+- Homepage: hero states name, "Staff AI Engineer", years, and three calls to action; a stats strip computed from the data; data-driven case-study cards with metadata chips; a merged-first open-source section; "What I work on" rewritten as five area-plus-evidence blocks that link to the case studies. "Systems in progress" and the Notes placeholder are gone.
+- Open-source listing: stats strip (contributions, merged, PRs open, repositories); compact cards; filled accent "Merged" pill; status, complexity and order filters with an empty state; `dt`/`dd` markup fixed.
+- Project cards use `56px 1fr auto` columns instead of `1fr 2fr auto`. The accent colour is now used for the primary CTA, the merged pill, the active nav underline and blockquote rules.
+- Page titles get the "| Ankit Jha" suffix from the layout. Canonical URL, Open Graph and Twitter meta, JSON-LD Person, `@astrojs/sitemap`, `robots.txt`, a styled `404.astro`, `initial-scale=1`, a skip link, focus-visible styles, active nav state, and `--muted` darkened to 5.65:1.
+- Footer and nav link to the real GitHub profile. LinkedIn, email and résumé render automatically once set in `src/data/site.ts`.
+- Removed the `marketlane-daily-scan` stub and the Notes page; removed the "will be added" copy on the Projects page.
+
+**Still open (needs input from the author)**
+
+- LinkedIn URL, contact email and a résumé PDF (`src/data/site.ts`, marked TODO).
+- About page body: biography and experience timeline.
+- An Open Graph image (`og:image` is not emitted until one exists).
+- Cutting the MarketLane case studies to roughly a third of their length and replacing the main ASCII diagrams with SVG figures.
+- Phase 3 polish: self-hosted fonts, Shiki theme matched to the palette, monogram favicon, dark mode, README.
+
+---
+
 ## 1. Executive summary
 
 The site has a defensible visual direction (editorial, monochrome, big type) and some genuinely strong content (the Incident Commander write-up, the llm-d #801 case study). What holds it back is not the aesthetic. It is that the site reads as **unfinished and anonymous**: placeholders are visible on four of five top-level sections, there is no name, title, seniority, contact, résumé, GitHub or LinkedIn link anywhere that works, and two content pages ship with no layout at all. A recruiter spending 30 seconds on the homepage learns "AI Systems Engineer" and nothing else.
@@ -20,7 +46,7 @@ The ten issues that matter most, in order:
 | 3 | About page, Notes page, and the homepage "Latest" section are literally labelled placeholders | Critical |
 | 4 | Homepage hero says only "AI Systems Engineer". No "Staff", no years, no location, no proof points, no call to action | Critical |
 | 5 | The two MarketLane case studies use 25 and 27 `<h1>` headings each, rendered at up to 110px, and are 1000+ lines with no table of contents | High |
-| 6 | ASCII diagrams in code blocks reach 222 characters wide, forcing horizontal scrolling inside a 760px column even on desktop | High |
+| 6 | ASCII diagrams in code blocks are up to 69 characters wide: they fit the desktop column but scroll sideways on phones | Medium |
 | 7 | Open-source listing gives "Merged" the same visual weight as "Investigating"; there are no summary stats (merged count, projects touched) | High |
 | 8 | Homepage section heading "Systems in progress" and projects page copy "case studies will be added" signal unfinished work | High |
 | 9 | No Open Graph / Twitter card metadata, no canonical URL, no sitemap, no 404 page, no JSON-LD Person schema | High |
@@ -65,7 +91,7 @@ Severity key: **Critical** = broken or actively damages credibility. **High** = 
 | Sev | Finding | Where | Recommendation |
 |---|---|---|---|
 | High | MarketLane AI uses **25 `<h1>`** and MarketLane Research uses **27 `<h1>`**. Each one is styled by the global `h1` rule: `clamp(58px, 9vw, 110px)` with `-0.08em` letter-spacing. Each section header is therefore as large as the page title. The pages are also 1027 and 1282 lines long. | `src/pages/projects/marketlane-ai.mdx`, `src/pages/projects/marketlane-research-rag.mdx`; `h1` rule at `BaseLayout.astro:62` | Demote `# Section` to `##` and `###`, keep one h1 per page. Cut each case study to roughly 1/3 the length with a TL;DR, an architecture figure, and 4-6 sections. Move the full text to a linked "deep dive" if you want to keep it. |
-| High | ASCII box diagrams inside ```` ```text ```` blocks are up to **192, 161 and 222 characters wide**. At 13px DM Mono that is roughly 1,500 to 1,750px, inside a 760px column. Every one of these blocks scrolls horizontally on desktop and is unreadable on a phone. MarketLane AI has 70 code blocks, MarketLane Research 84, the 299 page 48; most are diagrams, not code. | same three files | Replace architecture diagrams with real SVG figures (as the Incident Commander page already does). Keep ASCII only for short flows under 70 characters wide. |
+| Medium | ASCII box diagrams inside ```` ```text ```` blocks are up to **64, 69 and 75 characters wide** (an earlier draft of this review reported 192/222; that measurement counted UTF-8 bytes, not characters). At 13px DM Mono that is 420 to 500px, which fits the desktop column but scrolls sideways on a 390px phone. MarketLane AI has 35 code blocks, MarketLane Research 42, the 299 page 24; most are diagrams, not code. | same three files | Replace the main architecture diagrams with real SVG figures (as the Incident Commander page already does). Keep ASCII only for short flows. |
 | High | No table of contents, reading time, or sticky section nav on 1000+ line pages. No "back to top". Two of the long pages also lack the "← Back to …" link that the others have. | long `.mdx` pages | Generate a ToC from headings (Astro exposes `headings` from MDX). Add a short meta line: date, reading time, status. |
 | High | The global `.article td { color: var(--muted) }` greys out table cells. The best numbers on the site (the before/after metrics table on the llm-d #801 page: 69 races → 0, 6-7 failures → 0) are rendered in muted grey at 14px. | `BaseLayout.astro:76`, `src/pages/open-source/llm-d-inference-sim-801.mdx:30-37` | Table body text should be `--ink`; use muted only for the first column or captions. Consider a dedicated "key results" component. |
 | Medium | `h3`, `h4`, `blockquote`, `hr` have no styles. MarketLane pages use 28 and 32 `---` rules (default bevelled grey browser `<hr>`) and 16 blockquotes (default indent, no bar). The #801 page has 15 h3 headings at browser default size. | `BaseLayout.astro` (missing rules) | Add a complete article type scale: h2/h3/h4, blockquote with a left rule, a thin `hr` in `--line`, figure/figcaption. |
@@ -166,7 +192,7 @@ Severity key: **Critical** = broken or actively damages credibility. **High** = 
 **Phase 2: make the content legible (1-2 days).**
 
 8. Move projects and contributions into content collections with schemas; generate listing pages, metadata tables, ToC and reading time from the data.
-9. Fix heading hierarchy on the MarketLane pages (one h1), cut them to a third, and replace ASCII diagrams with SVG figures.
+9. Fix heading hierarchy on the MarketLane pages (one h1), cut them to a third, and replace the main ASCII diagrams with SVG figures.
 10. Add the article type scale (h2/h3/h4, blockquote, hr, figure, table body in ink).
 11. Redesign the contribution card (compact) and add a stats strip; make "Merged" visually primary.
 12. Fix `.project-card` / `.section-heading` column ratios; add card metadata chips.
