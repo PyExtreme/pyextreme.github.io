@@ -1,182 +1,115 @@
 ---
+import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import StatStrip from '../../components/StatStrip.astro';
 import ContributionCard from '../../components/ContributionCard.astro';
 
-type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'PR Open' | 'Merged' | 'Closed';
-type ContributionComplexity = 'Simple' | 'Medium' | 'Hard';
-
-interface Contribution {
-	project: string;
-	repository?: string;
-	repositoryUrl?: string;
-	issueNumber: string;
-	title: string;
-	contributionType: string;
-	technicalArea: string;
-	status: ContributionStatus;
-	/** Whether the pull request has been merged upstream. Overrides `status` to 'Merged' on the card. */
-	prMerged: boolean;
-	date: string;
-	complexity: ContributionComplexity;
-	issueUrl?: string;
-	prUrl?: string;
-	commitUrl?: string;
-	shortSummary: string;
-	concepts: string[];
-	detailHref?: string;
-	isPlaceholder?: boolean;
-}
-
-const contributions: Contribution[] = [
-	{
-		project: 'vLLM',
-		repository: 'vllm-project/vllm',
-		repositoryUrl: 'https://github.com/vllm-project/vllm',
-		issueNumber: '#57650',
-		title: 'Exception-safe EngineCore initialization',
-		contributionType: 'Lifecycle correctness',
-		technicalArea: 'LLM inference infrastructure',
-		status: 'Implementation',
-		prMerged: false,
-		date: '2026-09-19',
-		complexity: 'Medium',
-		issueUrl: 'https://github.com/vllm-project/vllm/issues/57650',
-		commitUrl: 'https://github.com/vllm-project/vllm/compare/main...PyExtreme:vllm:fix/engine-core-init-worker-cleanup',
-		shortSummary: 'Deterministic rollback for executor, scheduler, and GC state when EngineCore startup fails after resource acquisition.',
-		concepts: ['Process lifecycle', 'Resource ownership', 'Exception safety'],
-		detailHref: '/open-source/vllm-57650/',
-	},
-	{
-		project: 'llm-d',
-		repository: 'llm-d/llm-d-router',
-		repositoryUrl: 'https://github.com/llm-d/llm-d-router',
-		issueNumber: '#2488',
-		title: 'Advisory flow-control band headroom',
-		contributionType: 'Flow-control feedback',
-		technicalArea: 'LLM request routing',
-		status: 'PR Open',
-		prMerged: false,
-		date: '2026-09-20',
-		complexity: 'Medium',
-		issueUrl: 'https://github.com/llm-d/llm-d-router/issues/2488',
-		prUrl: 'https://github.com/llm-d/llm-d-router/pull/2945',
-		shortSummary: 'Expose live request headroom for the effective priority band through an advisory response header.',
-		concepts: ['Flow control', 'Envoy ext_proc', 'Response-time sampling'],
-		detailHref: '/open-source/llm-d-router-2488/',
-	},
-	{
-		project: 'vLLM Router',
-		repository: 'vLLM Router',
-		repositoryUrl: 'https://github.com/vllm-project/router',
-		issueNumber: '#299',
-		title: 'Persistent Worker State for Discovered P/D Routing in vLLM Router',
-		contributionType: 'Routing lifecycle correctness',
-		technicalArea: 'LLM inference routing / Prefill-Decode disaggregation',
-		status: 'PR Open',
-		prMerged: false,
-		date: '2026-09-25',
-		complexity: 'Hard',
-		issueUrl: 'https://github.com/vllm-project/router/issues/299',
-		prUrl: 'https://github.com/vllm-project/router/pull/311',
-		shortSummary: 'Persistent discovery workers, generation-aware lifecycle reconciliation, cache-aware membership, and phase-correct load accounting for vLLM prefill/decode routing.',
-		concepts: ['Service discovery', 'Persistent worker identity', 'Cache-aware routing', 'Concurrency', 'RAII', 'Streaming lifecycle'],
-		detailHref: '/open-source/vllm-router-299-portfolio/',
-	},
-	{
-		project: 'llm-d',
-		repository: 'llm-d/llm-d-inference-sim',
-		repositoryUrl: 'https://github.com/llm-d/llm-d-inference-sim',
-		issueNumber: '#801',
-		title: 'Cross-request data race in SSE streaming',
-		contributionType: 'Concurrency correctness',
-		technicalArea: 'LLM inference simulation / HTTP streaming',
-		status: 'Merged',
-		prMerged: true,
-		date: '2026-10-17',
-		complexity: 'Medium',
-		issueUrl: 'https://github.com/llm-d/llm-d-inference-sim/issues/801',
-		prUrl: 'https://github.com/llm-d/llm-d-inference-sim/pull/803',
-		shortSummary: 'Removed a pooled fasthttp RequestCtx from a streaming goroutine that outlived its handler, eliminating 69 race-detector reports and spurious 404/500s on unrelated requests after client disconnects.',
-		concepts: ['Data races', 'Object pooling', 'Goroutine lifetimes', 'SSE streaming', 'Go race detector'],
-		detailHref: '/open-source/llm-d-inference-sim-801/',
-	},
+const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort((a, b) =>
+	b.data.date.localeCompare(a.data.date),
+);
+const merged = contributions.filter((c) => c.data.prMerged).length;
+const open = contributions.filter((c) => !c.data.prMerged && c.data.status === 'PR Open').length;
+const repositories = new Set(contributions.map((c) => c.data.repository)).size;
+const stats = [
+	{ value: contributions.length, label: 'Upstream contributions' },
+	{ value: merged, label: 'Merged upstream' },
+	{ value: open, label: 'Pull requests open' },
+	{ value: repositories, label: 'Repositories' },
 ];
-
-contributions.sort((a, b) => b.date.localeCompare(a.date));
 ---
 
-<BaseLayout title="Open Source | Ankit Jha">
-	<main class="listing-page">
-		<header class="page-header">
-			<p class="eyebrow">Open source</p>
-			<h1>Contributions</h1>
-			<p>A structured record of work across AI infrastructure projects and open-source serving systems.</p>
-		</header>
+<BaseLayout title="Open source" description="Upstream contributions to vLLM, llm-d, and vLLM Router: inference lifecycle, request routing, flow control, and concurrency fixes.">
+	<main id="main" class="listing-page">
+		<PageHeader eyebrow="Open source" title="Upstream contributions">
+			<p>Issues I picked up in open-source LLM serving infrastructure, with the root cause, the fix, and the verification for each.</p>
+		</PageHeader>
+		<StatStrip items={stats} />
 		<section class="contributions" aria-labelledby="contributions-title">
-			<div class="list-heading">
-				<p class="eyebrow">Contribution log</p>
-				<h2 id="contributions-title">Issues, systems, and fixes</h2>
-			</div>
-			<div class="contribution-controls" aria-label="Contribution filters">
-				<label>
-					<span>Sort by date</span>
-					<select id="date-sort">
-						<option value="desc" selected>Latest first</option>
-						<option value="asc">Oldest first</option>
-					</select>
-				</label>
-				<label>
-					<span>Complexity</span>
-					<select id="complexity-filter">
-						<option value="All" selected>All complexities</option>
-						<option value="Simple">Simple</option>
-						<option value="Medium">Medium</option>
-						<option value="Hard">Hard</option>
-					</select>
-				</label>
+			<div class="section-heading">
+				<h2 id="contributions-title" class="display-2">Contribution log</h2>
+				<form class="contribution-controls" aria-label="Filter contributions">
+					<label>
+						<span>Status</span>
+						<select id="status-filter">
+							<option value="All" selected>All</option>
+							<option value="Merged">Merged</option>
+							<option value="PR Open">PR open</option>
+							<option value="Implementation">In progress</option>
+						</select>
+					</label>
+					<label>
+						<span>Complexity</span>
+						<select id="complexity-filter">
+							<option value="All" selected>All</option>
+							<option value="Hard">Hard</option>
+							<option value="Medium">Medium</option>
+							<option value="Simple">Simple</option>
+						</select>
+					</label>
+					<label>
+						<span>Order</span>
+						<select id="date-sort">
+							<option value="desc" selected>Latest first</option>
+							<option value="asc">Oldest first</option>
+						</select>
+					</label>
+				</form>
 			</div>
 			<div class="contribution-list" id="contribution-list">
 				{contributions.map((contribution) => <ContributionCard contribution={contribution} />)}
 			</div>
+			<p class="contribution-empty" id="contribution-empty" hidden>No contributions match these filters.</p>
 		</section>
 	</main>
 </BaseLayout>
 
 <style>
-	.listing-page { padding: 112px 0 160px; }
-	.page-header { max-width: 620px; margin-bottom: 72px; }
-	.page-header h1 { margin-bottom: 24px; font-size: clamp(48px, 8vw, 88px); }
-	.page-header > p:last-child { max-width: 470px; color: var(--muted); line-height: 1.7; }
-	.list-heading { margin-bottom: 36px; }
-	.list-heading .eyebrow { margin-bottom: 14px; }
-	.list-heading h2 { font-size: clamp(28px, 5vw, 46px); }
-	.contribution-controls { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 36px; }
-	.contribution-controls label { display: grid; gap: 8px; color: var(--muted); font: 11px 'DM Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase; }
-	.contribution-controls select { min-width: 170px; padding: 10px 32px 10px 12px; border: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--paper); font: 12px 'DM Mono', monospace; text-transform: none; }
-	.contribution-list { max-width: 100%; }
-	@media (max-width: 640px) { .listing-page { padding: 80px 0 110px; } }
+	.contributions { padding-top: 56px; }
+	.contribution-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
+	.contribution-controls label { display: grid; gap: 6px; color: var(--muted); font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+	.contribution-controls select {
+		min-width: 140px;
+		padding: 9px 32px 9px 12px;
+		border: 1px solid var(--line-strong);
+		border-radius: 999px;
+		color: var(--ink);
+		background: var(--paper);
+		font: 500 12px var(--font-mono);
+		text-transform: none;
+	}
+	.contribution-list { border-top: 1px solid var(--line); }
+	.contribution-empty { padding: 32px 0; color: var(--muted); border-bottom: 1px solid var(--line); }
 </style>
 
 <script>
 	const list = document.querySelector<HTMLElement>('#contribution-list');
+	const empty = document.querySelector<HTMLElement>('#contribution-empty');
 	const dateSort = document.querySelector<HTMLSelectElement>('#date-sort');
 	const complexityFilter = document.querySelector<HTMLSelectElement>('#complexity-filter');
+	const statusFilter = document.querySelector<HTMLSelectElement>('#status-filter');
 
-	if (list && dateSort && complexityFilter) {
-		const cards = Array.from(list.querySelectorAll<HTMLElement>('.contribution-card'));
+	if (list && empty && dateSort && complexityFilter && statusFilter) {
+		const cards = Array.from(list.querySelectorAll<HTMLElement>('.contribution'));
 
-		const updateContributions = () => {
+		const update = () => {
 			const direction = dateSort.value === 'asc' ? 1 : -1;
 			const complexity = complexityFilter.value;
+			const status = statusFilter.value;
+			let visible = 0;
 			cards
 				.sort((a, b) => direction * (a.dataset.date ?? '').localeCompare(b.dataset.date ?? ''))
 				.forEach((card) => {
-					card.hidden = complexity !== 'All' && card.dataset.complexity !== complexity;
+					const show =
+						(complexity === 'All' || card.dataset.complexity === complexity) &&
+						(status === 'All' || card.dataset.status === status);
+					card.hidden = !show;
+					if (show) visible += 1;
 					list.append(card);
 				});
+			empty.hidden = visible > 0;
 		};
 
-		dateSort.addEventListener('change', updateContributions);
-		complexityFilter.addEventListener('change', updateContributions);
+		for (const control of [dateSort, complexityFilter, statusFilter]) control.addEventListener('change', update);
 	}
 </script>

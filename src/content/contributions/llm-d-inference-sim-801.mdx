@@ -1,25 +1,34 @@
 ---
-title: Fixing a Cross-Request Data Race in llm-d-inference-sim
-description: Stopping a streaming goroutine from writing to a pooled fasthttp RequestCtx after client disconnect, which caused unrelated requests to fail with 404 or 500.
+title: "Fixing a cross-request data race in llm-d-inference-sim"
+description: "Stopping a streaming goroutine from writing to a pooled fasthttp RequestCtx after client disconnect, which caused unrelated requests to fail with 404 or 500."
+lede: "A streaming goroutine kept writing to a request object that fasthttp had already recycled for another client. Moving ownership back to the server fixed all three affected paths, and the compiler now enforces it."
+project: "llm-d"
+repository: "llm-d/llm-d-inference-sim"
+repositoryUrl: "https://github.com/llm-d/llm-d-inference-sim"
+issueNumber: "#801"
+contributionType: "Concurrency correctness"
+technicalArea: "LLM inference simulation / HTTP streaming"
+status: "Merged"
+prMerged: true
+date: "2026-10-17"
+complexity: "Medium"
+issueUrl: "https://github.com/llm-d/llm-d-inference-sim/issues/801"
+prUrl: "https://github.com/llm-d/llm-d-inference-sim/pull/803"
+stack: 
+  - "Go"
+  - "fasthttp"
+  - "Server-Sent Events"
+  - "Ginkgo/Gomega"
+  - "Go race detector"
+shortSummary: "Removed a pooled fasthttp RequestCtx from a streaming goroutine that outlived its handler, eliminating 69 race-detector reports and spurious 404/500s on unrelated requests after client disconnects."
+concepts: 
+  - "Data races"
+  - "Object pooling"
+  - "Goroutine lifetimes"
+  - "SSE streaming"
+  - "Go race detector"
 ---
 
-import BaseLayout from '../../layouts/BaseLayout.astro';
-
-<BaseLayout title="Fixing a Cross-Request Data Race in llm-d-inference-sim" description="Stopping a streaming goroutine from writing to a pooled fasthttp RequestCtx after client disconnect, which caused unrelated requests to fail with 404 or 500.">
-<div class="article contribution-note">
-
-<p class="eyebrow"><a href="https://github.com/llm-d/llm-d-inference-sim">llm-d/llm-d-inference-sim</a> / Issue #801</p>
-
-# Fixing a Cross-Request Data Race in llm-d-inference-sim
-
-<p class="article-lede">A streaming goroutine kept writing to a request object that fasthttp had already recycled for another client. Moving ownership back to the server fixed all three affected paths, and the compiler now enforces it.</p>
-
-| Field | Details |
-| --- | --- |
-| Project | [llm-d-inference-sim](https://github.com/llm-d/llm-d-inference-sim), an open source vLLM simulator in the llm-d project |
-| Issue | [#801](https://github.com/llm-d/llm-d-inference-sim/issues/801) |
-| Pull request | [#803: Stop stream goroutine from using ctx after SetBodyStream](https://github.com/llm-d/llm-d-inference-sim/pull/803) |
-| Stack | Go, fasthttp, Server-Sent Events (SSE), Ginkgo/Gomega, Go race detector, Python (reproducer) |
 ## TL;DR
 
 When a client disconnected in the middle of a streaming response, a background goroutine kept writing to a
@@ -38,7 +47,6 @@ goroutine no longer has access to the request at all, and the Go compiler now en
 | Integration suite (`pkg/tests`) | n/a | 819 passed, 0 failed |
 
 The "before" numbers come from the issue report; the "after" numbers were measured locally with the same reproducer.
-
 
 ## 1. Context
 
@@ -305,7 +313,6 @@ panic in the goroutine.
 5. **Tests can encode bugs.** An existing test was asserting behavior no real client could observe. Testing
    client-visible behavior keeps tests honest.
 
-
 _Bug report and initial root-cause analysis by the issue reporter. Fix, test design and verification by the author._
 
 ## Links
@@ -313,8 +320,3 @@ _Bug report and initial root-cause analysis by the issue reporter. Fix, test des
 - [llm-d/llm-d-inference-sim repository](https://github.com/llm-d/llm-d-inference-sim)
 - [Issue #801](https://github.com/llm-d/llm-d-inference-sim/issues/801)
 - [Pull request #803](https://github.com/llm-d/llm-d-inference-sim/pull/803)
-
-<p class="backlink"><a href="/open-source/">← Back to open-source contributions</a></p>
-
-</div>
-</BaseLayout>

@@ -1,19 +1,21 @@
 ---
-title: MarketLane AI | Ankit Jha
-description: AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support.
----
-
-import BaseLayout from '../../layouts/BaseLayout.astro';
-
-<BaseLayout title="MarketLane AI | Ankit Jha" description="AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support.">
-<div class="article contribution-note">
-
-# MarketLane AI
-
-**AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support.**
-
-**Live Product:** [staging.marketlaneai.com](https://staging.marketlaneai.com)
-
+title: "MarketLane AI"
+description: "AI-native market intelligence for equity research, technical analysis, opportunity discovery, and decision support."
+lede: "An AI-native market intelligence platform for active NSE investors: deterministic market analytics, signal detection and LLM reasoning combined into one decision-support system."
+year: 2026
+order: 1
+kind: "Product"
+stack: 
+  - "Python"
+  - "LLM reasoning"
+  - "Market-data pipelines"
+  - "Multi-cloud"
+  - "Caching"
+  - "Observability"
+outcome: "Live product with deterministic analytics as the system of record and the LLM confined to interpretation."
+links: 
+  - label: "Live product"
+    href: "https://staging.marketlaneai.com"
 ---
 
 ## Overview
@@ -43,7 +45,7 @@ into a unified product.
 
 ---
 
-# Why I Built It
+## Why I Built It
 
 Most investing tools fall into one of two categories.
 
@@ -87,7 +89,7 @@ What should I investigate next?
 
 ---
 
-# Product Architecture
+## Product Architecture
 
 At a high level, I designed MarketLane around five layers.
 
@@ -142,7 +144,7 @@ The model operates over structured context produced by the rest of the platform.
 
 ---
 
-# 1. Market Data Pipeline
+## 1. Market Data Pipeline
 
 Market intelligence starts with reliable data.
 
@@ -191,7 +193,7 @@ That separation is one of the most important architectural principles in the sys
 
 ---
 
-# 2. Screening Engine
+## 2. Screening Engine
 
 A major part of the platform is an extensible screening layer.
 
@@ -229,7 +231,7 @@ The broader engineering idea is to treat a screener as a **query over derived ma
 
 ---
 
-# 3. Signal Detection
+## 3. Signal Detection
 
 MarketLane separates **data** from **signals**.
 
@@ -255,7 +257,7 @@ This architecture allows MarketLane to evolve from simple technical screens towa
 
 ---
 
-# 4. AI Intelligence Layer
+## 4. AI Intelligence Layer
 
 The AI layer converts structured market information into something a human can quickly reason about.
 
@@ -304,7 +306,7 @@ The LLM becomes a **reasoning and interpretation layer on top of deterministic a
 
 ---
 
-# 5. AI Output Design
+## 5. AI Output Design
 
 Free-form LLM responses quickly become difficult to use in a product.
 
@@ -338,7 +340,7 @@ It also creates a clear contract between the AI layer and the product layer.
 
 ---
 
-# 6. AI Is Not the Calculation Engine
+## 6. AI Is Not the Calculation Engine
 
 One architectural principle I intentionally adopted is:
 
@@ -366,7 +368,7 @@ It also lets individual components evolve independently.
 
 ---
 
-# 7. Stock Intelligence
+## 7. Stock Intelligence
 
 At the stock level, the goal is to build a consolidated intelligence surface rather than force users to jump between disconnected tools.
 
@@ -394,7 +396,7 @@ The AI should explain the market state—not hide it.
 
 ---
 
-# 8. Market Intelligence Architecture
+## 8. Market Intelligence Architecture
 
 The longer-term architecture treats individual observations as part of a market-event system.
 
@@ -443,7 +445,7 @@ instead of implementing independent logic for every feature.
 
 ---
 
-# 9. Designing for Scale
+## 9. Designing for Scale
 
 Although MarketLane started as a founder-built product, I designed its architecture around boundaries that could support a much larger system.
 
@@ -495,7 +497,7 @@ without coupling them directly to user requests.
 
 ---
 
-# 10. Caching and Cost-Aware AI
+## 10. Caching and Cost-Aware AI
 
 Financial applications repeatedly request overlapping information.
 
@@ -531,7 +533,7 @@ The goal is to avoid treating every AI request as an entirely independent worklo
 
 ---
 
-# 11. Reliability
+## 11. Reliability
 
 An AI financial product cannot treat:
 
@@ -585,7 +587,7 @@ This is an architectural pattern I have become particularly interested in while 
 
 ---
 
-# 12. Observability
+## 12. Observability
 
 A production version of the system needs visibility across the entire request path.
 
@@ -641,7 +643,7 @@ This is especially useful for AI products because latency or failures can origin
 
 ---
 
-# 13. Evaluation
+## 13. Evaluation
 
 One of the harder problems in an AI market-intelligence system is determining whether the generated analysis is actually useful.
 
@@ -678,7 +680,7 @@ Separating these evaluation categories prevents vague measures such as "the AI a
 
 ---
 
-# 14. Security Boundaries
+## 14. Security Boundaries
 
 External model APIs are treated as dependencies rather than trusted internal components.
 
@@ -706,7 +708,7 @@ The frontend interacts with MarketLane APIs rather than directly exposing privil
 
 ---
 
-# 15. Multi-Cloud Architecture
+## 15. Multi-Cloud Architecture
 
 One interesting engineering decision in MarketLane is the use of multiple cloud platforms for different responsibilities.
 
@@ -749,7 +751,7 @@ provider-specific logic everywhere
 
 ---
 
-# 16. MarketLane Research
+## 16. MarketLane Research
 
 I later extended the MarketLane ecosystem with a separate product:
 
@@ -801,7 +803,7 @@ The long-term architecture allows both structured market data and unstructured f
 
 ---
 
-# System Design Principles
+## System Design Principles
 
 Several engineering principles emerged while building MarketLane.
 
@@ -833,7 +835,7 @@ Schema, validation, versioning, evaluation, and observability matter.
 
 ---
 
-# Engineering Challenges
+## Engineering Challenges
 
 Building MarketLane required thinking through problems beyond simply integrating an LLM API.
 
@@ -852,7 +854,7 @@ Some of the most interesting areas included:
 
 ---
 
-# Production Architecture Direction
+## Production Architecture Direction
 
 The architecture is being evolved toward a more complete market-intelligence platform.
 
@@ -907,7 +909,7 @@ Areas I am actively interested in taking further include:
 
 ---
 
-# What MarketLane Demonstrates
+## What MarketLane Demonstrates
 
 MarketLane is less interesting to me as a stock-market application than as an engineering problem.
 
@@ -941,7 +943,7 @@ That combination is what makes MarketLane one of the most useful systems I have 
 
 ---
 
-# Technology Areas
+## Technology Areas
 
 The project touches several engineering domains:
 
@@ -991,7 +993,7 @@ The project touches several engineering domains:
 
 ---
 
-# Related Project
+## Related Project
 
 ### MarketLane Research
 
@@ -1014,14 +1016,3 @@ AI Reasoning
 ```
 
 form the foundation for a broader AI-native investment intelligence platform.
-
----
-
-## Built by
-
-**Ankit Jha**
-
-AI / ML Engineer focused on production AI systems, LLM infrastructure, retrieval systems, inference, and applied machine learning.
-
-</div>
-</BaseLayout>
