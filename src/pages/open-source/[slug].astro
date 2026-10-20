@@ -23,7 +23,7 @@ const date = new Date(`${data.date}T00:00:00`).toLocaleDateString('en-US', { yea
 <BaseLayout title={data.title} description={data.description} type="article">
 	<main id="main" class="article-page">
 		<header class="article-header">
-			<p class="eyebrow">Open source · <a href={data.repositoryUrl}>{data.repository}</a> · {data.issueNumber}</p>
+			<p class="eyebrow">Open source · <a href={data.repositoryUrl} target="_blank" rel="noopener noreferrer">{data.repository}</a> · {data.issueNumber}</p>
 			<h1 class="display-1">{data.title}</h1>
 			{data.lede && <p class="lede">{data.lede}</p>}
 			<dl class="article-meta">
@@ -52,9 +52,9 @@ const date = new Date(`${data.date}T00:00:00`).toLocaleDateString('en-US', { yea
 				<div>
 					<dt>Links</dt>
 					<dd class="article-links">
-						{data.issueUrl && <a href={data.issueUrl}>Issue {data.issueNumber}<span aria-hidden="true"> ↗</span></a>}
-						{data.prUrl && <a href={data.prUrl}>Pull request<span aria-hidden="true"> ↗</span></a>}
-						{data.commitUrl && <a href={data.commitUrl}>Commit<span aria-hidden="true"> ↗</span></a>}
+						{data.issueUrl && <a href={data.issueUrl} target="_blank" rel="noopener noreferrer">Issue {data.issueNumber}<span aria-hidden="true"> ↗</span></a>}
+						{data.prUrl && <a href={data.prUrl} target="_blank" rel="noopener noreferrer">Pull request<span aria-hidden="true"> ↗</span></a>}
+						{data.commitUrl && <a href={data.commitUrl} target="_blank" rel="noopener noreferrer">Commit<span aria-hidden="true"> ↗</span></a>}
 					</dd>
 				</div>
 			</dl>

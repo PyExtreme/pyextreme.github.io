@@ -46,7 +46,7 @@ const eyebrow = [data.kind, String(data.year), data.headline ? data.title : null
 					<div>
 						<dt>Links</dt>
 						<dd class="article-links">
-							{data.links.map((link) => <a href={link.href}>{link.label}<span aria-hidden="true"> ↗</span></a>)}
+							{data.links.map((link) => <a href={link.href} target="_blank" rel="noopener noreferrer">{link.label}<span aria-hidden="true"> ↗</span></a>)}
 						</dd>
 					</div>
 				)}

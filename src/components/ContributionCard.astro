@@ -15,7 +15,7 @@ const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 
 <article class="contribution" data-date={d.date} data-complexity={d.complexity} data-status={status}>
 	<div class="contribution-main">
 		<p class="contribution-repo">
-			<a href={d.repositoryUrl}>{d.repository}</a>
+			<a href={d.repositoryUrl} target="_blank" rel="noopener noreferrer">{d.repository}</a>
 			<span class="contribution-ref">· {d.issueNumber} · <time datetime={d.date}>{date}</time></span>
 		</p>
 		<h3 class="contribution-title"><a href={href}>{d.title}</a></h3>
@@ -29,9 +29,9 @@ const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 
 		<p class="contribution-meta">{d.complexity} · {d.technicalArea}</p>
 		<p class="contribution-links">
 			<a href={href}>Write-up</a>
-			{d.prUrl && <a href={d.prUrl}>PR<span aria-hidden="true"> ↗</span></a>}
-			{d.issueUrl && <a href={d.issueUrl}>Issue<span aria-hidden="true"> ↗</span></a>}
-			{d.commitUrl && <a href={d.commitUrl}>Commit<span aria-hidden="true"> ↗</span></a>}
+			{d.prUrl && <a href={d.prUrl} target="_blank" rel="noopener noreferrer">PR<span aria-hidden="true"> ↗</span></a>}
+			{d.issueUrl && <a href={d.issueUrl} target="_blank" rel="noopener noreferrer">Issue<span aria-hidden="true"> ↗</span></a>}
+			{d.commitUrl && <a href={d.commitUrl} target="_blank" rel="noopener noreferrer">Commit<span aria-hidden="true"> ↗</span></a>}
 		</p>
 	</div>
 </article>
