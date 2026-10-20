@@ -1,0 +1,29 @@
+---
+interface Props {
+	status: string;
+}
+const { status } = Astro.props;
+const variant = status.toLowerCase().replaceAll(' ', '-');
+---
+
+<span class:list={['status', variant]}>{status}</span>
+
+<style>
+	.status {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 10px;
+		border: 1px solid var(--line-strong);
+		border-radius: 999px;
+		color: var(--ink);
+		font: 500 11px/1 var(--font-mono);
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+	.status.merged { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+	.status.merged::before { content: '✓'; }
+	.status.pr-open { border-color: var(--ink); }
+	.status.closed, .status.investigating { color: var(--muted); }
+</style>

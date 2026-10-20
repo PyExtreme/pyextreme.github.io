@@ -1,18 +1,29 @@
 ---
-title: Advisory Flow-Control Band Headroom in llm-d-router
-description: A response-time advisory header that exposes live request headroom for the effective flow-control band in llm-d-router.
+title: "Advisory flow-control band headroom in llm-d-router"
+description: "A response-time advisory header that exposes live request headroom for the effective flow-control band in llm-d-router."
+lede: "A response-time advisory header that exposes current request headroom for the priority band that actually handled a request."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#2488"
+contributionType: "Flow-control feedback"
+technicalArea: "LLM request routing"
+status: "PR Open"
+prMerged: false
+date: "2026-09-20"
+complexity: "Medium"
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/2488"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/2945"
+stack: 
+  - "Go"
+  - "Envoy ext_proc"
+  - "Kubernetes Gateway API"
+shortSummary: "Expose live request headroom for the effective priority band through an advisory response header."
+concepts: 
+  - "Flow control"
+  - "Envoy ext_proc"
+  - "Response-time sampling"
 ---
-
-import BaseLayout from '../../layouts/BaseLayout.astro';
-
-<BaseLayout title="Advisory Flow-Control Band Headroom in llm-d-router" description="A response-time advisory header that exposes live request headroom for the effective flow-control band in llm-d-router.">
-<div class="article contribution-note">
-
-<p class="eyebrow"><a href="https://github.com/llm-d/llm-d-router">llm-d/llm-d-router</a> / Issue #2488</p>
-
-# Advisory Flow-Control Band Headroom in llm-d-router
-
-<p class="article-lede">A response-time advisory header that exposes current request headroom for the priority band that actually handled a request.</p>
 
 ## Repository context
 
@@ -97,8 +108,3 @@ It is more than HTTP-header plumbing: the implementation carries the correct flo
 - [llm-d/llm-d-router repository](https://github.com/llm-d/llm-d-router)
 - [Issue #2488](https://github.com/llm-d/llm-d-router/issues/2488)
 - [Pull request #2945](https://github.com/llm-d/llm-d-router/pull/2945)
-
-<p class="backlink"><a href="/open-source/">← Back to open-source contributions</a></p>
-
-</div>
-</BaseLayout>

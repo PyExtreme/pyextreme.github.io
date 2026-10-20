@@ -1,0 +1,17 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHeader from '../components/PageHeader.astro';
+---
+
+<BaseLayout title="Page not found">
+	<main id="main" class="listing-page">
+		<PageHeader eyebrow="404" title="Page not found">
+			<p>That page does not exist or has moved.</p>
+		</PageHeader>
+		<div class="btn-row">
+			<a class="btn btn-primary" href="/">Home</a>
+			<a class="btn" href="/projects/">Projects</a>
+			<a class="btn" href="/open-source/">Open source</a>
+		</div>
+	</main>
+</BaseLayout>

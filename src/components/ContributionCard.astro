@@ -1,123 +1,65 @@
 ---
-type ContributionStatus = 'Investigating' | 'Reproduced' | 'Implementation' | 'PR Open' | 'Merged' | 'Closed';
-type ContributionComplexity = 'Simple' | 'Medium' | 'Hard';
-
-interface Contribution {
-	project: string;
-	repository?: string;
-	repositoryUrl?: string;
-	issueNumber: string;
-	title: string;
-	contributionType: string;
-	technicalArea: string;
-	status: ContributionStatus;
-	/** Whether the pull request has been merged upstream. Overrides `status` to 'Merged' on the card. */
-	prMerged: boolean;
-	date: string;
-	complexity: ContributionComplexity;
-	issueUrl?: string;
-	prUrl?: string;
-	commitUrl?: string;
-	shortSummary: string;
-	concepts: string[];
-	detailHref?: string;
-	isPlaceholder?: boolean;
-}
+import type { CollectionEntry } from 'astro:content';
+import StatusPill from './StatusPill.astro';
 
 interface Props {
-	contribution: Contribution;
+	contribution: CollectionEntry<'contributions'>;
 }
-
 const { contribution } = Astro.props;
-const status: ContributionStatus = contribution.prMerged ? 'Merged' : contribution.status;
-const statusClass = status.toLowerCase().replaceAll(' ', '-');
+const d = contribution.data;
+const status = d.prMerged ? 'Merged' : d.status;
+const href = `/open-source/${contribution.id}/`;
+const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 ---
 
-	<article class:list={['contribution-card', { 'is-placeholder': contribution.isPlaceholder }]} data-date={contribution.date} data-complexity={contribution.complexity} data-merged={contribution.prMerged}>
-	<header class="contribution-header">
-		<div>
-			<p class="contribution-project">
-				{contribution.repositoryUrl ? <a href={contribution.repositoryUrl}>{contribution.repository ?? contribution.project} ↗</a> : (contribution.repository ?? contribution.project)}
-			</p>
-			<h2>{contribution.detailHref ? <a href={contribution.detailHref}>{contribution.title}</a> : contribution.title}</h2>
-		</div>
-		<span class:list={['status', statusClass]}>{status}</span>
-	</header>
-
-	<div class="contribution-fields">
-		<div>
-			<dt>Issue</dt>
-			<dd>{contribution.issueNumber}</dd>
-		</div>
-		<div>
-			<dt>Type</dt>
-			<dd>{contribution.contributionType}</dd>
-		</div>
-		<div>
-			<dt>Technical area</dt>
-			<dd>{contribution.technicalArea}</dd>
-		</div>
-		<div>
-			<dt>Date</dt>
-			<dd><time datetime={contribution.date}>{new Date(`${contribution.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</time></dd>
-		</div>
-		<div>
-			<dt>Complexity</dt>
-			<dd>{contribution.complexity}</dd>
-		</div>
-		<div>
-			<dt>Links</dt>
-			<dd class="contribution-links">
-				{contribution.issueUrl && <a href={contribution.issueUrl}>Issue ↗</a>}
-				{contribution.prUrl && <a href={contribution.prUrl}>PR ↗</a>}
-				{contribution.commitUrl && <a href={contribution.commitUrl}>Commit ↗</a>}
-			</dd>
-		</div>
+<article class="contribution" data-date={d.date} data-complexity={d.complexity} data-status={status}>
+	<div class="contribution-main">
+		<p class="contribution-repo">
+			<a href={d.repositoryUrl} target="_blank" rel="noopener noreferrer">{d.repository}</a>
+			<span class="contribution-ref">· {d.issueNumber} · <time datetime={d.date}>{date}</time></span>
+		</p>
+		<h3 class="contribution-title"><a href={href}>{d.title}</a></h3>
+		<p class="contribution-summary">{d.shortSummary}</p>
+		<ul class="chip-list">
+			{d.concepts.map((concept) => <li class="chip">{concept}</li>)}
+		</ul>
 	</div>
-
-	<div class="contribution-summary">
-		<div>
-			<dt>Summary</dt>
-			<dd>{contribution.shortSummary}</dd>
-		</div>
-		<div>
-			<dt>Concepts / systems</dt>
-			<dd>{contribution.concepts.join(' · ')}</dd>
-		</div>
+	<div class="contribution-side">
+		<StatusPill status={status} />
+		<p class="contribution-meta">{d.complexity} · {d.technicalArea}</p>
+		<p class="contribution-links">
+			<a href={href}>Write-up</a>
+			{d.prUrl && <a href={d.prUrl} target="_blank" rel="noopener noreferrer">PR<span aria-hidden="true"> ↗</span></a>}
+			{d.issueUrl && <a href={d.issueUrl} target="_blank" rel="noopener noreferrer">Issue<span aria-hidden="true"> ↗</span></a>}
+			{d.commitUrl && <a href={d.commitUrl} target="_blank" rel="noopener noreferrer">Commit<span aria-hidden="true"> ↗</span></a>}
+		</p>
 	</div>
-
-	{contribution.isPlaceholder && <p class="placeholder-label">Placeholder contribution</p>}
 </article>
 
 <style>
-	.contribution-card { position: relative; padding: 28px 0 32px; border-top: 1px solid var(--line); }
-	.contribution-card:last-child { border-bottom: 1px solid var(--line); }
-	.contribution-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
-	.contribution-project, dt, .placeholder-label { margin: 0 0 8px; color: var(--muted); font: 11px 'DM Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase; }
-	.contribution-project a { color: var(--ink); font-weight: 500; text-underline-offset: 4px; }
-	.contribution-header h2 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: -0.05em; }
-	.contribution-header h2 a { text-decoration: none; }
-	.contribution-header h2 a:hover { text-decoration: underline; text-underline-offset: 5px; }
-	.status { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line); color: var(--ink); font: 11px 'DM Mono', monospace; }
-	.status.investigating { border-color: #b8c3be; }
-	.status.reproduced, .status.implementation { border-color: #adbca4; }
-	.status.pr-open { border-color: #9caaa5; }
-	.status.merged { border-color: #819a78; }
-	.status.closed { color: var(--muted); }
-	.contribution-fields, .contribution-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
-	.contribution-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
-	dl, dt, dd { margin: 0; }
-	dd { color: #3f4946; font-size: 14px; line-height: 1.6; }
-	.contribution-links { display: flex; flex-wrap: wrap; gap: 12px; }
-	.contribution-links a { color: var(--ink); text-underline-offset: 4px; }
-	.contribution-links span { color: var(--muted); }
-	.placeholder-label { margin-top: 28px; margin-bottom: 0; color: var(--ink); }
-	@media (max-width: 720px) {
-		.contribution-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 22px; }
+	.contribution {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 240px;
+		gap: 24px 48px;
+		padding: 28px 0;
+		border-bottom: 1px solid var(--line);
 	}
-	@media (max-width: 520px) {
-		.contribution-header { display: block; }
-		.status { display: inline-block; margin-top: 16px; }
-		.contribution-fields, .contribution-summary { grid-template-columns: 1fr; gap: 20px; }
+	.contribution[hidden] { display: none; }
+	.contribution-repo { margin: 0 0 10px; font: 500 12px var(--font-mono); }
+	.contribution-repo a { color: var(--ink); text-decoration: none; }
+	.contribution-repo a:hover { text-decoration: underline; }
+	.contribution-ref { color: var(--muted); }
+	.contribution-title { margin: 0 0 10px; font-size: 22px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
+	.contribution-title a { text-decoration: none; }
+	.contribution-title a:hover { text-decoration: underline; text-decoration-color: var(--accent-deep); text-underline-offset: 5px; }
+	.contribution-summary { max-width: 62ch; margin: 0 0 14px; color: var(--ink-soft); font-size: 15px; line-height: 1.55; }
+	.contribution-side { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 2px; }
+	.contribution-meta { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+	.contribution-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; font: 500 12px var(--font-mono); }
+	.contribution-links a { color: var(--ink); }
+	@media (max-width: 760px) {
+		.contribution { grid-template-columns: 1fr; gap: 16px; }
+		.contribution-side { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+		.contribution-meta { flex-basis: 100%; }
 	}
 </style>

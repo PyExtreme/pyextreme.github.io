@@ -1,16 +1,21 @@
 ---
-title: MarketLane Research | Ankit Jha
-description: Production AI infrastructure for institutional-grade, evidence-grounded equity research.
+title: "MarketLane Research"
+description: "Production AI infrastructure for institutional-grade, evidence-grounded equity research."
+lede: "Production AI infrastructure for institutional-grade equity research: SEC filings, XBRL facts and market data resolved to company, period, filing, section and fact before an answer is generated."
+year: 2026
+order: 2
+kind: "Infrastructure"
+stack: 
+  - "Python"
+  - "PostgreSQL + pgvector"
+  - "Hybrid retrieval"
+  - "XBRL"
+  - "Docling"
+  - "GCP Cloud Run"
+  - "Vertex AI"
+outcome: "Evidence-first generation with citation validation, temporal reasoning and deterministic financial calculation."
+links: []
 ---
-
-import BaseLayout from '../../layouts/BaseLayout.astro';
-
-<BaseLayout title="MarketLane Research | Ankit Jha" description="Production AI infrastructure for institutional-grade, evidence-grounded equity research.">
-<div class="article contribution-note">
-
-# MarketLane Research
-
-## Production AI Infrastructure for Institutional-Grade Equity Research
 
 MarketLane Research is an AI-native equity intelligence platform designed to turn fragmented financial information into structured, traceable research.
 
@@ -38,7 +43,7 @@ before generating an answer.
 
 ---
 
-# The Problem
+## The Problem
 
 Traditional financial research is fragmented across multiple systems.
 
@@ -74,7 +79,7 @@ MarketLane Research therefore treats financial intelligence as a **multi-source 
 
 ---
 
-# System Architecture
+## System Architecture
 
 ```text
                             USER QUERY
@@ -126,7 +131,7 @@ The language model is not treated as the database, calculator, or source of fina
 
 ---
 
-# 1. Multi-Layer Financial Data Plane
+## 1. Multi-Layer Financial Data Plane
 
 MarketLane Research uses different systems for different classes of information.
 
@@ -172,7 +177,7 @@ This allows research questions to combine fundamentals with market behavior with
 
 ---
 
-# 2. Financial Document Intelligence Pipeline
+## 2. Financial Document Intelligence Pipeline
 
 MarketLane Research uses document-type-aware ingestion rather than routing every document through the same parser.
 
@@ -215,7 +220,7 @@ The same normalized representation can be produced from PDFs, allowing downstrea
 
 ---
 
-# 3. Structural Financial Chunking
+## 3. Structural Financial Chunking
 
 Financial reports contain strong document hierarchy.
 
@@ -251,7 +256,7 @@ Tables are preserved as atomic evidence wherever possible rather than being spli
 
 ---
 
-# 4. Hybrid Retrieval
+## 4. Hybrid Retrieval
 
 Semantic similarity alone is insufficient for financial documents.
 
@@ -307,7 +312,7 @@ Metadata filtering restricts the search space before ranking using dimensions su
 
 ---
 
-# 5. Temporal Financial Reasoning
+## 5. Temporal Financial Reasoning
 
 Financial research is inherently temporal.
 
@@ -351,7 +356,7 @@ This prevents semantic search from accidentally returning highly similar but out
 
 ---
 
-# 6. Structured Financial Reasoning
+## 6. Structured Financial Reasoning
 
 A core design principle is:
 
@@ -400,7 +405,7 @@ The language model receives calculated results rather than being responsible for
 
 ---
 
-# 7. Research Orchestration
+## 7. Research Orchestration
 
 MarketLane Research uses tool-based orchestration for questions requiring several evidence sources.
 
@@ -446,7 +451,7 @@ This separation creates a much more controllable research system than allowing a
 
 ---
 
-# 8. Filing Change Intelligence
+## 8. Filing Change Intelligence
 
 One of the core workflows in MarketLane Research is longitudinal filing analysis.
 
@@ -495,7 +500,7 @@ Evidence from current filing
 
 ---
 
-# 9. Cross-Company Research
+## 9. Cross-Company Research
 
 The same architecture supports research across multiple companies.
 
@@ -525,7 +530,7 @@ This reduces the risk of cross-company evidence contamination and enables struct
 
 ---
 
-# 10. Evidence-First Generation
+## 10. Evidence-First Generation
 
 The reasoning model never receives anonymous text blobs.
 
@@ -564,7 +569,7 @@ This creates explicit lineage from answer → evidence → source document.
 
 ---
 
-# 11. Citation Validation
+## 11. Citation Validation
 
 Citation generation and citation validation are separate operations.
 
@@ -588,7 +593,7 @@ Unsupported evidence references can therefore be rejected before reaching the fi
 
 ---
 
-# 12. Incremental SEC Ingestion
+## 12. Incremental SEC Ingestion
 
 The research corpus is designed to update incrementally as companies publish new filings.
 
@@ -655,7 +660,7 @@ This makes selective reprocessing possible as the pipeline evolves.
 
 ---
 
-# 13. Cloud Architecture
+## 13. Cloud Architecture
 
 MarketLane's existing product and the research platform remain independently deployable.
 
@@ -692,7 +697,7 @@ Existing MarketLane infrastructure is accessed only when the research query requ
 
 ---
 
-# 14. Storage Architecture
+## 14. Storage Architecture
 
 Different data classes are stored independently.
 
@@ -742,7 +747,7 @@ The retrieval abstraction is intentionally storage-independent so the indexing l
 
 ---
 
-# 15. Evaluation Architecture
+## 15. Evaluation Architecture
 
 MarketLane Research treats evaluation as part of the system rather than a post-launch manual check.
 
@@ -802,7 +807,7 @@ cost per research request
 
 ---
 
-# 16. Retrieval Ablation Framework
+## 16. Retrieval Ablation Framework
 
 The system is structured so retrieval configurations can be benchmarked independently.
 
@@ -840,7 +845,7 @@ External datasets such as FinanceBench can also be used to measure financial ret
 
 ---
 
-# 17. Observability
+## 17. Observability
 
 Each research request can be traced across the entire inference path.
 
@@ -912,7 +917,7 @@ rather than treating every failure as an LLM failure.
 
 ---
 
-# 18. Reliability Model
+## 18. Reliability Model
 
 AI systems fail differently from traditional APIs.
 
@@ -948,7 +953,7 @@ Unavailable evidence should result in an explicit insufficient-evidence response
 
 ---
 
-# 19. Cost-Aware AI Infrastructure
+## 19. Cost-Aware AI Infrastructure
 
 The architecture is designed around selective use of expensive inference.
 
@@ -994,7 +999,7 @@ This prevents high-cost models from becoming the default implementation for oper
 
 ---
 
-# 20. Enterprise Evolution
+## 20. Enterprise Evolution
 
 The current architecture is intentionally modular so individual components can evolve independently as corpus size, research complexity and query volume increase.
 
@@ -1048,9 +1053,9 @@ The important property is that these changes do not require redesigning the fina
 
 ---
 
-# Representative Research Workflows
+## Representative Research Workflows
 
-## Fundamental Analysis
+### Fundamental Analysis
 
 > How has Amazon AWS operating income changed over the last three quarters and what drove the change?
 
@@ -1072,7 +1077,7 @@ citations
 
 ---
 
-## Management Commentary Analysis
+### Management Commentary Analysis
 
 > Compare management's AI infrastructure commentary across Microsoft's last four reporting periods.
 
@@ -1092,7 +1097,7 @@ longitudinal synthesis
 
 ---
 
-## Filing Intelligence
+### Filing Intelligence
 
 > What risk factors were materially added or removed from Nvidia's latest annual filing?
 
@@ -1112,7 +1117,7 @@ dual-source citations
 
 ---
 
-## Competitive Intelligence
+### Competitive Intelligence
 
 > Compare Nvidia and AMD's commentary about data-center demand.
 
@@ -1130,7 +1135,7 @@ comparative synthesis
 
 ---
 
-## Market Reaction Research
+### Market Reaction Research
 
 > What changed fundamentally after the latest earnings release and how did the stock trade over the following five sessions?
 
@@ -1150,7 +1155,7 @@ multi-source synthesis
 
 ---
 
-# What Makes MarketLane Research Different
+## What Makes MarketLane Research Different
 
 The goal is not to build a better chatbot.
 
@@ -1178,7 +1183,7 @@ These constraints turn the system from a conventional RAG application into infra
 
 ---
 
-# Technology
+## Technology
 
 ```text
 AI
@@ -1226,7 +1231,7 @@ market-data APIs
 
 ---
 
-# Product Direction
+## Product Direction
 
 MarketLane Research is intended to become the intelligence layer behind MarketLane.
 
@@ -1277,6 +1282,3 @@ portfolio-level intelligence
 The objective is to move financial research from a workflow dominated by manual discovery and document navigation toward a system where complex questions can be expressed directly and answered with transparent evidence.
 
 **MarketLane Research is the architecture for that transition.**
-
-</div>
-</BaseLayout>
