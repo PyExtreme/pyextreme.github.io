@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 440" width="760" height="440" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Single agent vs multi-agent on two models</title>
+<desc id="d">AC@1 against mean model cost per incident on the same 45 holdout cases. Flash-Lite: B1 $0.0099 0.911, MA $0.0340 0.911. 3.8 Flash: B1 $0.0798 0.889, MA $0.1125 0.978. All four cases MA won on 3.8 Flash were B1 runs that returned no answer. x1 on Flash-Lite: B1 at temperature 1.0, one run $0.0097 0.956, vote of 3 $0.0229 0.956.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.grid{stroke:#e6e5e1}.axis{stroke:#9b9a95}.ma{stroke:#2a78d6;fill:#2a78d6}.b1{stroke:#eb6834;fill:#eb6834}.s{stroke:#1f9e74;fill:#1f9e74}.pair{stroke:#9b9a95;fill:none}.ring{stroke:#fcfcfb}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.grid{stroke:#33332f}.axis{stroke:#6f6e69}.ma{stroke:#3987e5;fill:#3987e5}.b1{stroke:#d95926;fill:#d95926}.s{stroke:#2fb487;fill:#2fb487}.pair{stroke:#6f6e69}.ring{stroke:#1a1a19}}</style>
+<rect class="bg" x="0" y="0" width="760" height="440" rx="8"/>
+<text class="ink" x="78" y="30" font-size="17" font-weight="600">Same 45 incidents: two models, and one agent re-run differently</text>
+<text class="ink2" x="78" y="50" font-size="12.5">AC@1 vs mean model cost per incident (log scale) · same ceiling within each model · green: single agent at temperature 1.0 (x1)</text>
+<line class="grid" x1="78" x2="720" y1="376.0" y2="376.0" stroke-width="1"/>
+<text class="ink2" x="68" y="380.0" font-size="12" text-anchor="end">0.85</text>
+<line class="grid" x1="78" x2="720" y1="274.7" y2="274.7" stroke-width="1"/>
+<text class="ink2" x="68" y="278.7" font-size="12" text-anchor="end">0.90</text>
+<line class="grid" x1="78" x2="720" y1="173.3" y2="173.3" stroke-width="1"/>
+<text class="ink2" x="68" y="177.3" font-size="12" text-anchor="end">0.95</text>
+<line class="grid" x1="78" x2="720" y1="72.0" y2="72.0" stroke-width="1"/>
+<text class="ink2" x="68" y="76.0" font-size="12" text-anchor="end">1.00</text>
+<text class="ink2" x="171.5" y="396" font-size="12" text-anchor="middle">$0.01</text>
+<text class="ink2" x="298.4" y="396" font-size="12" text-anchor="middle">$0.02</text>
+<text class="ink2" x="466.2" y="396" font-size="12" text-anchor="middle">$0.05</text>
+<text class="ink2" x="593.1" y="396" font-size="12" text-anchor="middle">$0.1</text>
+<text class="ink2" x="720.0" y="396" font-size="12" text-anchor="middle">$0.2</text>
+<line class="axis" x1="78" x2="720" y1="376" y2="376" stroke-width="1"/>
+<text class="ink2" x="399.0" y="424" font-size="12.5" text-anchor="middle">mean model cost per incident (USD, log scale)</text>
+<text class="ink2" transform="translate(20 224.0) rotate(-90)" font-size="12.5" text-anchor="middle">AC@1 (root cause ranked first)</text>
+<line class="pair" x1="169.7" y1="252.4" x2="395.6" y2="252.4" stroke-width="1.5" stroke-dasharray="4 4"/>
+<text class="ink2" x="282.6" y="242.4" font-size="12" text-anchor="middle">Flash-Lite (v1): MA costs 3.4×</text>
+<line class="pair" x1="551.8" y1="297.0" x2="614.7" y2="116.6" stroke-width="1.5" stroke-dasharray="4 4"/>
+<text class="ink2" x="583.2" y="196.8" font-size="12" text-anchor="middle">3.8 Flash (v2): MA costs 1.4×</text>
+<g><title>B1 on Flash-Lite (v1): $0.0099, AC@1 0.911</title><circle class="b1" cx="169.7" cy="252.4" r="6"/><circle class="ring" cx="169.7" cy="252.4" r="7.5" fill="none" stroke-width="2"/></g>
+<text class="ink" x="169.7" y="274.4" font-size="12.5" font-weight="600" text-anchor="middle">B1 0.911</text>
+<g><title>MA on Flash-Lite (v1): $0.0340, AC@1 0.911</title><circle class="ma" cx="395.6" cy="252.4" r="6"/><circle class="ring" cx="395.6" cy="252.4" r="7.5" fill="none" stroke-width="2"/></g>
+<text class="ink" x="395.6" y="274.4" font-size="12.5" font-weight="600" text-anchor="middle">MA 0.911</text>
+<g><title>B1 on 3.8 Flash (v2): $0.0798, AC@1 0.889</title><circle class="b1" cx="551.8" cy="297.0" r="6"/><circle class="ring" cx="551.8" cy="297.0" r="7.5" fill="none" stroke-width="2"/></g>
+<text class="ink" x="551.8" y="319.0" font-size="12.5" font-weight="600" text-anchor="middle">B1 0.889</text>
+<g><title>MA on 3.8 Flash (v2): $0.1125, AC@1 0.978</title><circle class="ma" cx="614.7" cy="116.6" r="6"/><circle class="ring" cx="614.7" cy="116.6" r="7.5" fill="none" stroke-width="2"/></g>
+<text class="ink" x="614.7" y="102.6" font-size="12.5" font-weight="600" text-anchor="middle">MA 0.978</text>
+<text class="ink2" x="551.8" y="337.0" font-size="11.5" text-anchor="middle">4 of B1's runs returned no answer</text>
+<g><title>B1 T=1.0, 1 run on Flash-Lite: $0.0097, AC@1 0.956</title><rect class="s" x="160.9" y="156.2" width="10" height="10" transform="rotate(45 165.9 161.2)"/></g>
+<text class="ink" x="154.9" y="165.2" font-size="12" font-weight="600" text-anchor="end">B1 T=1.0, 1 run 0.956</text>
+<g><title>B1 T=1.0, vote of 3 on Flash-Lite: $0.0229, AC@1 0.956</title><rect class="s" x="318.2" y="156.2" width="10" height="10" transform="rotate(45 323.2 161.2)"/></g>
+<text class="ink" x="334.2" y="165.2" font-size="12" font-weight="600" text-anchor="start">B1 T=1.0, vote of 3 0.956</text>
+</svg>

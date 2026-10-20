@@ -1,0 +1,298 @@
+---
+title: Multi-agent LLMs bought robustness, not reasoning | Ankit Jha
+description: A pre-registered, equal-budget comparison of a multi-agent incident-diagnosis system against a single agent on 45 held-out microservice incidents, on two models, with four follow-up experiments.
+---
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+<BaseLayout title="Multi-agent LLMs bought robustness, not reasoning | Ankit Jha" description="A pre-registered, equal-budget comparison of a multi-agent incident-diagnosis system against a single agent on 45 held-out microservice incidents, on two models, with four follow-up experiments.">
+<div class="article contribution-note">
+
+<p class="eyebrow">AI Incident Commander / Research write-up</p>
+
+# Multi-agent LLMs bought robustness, not reasoning
+
+<p class="article-lede">A fair test on two models, then four follow-up experiments. A pre-registered, equal-budget comparison of a multi-agent incident-diagnosis system against a single agent on 45 held-out microservice incidents. Updated 19 October 2026 with the follow-up experiments; the first single-model post was <em>Same accuracy, 3.4× the cost</em>.</p>
+
+**TL;DR**
+
+- With a fast, cheap model, a multi-agent system (three concurrent specialists, a coordinator, a critic) found the
+  root cause **exactly as often** as one well-built agent: 41 of 45 incidents each, at **3.4× the cost**.
+- With a stronger, slower thinking model, the multi-agent system came out **ahead, 0.978 vs 0.889**, but **every case
+  it won was one where the single agent returned no answer at all** (out of time, throttled, unparseable output).
+- Four follow-up experiments then asked *why*. Re-running the single agent differently (sampling at temperature 1.0,
+  rewording its prompt, or renaming every service) fixed the same errors the multi-agent system had seemed to
+  correct. **A single agent sampled three times and voted reached 0.956, above the multi-agent system's 0.911, at
+  two-thirds of its cost.**
+- Where coordination did pay off: **stability** (under the same rewording, the multi-agent system's answers changed on
+  1 case, the single agent's on 4) and **robustness** to timeouts on a slow model. And the best "I might be wrong"
+  signal was free: when three differently worded runs of the single agent agreed (89 % of incidents), it was right
+  every time.
+- **Recommendation:** before building a multi-agent system, perturb and vote a single agent. The whole study, three
+  frozen experiments and roughly 600 held-out runs, cost **$33 in model calls**.
+
+![Single agent vs multi-agent on two models, and the single agent re-run at temperature 1.0](/images/ai-incident-commander/two-models.svg)
+
+---
+
+## The question
+
+Multi-agent architectures are the default answer in agent design: give each data source its own specialist, add a
+coordinator, add a critic, and the system should reason better than one model alone. Most published comparisons,
+though, let the team of agents spend more, see more or get tuned more than the single agent it is compared with.
+
+I wanted a fair answer, so I built both systems and tested them the way you would test a treatment: the same inputs,
+the same budget ceiling, an analysis plan written before the results, a frozen protocol, and a held-out set nobody
+had looked at.
+
+**The task.** When a microservice application degrades, the alert fires on a symptom (a slow checkout page) while
+the cause is often several calls away. The benchmark is RCAEval RE2: two open-source applications (Online Boutique,
+Train Ticket) with six kinds of injected faults. Given the telemetry (metrics, logs, traces) and the alert time, rank
+the services most likely to be the root cause. The metric is AC@1: how often the true cause is ranked first.
+
+**The two systems**, built on the same model, the same seven read-only telemetry tools, the same deterministic
+anomaly digest and the same per-incident ceiling:
+
+- **Single agent (B1):** one tool-using loop that investigates and submits a ranked diagnosis with cited evidence.
+- **Multi-agent (MA):** a Commander plans; metrics, logs and traces specialists investigate **concurrently** in
+  separate contexts; deterministic checks and a Skeptic challenge the leading theory; the Commander adjudicates, may
+  ask one targeted follow-up, and ranks.
+
+Every claim either system makes must cite an observation that a validator checks, so neither can win by inventing
+evidence. Two baselines with no LLM at all run on every case: one ranks services straight from the anomaly digest
+(D1), the other is the benchmark's own BARO method (D0).
+
+---
+
+## Result 1: with a fast model, a tie at 3.4× the cost
+
+Model: `gemini-3.1-flash-lite`. Ceiling: $0.33 and 24 model calls per incident, for both systems.
+
+| | D0 (no model) | D1 (digest only) | Single agent | Multi-agent |
+|---|---|---|---|---|
+| AC@1 | 0.40 | 0.76 | **0.911** | **0.911** |
+| Mean cost per incident | — | — | $0.0099 | $0.0340 |
+| Mean wall time | — | — | 14 s | 18 s |
+
+The pre-registered estimate of the difference is **0.0 points, 95 % interval −8.9 to +8.9**. Both systems got the
+same 39 incidents right and the same 2 wrong; the other 4 split 2–2.
+
+The failure analysis (two independent annotators, rules written before any failure was read) suggested a tidy
+story: the single agent's distinctive errors were **reading errors** inside one long context (a database blamed for
+its own service; the right service found, then a later distraction promoted), which three voting specialists would
+correct; the multi-agent system's distinctive errors were **coordination errors** (a follow-up round overriding a
+correct answer). Two kinds of mistakes, cancelling out. Result 3 shows that story was only half right.
+
+---
+
+## Result 2: with a stronger model, the multi-agent system wins, for an unexpected reason
+
+The obvious objection to Result 1 is "that's a small model". So I re-ran the experiment with `gemini-3.8-flash`, a
+stronger model that thinks before it answers, on the same 45 incidents, with the same system and an analysis plan
+fixed before the run. Only limits that had to scale with the model changed, identically for both systems: the cost
+ceiling ($1.00, because the model is about 3× the price) and the time limits (it is much slower).
+
+| | Single agent | Multi-agent |
+|---|---|---|
+| AC@1 | 0.889 | **0.978** |
+| Mean cost per incident | $0.080 | $0.113 (1.4×) |
+| Difference in AC@1 | | **+8.9 points (95 % interval +2.2 to +17.8)** |
+
+The multi-agent system got 4 incidents right that the single agent missed, and none the other way round. All four
+were single-agent runs that ended **with no answer**: one throttled by the API on its first call, two that ran past
+the 30-minute limit after 12 and 18 sequential calls, one that produced malformed output twice. **On every incident
+where the single agent produced a ranking, it was right.** The multi-agent system's specialists run in parallel, so it
+finishes sooner on a slow model, and when one of its steps fails the coordinator still falls back to the specialists'
+vote.
+
+This run is exploratory: the cases had already been used once, and part of the gap is a design gap in the control
+(the single agent forces a final answer near its call budget, not near its time limit). The honest summary:
+**coordination bought robustness, not reasoning.**
+
+---
+
+## Result 3: four follow-up experiments on why the first result tied
+
+A tie invites four questions, so I ran four experiments, all on the fast model and the same 45 incidents, all
+pre-registered and frozen before any run, under a $7 cap (405 runs, $5.55, every run produced a ranking).
+
+**First, a correction.** Earlier I wrote that the model was "deterministic": repeated runs never changed an answer.
+That was true, but only because the model layer fixed the temperature at 0. It is a property of the configuration,
+not of the model. These experiments made temperature a per-arm setting.
+
+### A. Is it coordination, or just more samples?
+
+If the multi-agent system's advantage on the single agent's errors comes from having several attempts, sampling the
+single agent should reproduce it.
+
+| | AC@1 | Mean $ per incident |
+|---|---|---|
+| Single agent, temperature 0 (Result 1) | 0.911 | 0.0099 |
+| Multi-agent (Result 1) | 0.911 | 0.0340 |
+| Single agent, temperature 1.0, one run | **0.956** | 0.0097 |
+| Single agent, temperature 1.0, majority vote of 3 | **0.956** | 0.0229 |
+
+The vote of three beat the multi-agent system by 4.4 points (interval 0.0 to +11.1) at two-thirds of its spend. By
+the pre-registered rule, the error correction attributed to coordination is reproducible by sampling at equal
+spend. The mechanism, though, is not the vote: the three samples agreed on 43 of 45 incidents, and a single
+temperature-1.0 run already scored 0.956. What fixed the errors was running differently at all.
+
+### B. Is it memorizing these public demo apps?
+
+Online Boutique and Train Ticket are on GitHub, so a model could have seen them. I replaced every service name with an
+opaque code, in metrics, logs, traces, tool arguments and free text, verified by a leak test, and re-ran both systems.
+
+| | Original names | Names hidden |
+|---|---|---|
+| Single agent AC@1 | 0.911 | 0.956 |
+| Multi-agent AC@1 | 0.911 | 0.933 |
+
+Neither system lost accuracy. A pre-registered control (the digest-only baseline, which never reads names) gave
+identical results on renamed data in all 45 cases, so the renaming itself is clean. On these cases, neither system is
+leaning on prior knowledge of the apps. One side effect is visible: renaming removes type hints like `-mongo`, and the
+single agent's database-for-service confusion disappeared.
+
+### C. Does prompt wording matter more than architecture?
+
+I reworded every prompt, lightly and heavily, keeping the same rules, and re-ran both systems.
+
+| | Original wording | Heavy rewording | Top-1 answers changed by that rewording |
+|---|---|---|---|
+| Single agent | 0.911 | 0.933 | 4 of 45 |
+| Multi-agent | 0.911 | 0.933 | 1 of 45 |
+
+The gap between the two systems is **0.0 points under both wordings**: the tie is robust to how the prompts are
+phrased. But the same rewording changed the single agent's answer on four times as many incidents. That is a real
+benefit of coordination the accuracy number hides: **stability**.
+
+### D. Can either system tell when it is wrong?
+
+For an incident tool, knowing when to escalate to a human matters as much as accuracy. I scored each pre-registered
+confidence signal by selective accuracy: answer only the incidents you are most confident about.
+
+![Selective accuracy vs coverage per confidence signal](/images/ai-incident-commander/x1-risk-coverage.svg)
+
+| Signal | Accuracy on the most confident 70 % | Errors caught in the least confident 20 % |
+|---|---|---|
+| Single agent says "confident" | 90.6 % | 1 of 4 |
+| Multi-agent says "confident" | 93.8 % | 1 of 4 |
+| Agreement among the multi-agent system's specialists | 93.8 % | 1 of 4 |
+| Agreement among 3 single-agent samples at temperature 1.0 | 96.9 % | 0 of 2 |
+| **Agreement across 3 differently worded single-agent runs** | **100 %** | **4 of 4** |
+
+The model's own "confident" is useless; the single agent said it every time. Temperature samples rarely disagree, so
+their agreement says little. But **when three differently worded runs of the single agent named the same service (40
+of 45 incidents), it was right every time, and the five where they disagreed contained all four of its errors.**
+Answering the 89 % where they agree and escalating the rest gives 100 % accuracy on what is answered, on these 45
+cases, for about the multi-agent system's price. (Four errors and 45 cases: a point estimate, not a guarantee.)
+
+### What the cases show
+
+Tracking every wrong answer across all eight configurations of both systems separates two kinds of error:
+
+- **Fragile errors**, fixed by almost any perturbation: the single agent's database-for-service mix-up and its
+  late distraction (fixed by sampling, by either rewording and by renaming), and the multi-agent system's follow-up
+  override (fixed by rewording and by renaming).
+- **Robust errors**, surviving every perturbation: one incident neither system ever queried the true service for, one
+  where both followed the digest's misleading top anomaly, and one where the multi-agent system kept blaming a caller.
+
+So the single agent's "reading errors" from Result 1 were not a systematic weakness of reasoning in one context. They
+were fragile, and re-running the agent differently fixed them as well as coordination did. The errors that survive are
+shared by both designs, or belong to the multi-agent system.
+
+---
+
+## What this means for teams building agent systems
+
+1. **Perturb and vote a single agent before building a multi-agent system.** On this task, three differently worded
+   or sampled runs of one agent matched or beat the multi-agent system's accuracy at the same or lower spend.
+2. **Know what coordination actually buys.** Here it was not better reasoning. It was stability across prompt versions
+   (useful where answers must be reproducible: audits, regulated settings) and robustness to timeouts on a slow model.
+   Both are real, and the second can be built into one agent for less.
+3. **Get the abstention signal from disagreement, not from the model's words.** Self-reported confidence was useless;
+   agreement across independent prompt variants caught every error.
+4. **Coordination has its own failure modes; write its rules as code.** A follow-up that re-asks the dissenting
+   specialist is not independent evidence. On dev it turned six right answers wrong until a rule required two
+   independent specialists to overturn a ranking.
+5. **Measure robustness per case, not only accuracy per arm.** Aggregate accuracy moved by at most a case or two under
+   any perturbation; the per-case view showed which errors are worth engineering against (evidence gaps, misleading
+   summaries) and which disappear on their own.
+6. **Check for contamination and check your determinism assumptions.** Renaming every service ruled out memorization;
+   a temperature fixed at 0 deep in the model layer had quietly made "no run-to-run variance" a configuration fact
+   rather than a finding.
+7. **Invest in the deterministic layer.** A five-line rule over the anomaly digest, with no model, reached 0.76.
+
+---
+
+## How the study was run
+
+The comparison is only worth anything if it is fair and reproducible, so most of the engineering went there:
+
+- **No peeking.** A grouped dev/holdout split committed before any run; holdout labels reachable through one package
+  only, enforced by an import-linter rule; for each of the three experiments, a pre-registered analysis plan and a
+  freeze file hashing the model, budget, prompts and every file on the decision path; a holdout runner that refuses
+  to start if any hash differs.
+- **Equal information.** Every fault in the dataset starts exactly 720 s into the recording, so timestamps leak the
+  onset; both systems are given the alert time explicitly, through one shared header.
+- **Money safety.** A fail-closed model registry, a worst-case cost reservation before every call, a ledger, a
+  per-incident cap and spend stops enforced in code. Each paid phase ran under a hard cap set by the owner.
+- **Reliability.** An `asyncio.TaskGroup` fan-out where no worker failure can cancel its siblings; retries with
+  backoff; six injected-fault scenarios (rate limit, timeout, malformed output, crash, invalid evidence, killed
+  runner) tested in CI with a scripted model at $0.
+- **Observability.** Every run's journal converts to OpenTelemetry traces (agent, LLM and tool spans with token
+  counts and cost) viewed in a local Arize Phoenix. A static HTML replay per run shows the parallel agents, the
+  hypothesis board and every claim linked to its evidence.
+- **Reproducibility.** Real runs record to cassettes and replay byte-for-byte; every analysis regenerates in one
+  command; a clean-clone check rebuilds and tests the repository from scratch.
+
+Things that went wrong, and were caught before they could bias a result:
+
+- **Budget estimates, not dollars, were binding.** A guard sized calls on pessimistic token *estimates*, which starved
+  the multi-agent system.
+- **One dissenter could overturn a majority.** A coordinator rule allowed it, until the two-specialist rule replaced it.
+- **The stronger model rejected our message format.** It refused text placed after a tool result, which broke the
+  coordinator on every call.
+- **Time limits were sized for the fast model.** The slow model's latency spikes turned into failures.
+- **A pseudonymizer missed name variants.** Its first version missed glued and CamelCase forms; a leak test now fails if
+  any form of any name reaches a model.
+
+Each is documented with its fix.
+
+---
+
+## What I built, and how
+
+I designed the study and the system, set the evaluation protocol, and made every decision about models, budgets,
+fairness and what counted as a result. Implementation was done by AI coding agents (Claude Code and Codex) working
+from written work-package briefs, each in its own git worktree, merging only through pull requests with green CI,
+under rules I set: no agent could touch the data contracts, read holdout labels or spend money. Later, I delegated
+the paid runs and holdout steps to the orchestrating agent within hard spend limits enforced in code, with every
+delegated decision labelled as such.
+
+| | |
+|---|---|
+| Duration | 9 days (11–19 Oct 2026) |
+| Experiments | 3 frozen, pre-registered experiments on the same 45 held-out incidents (v1, a two-model replication, four follow-ups); about 600 held-out runs plus dev, tuning and variance studies |
+| Process | ~170 merged pull requests; decisions recorded as ADRs and dated decision entries |
+| Model spend | **$32.72** total, on cloud credits |
+
+**What this demonstrates**, for anyone hiring for senior or staff AI engineering:
+
+- Designing and running a **fair, pre-registered evaluation** of agent architectures, reporting a null result, a
+  surprising positive result and the follow-ups that explained both with the same rigour, and correcting my own
+  earlier claims when the evidence changed.
+- Building **production-shaped agent systems**: concurrency, budgets, failure handling, evidence validation,
+  deterministic replay, observability with OpenTelemetry and Phoenix.
+- **Cost-aware engineering**: every call priced, capped and accounted for; three experiments for $33.
+- **Directing AI coding agents at scale** with guardrails, review checkpoints and an auditable decision trail.
+
+---
+
+## Read more
+
+The full results, the three pre-registrations, the architecture document, the failure taxonomy and the week-by-week case studies are kept in the project repository alongside the code.
+
+<p class="backlink"><a href="/projects/">← Back to projects</a></p>
+
+</div>
+</BaseLayout>
