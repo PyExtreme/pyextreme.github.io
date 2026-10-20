@@ -25,5 +25,6 @@
 }
 @media (max-width: 640px) {
 	.article-page { padding: 48px 0 88px; }
+	.article-meta { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px 20px; }
 	.article-header { margin-bottom: 36px; padding-bottom: 28px; }
 }
