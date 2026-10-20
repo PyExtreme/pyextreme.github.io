@@ -14,6 +14,8 @@ interface Contribution {
 	contributionType: string;
 	technicalArea: string;
 	status: ContributionStatus;
+	/** Whether the pull request has been merged upstream. Overrides `status` to 'Merged' on the card. */
+	prMerged: boolean;
 	date: string;
 	complexity: ContributionComplexity;
 	issueUrl?: string;
@@ -35,6 +37,7 @@ const contributions: Contribution[] = [
 		contributionType: 'Lifecycle correctness',
 		technicalArea: 'LLM inference infrastructure',
 		status: 'Implementation',
+		prMerged: false,
 		date: '2026-09-19',
 		complexity: 'Medium',
 		issueUrl: 'https://github.com/vllm-project/vllm/issues/57650',
@@ -52,6 +55,7 @@ const contributions: Contribution[] = [
 		contributionType: 'Flow-control feedback',
 		technicalArea: 'LLM request routing',
 		status: 'PR Open',
+		prMerged: false,
 		date: '2026-09-20',
 		complexity: 'Medium',
 		issueUrl: 'https://github.com/llm-d/llm-d-router/issues/2488',
@@ -69,6 +73,7 @@ const contributions: Contribution[] = [
 		contributionType: 'Routing lifecycle correctness',
 		technicalArea: 'LLM inference routing / Prefill-Decode disaggregation',
 		status: 'PR Open',
+		prMerged: false,
 		date: '2026-09-25',
 		complexity: 'Hard',
 		issueUrl: 'https://github.com/vllm-project/router/issues/299',
@@ -85,7 +90,8 @@ const contributions: Contribution[] = [
 		title: 'Cross-request data race in SSE streaming',
 		contributionType: 'Concurrency correctness',
 		technicalArea: 'LLM inference simulation / HTTP streaming',
-		status: 'PR Open',
+		status: 'Merged',
+		prMerged: true,
 		date: '2026-10-17',
 		complexity: 'Medium',
 		issueUrl: 'https://github.com/llm-d/llm-d-inference-sim/issues/801',

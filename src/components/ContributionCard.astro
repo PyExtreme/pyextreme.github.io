@@ -11,6 +11,8 @@ interface Contribution {
 	contributionType: string;
 	technicalArea: string;
 	status: ContributionStatus;
+	/** Whether the pull request has been merged upstream. Overrides `status` to 'Merged' on the card. */
+	prMerged: boolean;
 	date: string;
 	complexity: ContributionComplexity;
 	issueUrl?: string;
@@ -27,10 +29,11 @@ interface Props {
 }
 
 const { contribution } = Astro.props;
-const statusClass = contribution.status.toLowerCase().replaceAll(' ', '-');
+const status: ContributionStatus = contribution.prMerged ? 'Merged' : contribution.status;
+const statusClass = status.toLowerCase().replaceAll(' ', '-');
 ---
 
-	<article class:list={['contribution-card', { 'is-placeholder': contribution.isPlaceholder }]} data-date={contribution.date} data-complexity={contribution.complexity}>
+	<article class:list={['contribution-card', { 'is-placeholder': contribution.isPlaceholder }]} data-date={contribution.date} data-complexity={contribution.complexity} data-merged={contribution.prMerged}>
 	<header class="contribution-header">
 		<div>
 			<p class="contribution-project">
@@ -38,7 +41,7 @@ const statusClass = contribution.status.toLowerCase().replaceAll(' ', '-');
 			</p>
 			<h2>{contribution.detailHref ? <a href={contribution.detailHref}>{contribution.title}</a> : contribution.title}</h2>
 		</div>
-		<span class:list={['status', statusClass]}>{contribution.status}</span>
+		<span class:list={['status', statusClass]}>{status}</span>
 	</header>
 
 	<div class="contribution-fields">

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 572" width="760" height="572" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">x1: selective accuracy vs coverage</title>
+<desc id="d">self-report (b1): AURC 0.069, accuracy at full coverage 0.911; self-report (ma): AURC 0.049, accuracy at full coverage 0.911; vote share (3 reps) (b1-t1): AURC 0.023, accuracy at full coverage 0.956; specialist agreement (ma): AURC 0.041, accuracy at full coverage 0.911; paraphrase agreement (v1, p1, p3) (b1): AURC 0.007, accuracy at full coverage 0.911; paraphrase agreement (v1, p3) (ma): AURC 0.048, accuracy at full coverage 0.911</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.grid{stroke:#e6e5e1}.axis{stroke:#9b9a95}.k0{stroke:#eb6834;fill:none}.f0{fill:#eb6834}.k1{stroke:#2a78d6;fill:none}.f1{fill:#2a78d6}.k2{stroke:#1f9e89;fill:none}.f2{fill:#1f9e89}.k3{stroke:#8e5cd6;fill:none}.f3{fill:#8e5cd6}.k4{stroke:#b8901c;fill:none}.f4{fill:#b8901c}.k5{stroke:#6b6a65;fill:none}.f5{fill:#6b6a65}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.grid{stroke:#33332f}.axis{stroke:#6f6e69}.k0{stroke:#d95926}.f0{fill:#d95926}.k1{stroke:#3987e5}.f1{fill:#3987e5}.k2{stroke:#2bb59e}.f2{fill:#2bb59e}.k3{stroke:#a77ae6}.f3{fill:#a77ae6}.k4{stroke:#d1a93a}.f4{fill:#d1a93a}.k5{stroke:#a3a29c}.f5{fill:#a3a29c}}</style>
+<rect class="bg" x="0" y="0" width="760" height="572" rx="8"/>
+<text class="ink" x="70" y="30" font-size="17" font-weight="600">Answer only when confident: accuracy vs coverage</text>
+<text class="ink2" x="70" y="50" font-size="12.5">Selective AC@1 of the most confident k of 45 holdout incidents, per confidence signal (ties by case ID)</text>
+<line class="grid" x1="70" x2="730" y1="64.0" y2="64.0" stroke-width="1"/>
+<text class="ink2" x="60" y="68.0" font-size="12" text-anchor="end">1.0</text>
+<line class="grid" x1="70" x2="730" y1="127.2" y2="127.2" stroke-width="1"/>
+<text class="ink2" x="60" y="131.2" font-size="12" text-anchor="end">0.9</text>
+<line class="grid" x1="70" x2="730" y1="190.4" y2="190.4" stroke-width="1"/>
+<text class="ink2" x="60" y="194.4" font-size="12" text-anchor="end">0.8</text>
+<line class="grid" x1="70" x2="730" y1="253.6" y2="253.6" stroke-width="1"/>
+<text class="ink2" x="60" y="257.6" font-size="12" text-anchor="end">0.7</text>
+<line class="grid" x1="70" x2="730" y1="316.8" y2="316.8" stroke-width="1"/>
+<text class="ink2" x="60" y="320.8" font-size="12" text-anchor="end">0.6</text>
+<line class="grid" x1="70" x2="730" y1="380.0" y2="380.0" stroke-width="1"/>
+<text class="ink2" x="60" y="384.0" font-size="12" text-anchor="end">0.5</text>
+<text class="ink2" x="70.0" y="400" font-size="12" text-anchor="middle">0%</text>
+<text class="ink2" x="235.0" y="400" font-size="12" text-anchor="middle">25%</text>
+<text class="ink2" x="400.0" y="400" font-size="12" text-anchor="middle">50%</text>
+<text class="ink2" x="565.0" y="400" font-size="12" text-anchor="middle">75%</text>
+<text class="ink2" x="730.0" y="400" font-size="12" text-anchor="middle">100%</text>
+<line class="axis" x1="70" x2="730" y1="380" y2="380" stroke-width="1"/>
+<text class="ink2" x="400.0" y="424" font-size="12.5" text-anchor="middle">coverage (share of incidents answered)</text>
+<text class="ink2" transform="translate(20 222.0) rotate(-90)" font-size="12.5" text-anchor="middle">selective AC@1</text>
+<g><title>self-report · b1: AURC 0.069</title><polyline class="k0" points="84.7,64.0 99.3,64.0 114.0,64.0 128.7,64.0 143.3,64.0 158.0,64.0 172.7,64.0 187.3,64.0 202.0,64.0 216.7,64.0 231.3,64.0 246.0,116.7 260.7,112.6 275.3,109.1 290.0,106.1 304.7,103.5 319.3,101.2 334.0,99.1 348.7,97.3 363.3,127.2 378.0,124.2 392.7,121.5 407.3,119.0 422.0,143.0 436.7,139.8 451.3,136.9 466.0,134.2 480.7,131.7 495.3,129.4 510.0,127.2 524.7,125.2 539.3,123.2 554.0,121.5 568.7,119.8 583.3,118.2 598.0,116.7 612.7,132.3 627.3,130.5 642.0,128.8 656.7,127.2 671.3,125.7 686.0,124.2 700.7,122.8 715.3,121.5 730.0,120.2" stroke-width="2"/></g>
+<line class="k0" x1="70" x2="92" y1="448" y2="448" stroke-width="3"/>
+<text class="ink" x="100" y="452" font-size="12">self-report · b1 (AURC 0.069; full coverage 0.911)</text>
+<g><title>self-report · ma: AURC 0.049</title><polyline class="k1" points="84.7,64.0 99.3,64.0 114.0,64.0 128.7,64.0 143.3,64.0 158.0,64.0 172.7,64.0 187.3,64.0 202.0,64.0 216.7,64.0 231.3,64.0 246.0,64.0 260.7,64.0 275.3,109.1 290.0,106.1 304.7,103.5 319.3,101.2 334.0,99.1 348.7,97.3 363.3,95.6 378.0,94.1 392.7,92.7 407.3,91.5 422.0,90.3 436.7,114.6 451.3,112.6 466.0,110.8 480.7,109.1 495.3,107.6 510.0,106.1 524.7,104.8 539.3,103.5 554.0,102.3 568.7,119.8 583.3,118.2 598.0,116.7 612.7,115.2 627.3,113.9 642.0,112.6 656.7,111.4 671.3,110.2 686.0,109.1 700.7,122.8 715.3,121.5 730.0,120.2" stroke-width="2"/></g>
+<line class="k1" x1="70" x2="92" y1="470" y2="470" stroke-width="3"/>
+<text class="ink" x="100" y="474" font-size="12">self-report · ma (AURC 0.049; full coverage 0.911)</text>
+<g><title>vote share (3 reps) · b1-t1: AURC 0.023</title><polyline class="k2" points="84.7,64.0 99.3,64.0 114.0,64.0 128.7,64.0 143.3,64.0 158.0,64.0 172.7,64.0 187.3,64.0 202.0,64.0 216.7,64.0 231.3,64.0 246.0,64.0 260.7,64.0 275.3,64.0 290.0,64.0 304.7,64.0 319.3,64.0 334.0,64.0 348.7,64.0 363.3,64.0 378.0,64.0 392.7,92.7 407.3,91.5 422.0,90.3 436.7,89.3 451.3,88.3 466.0,87.4 480.7,86.6 495.3,85.8 510.0,85.1 524.7,84.4 539.3,83.8 554.0,83.2 568.7,82.6 583.3,100.1 598.0,99.1 612.7,98.2 627.3,97.3 642.0,96.4 656.7,95.6 671.3,94.8 686.0,94.1 700.7,93.4 715.3,92.7 730.0,92.1" stroke-width="2"/></g>
+<line class="k2" x1="70" x2="92" y1="492" y2="492" stroke-width="3"/>
+<text class="ink" x="100" y="496" font-size="12">vote share (3 reps) · b1-t1 (AURC 0.023; full coverage 0.956)</text>
+<g><title>specialist agreement · ma: AURC 0.041</title><polyline class="k3" points="84.7,64.0 99.3,64.0 114.0,64.0 128.7,64.0 143.3,64.0 158.0,64.0 172.7,64.0 187.3,64.0 202.0,64.0 216.7,64.0 231.3,64.0 246.0,64.0 260.7,64.0 275.3,64.0 290.0,64.0 304.7,64.0 319.3,64.0 334.0,99.1 348.7,97.3 363.3,95.6 378.0,94.1 392.7,92.7 407.3,91.5 422.0,90.3 436.7,89.3 451.3,88.3 466.0,110.8 480.7,109.1 495.3,107.6 510.0,106.1 524.7,104.8 539.3,103.5 554.0,102.3 568.7,101.2 583.3,100.1 598.0,116.7 612.7,115.2 627.3,113.9 642.0,112.6 656.7,111.4 671.3,125.7 686.0,124.2 700.7,122.8 715.3,121.5 730.0,120.2" stroke-width="2"/></g>
+<line class="k3" x1="70" x2="92" y1="514" y2="514" stroke-width="3"/>
+<text class="ink" x="100" y="518" font-size="12">specialist agreement · ma (AURC 0.041; full coverage 0.911)</text>
+<g><title>paraphrase agreement (v1, p1, p3) · b1: AURC 0.007</title><polyline class="k4" points="84.7,64.0 99.3,64.0 114.0,64.0 128.7,64.0 143.3,64.0 158.0,64.0 172.7,64.0 187.3,64.0 202.0,64.0 216.7,64.0 231.3,64.0 246.0,64.0 260.7,64.0 275.3,64.0 290.0,64.0 304.7,64.0 319.3,64.0 334.0,64.0 348.7,64.0 363.3,64.0 378.0,64.0 392.7,64.0 407.3,64.0 422.0,64.0 436.7,64.0 451.3,64.0 466.0,64.0 480.7,64.0 495.3,64.0 510.0,64.0 524.7,64.0 539.3,64.0 554.0,64.0 568.7,64.0 583.3,64.0 598.0,64.0 612.7,64.0 627.3,64.0 642.0,64.0 656.7,64.0 671.3,79.4 686.0,94.1 700.7,108.1 715.3,121.5 730.0,120.2" stroke-width="2"/></g>
+<line class="k4" x1="70" x2="92" y1="536" y2="536" stroke-width="3"/>
+<text class="ink" x="100" y="540" font-size="12">paraphrase agreement (v1, p1, p3) · b1 (AURC 0.007; full coverage 0.911)</text>
+<g><title>paraphrase agreement (v1, p3) · ma: AURC 0.048</title><polyline class="k5" points="84.7,64.0 99.3,64.0 114.0,64.0 128.7,64.0 143.3,64.0 158.0,64.0 172.7,64.0 187.3,64.0 202.0,64.0 216.7,64.0 231.3,64.0 246.0,64.0 260.7,64.0 275.3,109.1 290.0,106.1 304.7,103.5 319.3,101.2 334.0,99.1 348.7,97.3 363.3,95.6 378.0,94.1 392.7,92.7 407.3,91.5 422.0,116.7 436.7,114.6 451.3,112.6 466.0,110.8 480.7,109.1 495.3,107.6 510.0,106.1 524.7,104.8 539.3,103.5 554.0,102.3 568.7,101.2 583.3,100.1 598.0,116.7 612.7,115.2 627.3,113.9 642.0,112.6 656.7,111.4 671.3,110.2 686.0,109.1 700.7,108.1 715.3,107.1 730.0,120.2" stroke-width="2"/></g>
+<line class="k5" x1="70" x2="92" y1="558" y2="558" stroke-width="3"/>
+<text class="ink" x="100" y="562" font-size="12">paraphrase agreement (v1, p3) · ma (AURC 0.048; full coverage 0.911)</text>
+</svg>
