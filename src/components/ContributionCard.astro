@@ -44,6 +44,7 @@ const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 
 		padding: 28px 0;
 		border-bottom: 1px solid var(--line);
 	}
+	.contribution[hidden] { display: none; }
 	.contribution-repo { margin: 0 0 10px; font: 500 12px var(--font-mono); }
 	.contribution-repo a { color: var(--ink); text-decoration: none; }
 	.contribution-repo a:hover { text-decoration: underline; }
