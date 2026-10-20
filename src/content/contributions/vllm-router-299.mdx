@@ -1,24 +1,32 @@
 ---
-title: Persistent Worker State for Discovered P/D Routing in vLLM Router
-description: Persistent discovery workers, generation-aware lifecycle reconciliation, cache-aware membership, and phase-correct load accounting for vLLM prefill/decode routing.
+title: "Persistent worker state for discovered P/D routing in vLLM Router"
+description: "Persistent discovery workers, generation-aware lifecycle reconciliation, cache-aware membership, and phase-correct load accounting for vLLM prefill/decode routing."
+lede: "Fixing worker identity, cache-aware initialization, discovery lifecycle, and in-flight load accounting for vLLM prefill/decode disaggregation."
+project: "vLLM Router"
+repository: "vllm-project/router"
+repositoryUrl: "https://github.com/vllm-project/router"
+issueNumber: "#299"
+contributionType: "Routing lifecycle correctness"
+technicalArea: "LLM inference routing / prefill-decode disaggregation"
+status: "PR Open"
+prMerged: false
+date: "2026-09-25"
+complexity: "Hard"
+issueUrl: "https://github.com/vllm-project/router/issues/299"
+prUrl: "https://github.com/vllm-project/router/pull/311"
+stack: 
+  - "Rust"
+  - "Tokio"
+  - "service discovery"
+shortSummary: "Persistent discovery workers, generation-aware lifecycle reconciliation, cache-aware membership, and phase-correct load accounting for vLLM prefill/decode routing."
+concepts: 
+  - "Service discovery"
+  - "Persistent worker identity"
+  - "Cache-aware routing"
+  - "Concurrency"
+  - "RAII"
+  - "Streaming lifecycle"
 ---
-
-# Persistent Worker State for Discovered P/D Routing in vLLM Router
-
-> Fixing worker identity, cache-aware initialization, discovery lifecycle, and in-flight load accounting for vLLM prefill/decode disaggregation.
-
-## Contribution
-
-| Field | Details |
-| --- | --- |
-| Project | vLLM Router |
-| Repository | [`vllm-project/router`](https://github.com/vllm-project/router) |
-| Issue | [#299 — PD discovery drops worker load state and bypasses cache-aware initialization](https://github.com/vllm-project/router/issues/299) |
-| Pull request | [#311 — Fix persistent worker state for discovered P/D routing](https://github.com/vllm-project/router/pull/311) |
-| Status | PR Open |
-| Area | LLM inference routing / Prefill-Decode disaggregation |
-| Contribution type | Routing lifecycle correctness |
-| Main concepts | Service discovery, persistent worker identity, cache-aware routing, concurrency, RAII, streaming lifecycle |
 
 ## The problem
 
@@ -549,26 +557,3 @@ That gives routing policies meaningful information across requests instead of re
 - [vLLM Router repository](https://github.com/vllm-project/router)
 - [Issue #299 — PD discovery drops worker load state and bypasses cache-aware initialization](https://github.com/vllm-project/router/issues/299)
 - [Pull request #311 — Fix persistent worker state for discovered P/D routing](https://github.com/vllm-project/router/pull/311)
-- [Open-source portfolio](https://pyextreme.github.io/open-source/)
-
----
-
-Suggested portfolio card metadata:
-
-```text
-Project: vLLM Router
-Issue: #299
-Title: Persistent worker state for discovered P/D routing
-Contribution type: Routing lifecycle correctness
-Technical area: LLM inference routing
-Status: PR Open
-
-Summary:
-Preserve discovered prefill/decode worker state across routing decisions, synchronize cache-aware membership with registration lifetimes, and track phase-correct load through cancellation and streaming response completion.
-
-Concepts:
-Persistent worker identity · P/D disaggregation · Cache-aware routing · Service discovery · Concurrency · RAII · Streaming lifecycle
-
-Detail route:
-/open-source/vllm-router-299/
-```

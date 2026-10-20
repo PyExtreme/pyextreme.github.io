@@ -1,0 +1,48 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+	headings: MarkdownHeading[];
+}
+const items = Astro.props.headings.filter((h) => h.depth === 2);
+---
+
+{
+	items.length > 1 && (
+		<details class="toc">
+			<summary>On this page</summary>
+			<ol>
+				{items.map((h) => (
+					<li><a href={`#${h.slug}`}>{h.text}</a></li>
+				))}
+			</ol>
+		</details>
+	)
+}
+
+<script>
+	const toc = document.querySelector<HTMLDetailsElement>('.toc');
+	if (toc && window.matchMedia('(min-width: 1024px)').matches) toc.open = true;
+</script>
+
+<style>
+	.toc { padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+	.toc summary {
+		cursor: pointer;
+		color: var(--muted);
+		font: 500 11px/1.5 var(--font-mono);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		list-style: none;
+	}
+	.toc summary::-webkit-details-marker { display: none; }
+	.toc summary::after { content: '+'; float: right; }
+	.toc[open] summary::after { content: '−'; }
+	.toc ol { margin: 14px 0 0; padding: 0; list-style: none; }
+	.toc li { margin: 0 0 8px; font-size: 13.5px; line-height: 1.45; }
+	.toc a { color: var(--ink-soft); text-decoration: none; }
+	.toc a:hover { color: var(--ink); text-decoration: underline; }
+	@media (min-width: 1024px) {
+		.toc { border-bottom: 0; }
+	}
+</style>
