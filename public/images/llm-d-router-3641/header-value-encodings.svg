@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" width="760" height="400" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">HeaderValue encodings of :status in Envoy and agentgateway</title>
+<desc id="d">Envoy sends the :status pseudo-header with value empty and raw_value bytes 32 30 30. agentgateway sends value "200" and an empty raw_value. The old check string(RawValue) == "200" is true for Envoy and false for agentgateway, so every agentgateway response was counted as ModelServerError. The new statusIsOK predicate reads raw_value when non-empty and falls back to value, returning true for both.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.box{fill:#f3f2ef;stroke:#d6d5d0}.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace}.ok{fill:#1f9e74}.bad{fill:#d0452b}.line{stroke:#9b9a95;fill:none}.hl{fill:#2a78d6}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.box{fill:#24241f;stroke:#3d3d38}.ok{fill:#2fb487}.bad{fill:#ef6a4f}.line{stroke:#6f6e69}.hl{fill:#3987e5}}</style>
+<rect class="bg" x="0" y="0" width="760" height="400" rx="8"/>
+<text class="ink" x="40" y="34" font-size="17" font-weight="600">One :status header, two legal encodings</text>
+<text class="ink2" x="40" y="54" font-size="12.5">config.core.v3.HeaderValue as each gateway serializes it for ext_proc, and how each EPP check reads it</text>
+
+<text class="ink" x="40" y="94" font-size="14" font-weight="600">Envoy</text>
+<rect class="box" x="40" y="104" width="320" height="96" rx="6"/>
+<text class="ink2 mono" x="56" y="132" font-size="13">key:       ":status"</text>
+<text class="ink2 mono" x="56" y="156" font-size="13">value:     ""</text>
+<text class="mono" x="56" y="180" font-size="13"><tspan class="ink2">raw_value: </tspan><tspan class="hl" font-weight="600">32 30 30</tspan><tspan class="ink2">  ("200")</tspan></text>
+
+<text class="ink" x="400" y="94" font-size="14" font-weight="600">agentgateway</text>
+<rect class="box" x="400" y="104" width="320" height="96" rx="6"/>
+<text class="ink2 mono" x="416" y="132" font-size="13">key:       ":status"</text>
+<text class="mono" x="416" y="156" font-size="13"><tspan class="ink2">value:     </tspan><tspan class="hl" font-weight="600">"200"</tspan></text>
+<text class="ink2 mono" x="416" y="180" font-size="13">raw_value: []  (empty)</text>
+
+<line class="line" x1="40" x2="720" y1="228" y2="228" stroke-width="1"/>
+<text class="ink2" x="40" y="256" font-size="12.5" font-weight="600">BEFORE</text>
+<text class="ink mono" x="40" y="280" font-size="13">string(header.RawValue) == "200"</text>
+<text class="ok" x="56" y="308" font-size="13.5" font-weight="600">✓ true: success</text>
+<text class="bad" x="416" y="308" font-size="13.5" font-weight="600">✗ "" ≠ "200": ModelServerError</text>
+
+<line class="line" x1="40" x2="720" y1="328" y2="328" stroke-width="1"/>
+<text class="ink2" x="40" y="352" font-size="12.5" font-weight="600">AFTER</text>
+<text class="ink mono" x="110" y="352" font-size="13">statusIsOK(header): RawValue if non-empty, else Value</text>
+<text class="ok" x="56" y="380" font-size="13.5" font-weight="600">✓ true: success</text>
+<text class="ok" x="416" y="380" font-size="13.5" font-weight="600">✓ true: success</text>
+</svg>

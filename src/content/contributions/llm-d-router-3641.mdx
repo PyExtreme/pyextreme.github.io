@@ -1,0 +1,117 @@
+---
+title: "When every 200 became an error in llm-d-router"
+description: "Reading the :status response header from either HeaderValue field so the EPP stops counting every successful response behind agentgateway as a ModelServerError."
+lede: "Behind agentgateway, the router reported a 99.7% error rate while every client got HTTP 200. The cause was one protobuf message with two legal encodings, and the fix had to stay allocation-free on the per-header hot path."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#3641"
+contributionType: "Observability correctness"
+technicalArea: "LLM request routing / Envoy ext_proc"
+status: "PR Open"
+prMerged: false
+date: "2026-10-28"
+complexity: "Medium"
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/3641"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/3697"
+stack: 
+  - "Go"
+  - "Envoy ext_proc"
+  - "agentgateway"
+  - "Prometheus"
+  - "OpenTelemetry"
+shortSummary: "Fixed the EPP's response-status check to honor both HeaderValue encodings, ending a false 99.7% ModelServerError rate behind agentgateway without adding a hot-path allocation."
+concepts: 
+  - "Protocol contracts"
+  - "HTTP/2 pseudo-headers"
+  - "Envoy ext_proc"
+  - "Go allocation"
+  - "Observability"
+---
+
+## Context: a telemetry path that crosses three vendors
+
+I fixed a bug in the [llm-d router](https://github.com/llm-d/llm-d-router) ([issue #3641](https://github.com/llm-d/llm-d-router/issues/3641)) where a wire-encoding ambiguity in Envoy's external processing protocol caused the inference router to classify every successful LLM response as a model server failure. The fix is small. Finding the correct fix required reasoning across the HTTP/2 pseudo-header model, the Envoy `ext_proc` gRPC contract, two independent gateway implementations, and Go's allocation semantics on a per-request hot path.
+
+The llm-d router is a Go service that implements the Kubernetes Gateway API Inference Extension. Its core component, the Endpoint Picker (EPP), runs as an Envoy external processor: the gateway streams each request and response to the EPP over a bidirectional gRPC stream, and the EPP replies with mutations and metadata. On the request path it chooses the vLLM pod (prefix-cache affinity, KV-cache load, LoRA residency). On the response path it reads the upstream status and content-type, tracks streaming state, and emits the request outcome into Prometheus counters and OpenTelemetry spans.
+
+That response path is the only place the EPP learns whether the model server succeeded. It is therefore the single source of truth for the project's shipped error-ratio alerts and for span status in Jaeger.
+
+## Symptom: a 99.7% error rate with zero failed requests
+
+Behind [agentgateway](https://github.com/agentgateway/agentgateway) v1.4.1, the counter `llm_d_epp_request_error_total{error_code="ModelServerError"}` grew at the same rate as `llm_d_epp_request_total`. Over a 5-minute window on a DGX Spark running two vLLM replicas the two rates were 3.367/s and 3.377/s, a ratio of 0.997. Every client in that window received HTTP 200 and a complete token stream.
+
+The blast radius was entirely in the observability plane, which made it worse, not better:
+
+- The project's shipped alerting rules `EPPHighErrorRatio` and `EPPCriticalErrorRatio` fired from the first minute and never cleared, so a paging signal became noise.
+- Every EPP `request` span carried `otel.status_code=ERROR` with `ModelServerError` as the description, so trace-based debugging showed the router as the failing hop on every request.
+- Behind Envoy proper the same build was clean, so the defect only appeared with one of the two supported gateway data planes, and only once monitoring was enabled.
+
+A metric that is wrong in a deterministic, gateway-dependent way is a classification bug, not a flaky signal. That framing pointed at the one place the EPP decides success versus failure.
+
+## Root cause: one protobuf message, two legal encodings
+
+Envoy's `config.core.v3.HeaderValue` message carries a header's value in one of two fields: `value` (a UTF-8 string) or `raw_value` (arbitrary bytes). The schema does not declare them as a `oneof`. Both may be empty, either may be set, and the contract is that a consumer reads whichever is populated. This design exists because HTTP header values are not required to be valid UTF-8, so a bytes field is needed, while the string field predates it and remains valid.
+
+The second ingredient is the HTTP/2 pseudo-header model. In HTTP/2 the response status is not a header line but the `:status` pseudo-header, which proxies synthesize from the status code when they serialize headers for an external processor. Envoy's `ext_proc` filter serializes `:status` the same way it serializes every other header, in `raw_value`. agentgateway, a Rust data plane that implements the same `ext_proc` contract, serializes regular headers in `raw_value` but appends pseudo-headers through a separate path that sets `value` and leaves `raw_value` as an empty vector.
+
+![How Envoy and agentgateway encode the :status header, and how the old and new EPP checks read each](/images/llm-d-router-3641/header-value-encodings.svg)
+
+The EPP's status check compared `string(header.RawValue)` against the literal `"200"`. Under Envoy that comparison sees the bytes `32 30 30`. Under agentgateway it sees zero bytes, and an empty string is not equal to `"200"`, so the error branch ran on every response. The code encoded an assumption about the producer's serialization choice rather than the protocol's contract. The assumption held for the only producer the original test suite exercised.
+
+## Constraints: correct is necessary, allocation-free is required
+
+The obvious fix was to call the repository's existing helper, `envoy.GetHeaderValue`, which already implements the fallback (return `RawValue` if non-empty, else `Value`). I rejected it for this call site after reading the loop it sits in.
+
+The status check runs inside the per-header loop of the response-headers handler, which executes for every header of every response the EPP processes. A comment on that loop documents an allocation budget: the trace logger is guarded by an `Enabled()` check because even a disabled logger boxes its arguments into a heap-allocated slice, and the status comparison is written as `string(header.RawValue) != "200"` because the Go compiler recognizes a `[]byte` to `string` conversion used directly in a comparison and elides the copy. `envoy.GetHeaderValue` returns a `string`, which forces that copy on every call. On a router handling thousands of responses per second with a dozen headers each, that is a measurable GC contribution for a check that only needs to answer yes or no.
+
+The other constraints were scope and minimalism. The project's contribution rules require the smallest correct change inside the smallest scope. The content-type check in the same loop had the same `RawValue`-only pattern, but agentgateway happens to send content-type in `raw_value`, so it was not broken and stayed out of the change.
+
+## The fix: a predicate that preserves the fast path
+
+I introduced a single predicate in `pkg/epp/handlers/server.go` that keeps the no-copy byte comparison as the primary path and falls back to the string field only when the bytes are empty. `header.Value` is already a Go string, so the fallback branch compares without allocating either.
+
+```go
+// statusIsOK reports whether a status header carries 200. Proxies may set the
+// status in either RawValue or Value. Comparing string(header.RawValue) directly
+// does not allocate, unlike envoy.GetHeaderValue.
+func statusIsOK(header *configPb.HeaderValue) bool {
+    if len(header.RawValue) > 0 {
+        return string(header.RawValue) == "200"
+    }
+    return header.Value == "200"
+}
+```
+
+The call site changed by one expression:
+
+```go
+-if (key == ":status" || key == "status") && string(header.RawValue) != "200" {
++if (key == ":status" || key == "status") && !statusIsOK(header) {
+     reqCtx.responseStatusCode = errcommon.ModelServerError
+ }
+```
+
+The semantics are now defined by the protobuf contract rather than by one producer's habit. A gateway that fills `raw_value` takes the same path it always did. A gateway that fills `value` takes the fallback. A real upstream failure is still classified as an error under both encodings, because the predicate reports status 200 only when the populated field says 200. The whole diff is 21 insertions and 11 deletions across two files.
+
+## Verification: a regression test that spans both producers
+
+The existing table-driven test constructed every header with `RawValue` only, so it could not have caught this, and it would still pass after a regression. I rewrote the table to take a full `HeaderValue` per case and added two cases that carry the status in `Value`. The test drives the real `Process` loop through a replay gRPC server and asserts on the Prometheus counter, so it exercises the metrics pipeline rather than the predicate in isolation.
+
+| Case | Header sent to the EPP | Errors counted |
+| --- | --- | --- |
+| Envoy pseudo-header, upstream failure | `{":status", RawValue: "502"}` | 1 |
+| Envoy pseudo-header, success | `{":status", RawValue: "200"}` | 0 |
+| Plain status header, upstream failure | `{"status", RawValue: "502"}` | 1 |
+| Pseudo-header in Value, upstream failure (new) | `{":status", Value: "502"}` | 1 |
+| Pseudo-header in Value, success (new) | `{":status", Value: "200"}` | 0 |
+
+Before the fix the last row counted 1 error and failed. After the fix all five cases pass. The matrix covers both encodings and both outcomes, so a future change that reads only one field, or that treats an empty field as success, fails the suite.
+
+## Core concepts this exercised
+
+- **Protocol contracts over producer habits.** A consumer of a cross-vendor protocol must implement the message's full contract, not the subset one implementation happens to use. `HeaderValue` admits two encodings, and a correct reader handles both.
+- **HTTP/2 pseudo-headers are synthesized, not forwarded.** `:status` never exists as a header line on the wire. Each proxy constructs it when serializing for `ext_proc`, which is why two proxies can disagree on its encoding while agreeing on every regular header.
+- **Hot-path allocation discipline in Go.** The compiler elides the copy in `string(b) == "lit"` but not in a function that returns `string(b)`. Reusing the existing helper would have been correct and would have added a heap allocation per header per response.
+- **Observability bugs have a different blast radius.** No client saw a failure, yet the router reported a 99.7% error rate, paged on it permanently, and marked every trace red. A misclassification in the telemetry plane destroys the signals operators rely on to find real failures.
+- **Test matrices must span producer variants.** The original tests were green and complete for Envoy. Coverage of one producer gave false confidence about a protocol with two.
