@@ -1,0 +1,115 @@
+---
+title: "Routing /v1/responses through Dynamo's EPP"
+description: "Choosing the request API from the :path pseudo-header and reusing the Frontend's Responses-to-chat conversion, so the Kubernetes gateway KV-routes /v1/responses instead of rejecting it with HTTP 400."
+lede: "The Frontend served /v1/responses fine, but every Responses request through the gateway failed with HTTP 400. The Endpoint Picker guessed the API from the JSON body, and a body with input instead of messages guessed wrong."
+project: "NVIDIA Dynamo"
+repository: "ai-dynamo/dynamo"
+repositoryUrl: "https://github.com/ai-dynamo/dynamo"
+issueNumber: "#16583"
+contributionType: "API routing feature"
+technicalArea: "LLM request routing / Envoy ext_proc"
+status: "PR Open"
+prMerged: false
+date: "2026-10-28"
+complexity: "Medium"
+issueUrl: "https://github.com/ai-dynamo/dynamo/issues/16583"
+prUrl: "https://github.com/ai-dynamo/dynamo/pull/17529"
+stack: 
+  - "Rust"
+  - "serde"
+  - "Envoy ext_proc"
+  - "Kubernetes Gateway API"
+  - "Tokenizers"
+shortSummary: "Made Dynamo's EPP dispatch on the URL path and reuse the Frontend's Responses-to-chat conversion, so /v1/responses requests through the gateway get KV-aware routing instead of HTTP 400."
+concepts: 
+  - "KV cache and prefix reuse"
+  - "Cache-aware routing"
+  - "Envoy ext_proc"
+  - "HTTP/2 pseudo-headers"
+  - "OpenAI API formats"
+  - "Rust serde and TryFrom"
+---
+
+## Context: routing needs the exact tokens
+
+I added `/v1/responses` support to the Endpoint Picker in [NVIDIA Dynamo](https://github.com/ai-dynamo/dynamo) ([issue #16583](https://github.com/ai-dynamo/dynamo/issues/16583)), an open-source framework for serving large language models across GPU clusters.
+
+Which GPU a request lands on matters for latency. Before a model generates text, it processes the whole prompt and stores the intermediate attention state in its KV cache. A worker that already holds the cache for the start of a prompt can skip that prefill work. Dynamo's KV-aware router tokenizes each request and sends it to the worker with the best prefix match.
+
+In a Kubernetes deployment, an Envoy gateway receives client traffic. Before forwarding a request, Envoy asks the Endpoint Picker (EPP) which worker should get it. The EPP is a Rust service that talks to Envoy over gRPC through the external processing (`ext_proc`) API. To pick well, it has to tokenize the request exactly as Dynamo's Frontend will. A token sequence that differs by one template character produces a different prefix hash, and the cache match it computes is fiction.
+
+## Symptom: one endpoint, two outcomes
+
+Sent directly to the Frontend, a `/v1/responses` request worked. Sent through the gateway, the same request came back as HTTP 400. Chat Completions and Completions requests routed normally on both paths, so the defect was specific to the gateway and to one API shape.
+
+## Root cause: guessing the API from the body
+
+The EPP decided which OpenAI API a request used by inspecting its JSON body, not its URL:
+
+- a non-empty `messages` array meant Chat Completions
+- a `prompt` field meant Completions
+- anything else was parsed as Chat Completions
+
+A Responses request carries `input`, and optionally `instructions`, instead. It fell into the default case, failed to deserialize as a chat request because `messages` was missing, and the pick returned 400. The heuristic worked for exactly as long as there were two request shapes.
+
+The guessing also cost time on every request. To see which fields were present, the EPP parsed each body into a generic `serde_json::Value` tree, then parsed it a second time into the typed request. A comment in the code already noted that the URL path would settle the question in constant time, but nobody had confirmed that Envoy passes the path to the external processor.
+
+## The fix: dispatch on the path, reuse the Frontend's conversion
+
+![Before, a /v1/responses body falls through to the chat parser and fails with HTTP 400. After, the EPP reads :path, converts with the Frontend's code, tokenizes with the chat template, and reaches the KV router](/images/dynamo-16583/path-dispatch.svg)
+
+The change has two parts, both in `deploy/inference-gateway/ext-proc/src/epp.rs`.
+
+**1. Choose the API from the URL.** Envoy's `ext_proc` filter sends the request's `:path` pseudo-header along with the other headers. A new `request_api_from_path` function strips any query string and maps `/v1/chat/completions`, `/v1/completions` and `/v1/responses` to the matching request type. A known path is parsed once, straight into that type. An unknown or absent path still goes through the original body check, so behavior there is unchanged.
+
+```rust
+match request_api_from_path(headers) {
+    Some(RequestApi::ChatCompletions) => { /* parse as chat, tokenize */ }
+    Some(RequestApi::Completions) => { /* parse as completion, tokenize */ }
+    Some(RequestApi::Responses) => {
+        let request = responses_to_chat_request(request_json)?;
+        return self.tokenize_chat(&request, headers);
+    }
+    None => {} // unknown path: fall back to inspecting the body
+}
+```
+
+**2. Convert with the Frontend's own code.** For `/v1/responses`, the EPP calls the same `TryFrom<NvCreateResponse> for NvCreateChatCompletionRequest` conversion the Frontend uses, then applies `normalize_reasoning_template_args`, the same two steps the Frontend's Responses handler runs before templating. The resulting chat request goes through the existing chat-template tokenization, so the routing tokens are the ones the Frontend will compute. The `nvext` extension field survives the conversion, so the `nvext.token_data` the EPP injects still reaches the Frontend's chat preprocessor.
+
+I chose reuse over a new conversion on purpose. A second copy of the Responses-to-chat mapping in the EPP would drift from the Frontend's as the Responses format evolves, and that drift would not fail loudly. It would silently degrade cache hit rates.
+
+There is one deliberate behavior change. On a known path, a body of the wrong shape, such as a `prompt` body posted to `/v1/chat/completions`, is now rejected by the EPP instead of being re-sniffed into another API. The Frontend rejects those requests anyway, so the gateway now fails at the same point the backend would.
+
+The whole change is one file in a workspace of 20+ crates: 148 lines added and 9 removed, of which about 44 are core logic and the rest are tests.
+
+| Request at the EPP | Before | After |
+| --- | --- | --- |
+| `/v1/responses` | Parsed as chat, fails, pick returns 400 | Converted as the Frontend does, tokenized, KV-routed |
+| `/v1/chat/completions`, `/v1/completions` | Body sniff with a full `serde_json::Value` parse | Single typed parse selected by `:path` |
+| Unknown or absent `:path` | Body sniff | Body sniff (unchanged) |
+
+## Verification: parity, not just parsing
+
+All 38 EPP unit tests pass, including two new ones, and `cargo clippy` reports no warnings in the crate.
+
+| Test | What it proves |
+| --- | --- |
+| `request_api_chosen_by_path` | Each route maps to its API, a query string is ignored, and an unknown path or missing header falls back to the body check |
+| `responses_tokens_match_equivalent_chat_request` | With a real tokenizer and chat template (TinyLlama fixture), streaming and non-streaming: a Responses body fails to parse as chat (the original bug), and its converted tokens equal those of the equivalent chat request |
+
+The second test asserts on token IDs rather than on a successful parse. A conversion that produced a valid chat request with a slightly different rendered prompt would route requests to the wrong worker without ever raising an error, and only a token-for-token comparison catches that.
+
+Still pending before the PR leaves draft: an end-to-end run through a live gateway with streaming and non-streaming `/v1/responses`. That run also confirms the one assumption the fix rests on, that the gateway forwards `:path` to `ext_proc`. If it does not, Responses requests fall back to the body check and fail exactly as before, and nothing else regresses.
+
+## Scope I left for follow-ups
+
+- The Frontend normalizes reasoning template arguments for plain chat requests too, but the EPP's `tokenize_chat` does not. That gap predates this change, so I noted it instead of folding it in.
+- Response-side usage parsing reads chat-shaped `usage` (`prompt_tokens`), so Responses usage (`input_tokens`) is not captured. The EPP only logs it today.
+
+## Core concepts this exercised
+
+- **Route on what the client said, not on a guess.** The URL already names the API. Inferring it from body fields broke the moment a third request shape arrived, and cost a second parse on every request.
+- **Reuse the source of truth.** Cache-aware routing is only as good as the token parity between the router and the server. Calling the Frontend's own conversion keeps the two in step by construction.
+- **Keep a safe fallback for an unverified assumption.** Path dispatch depends on the gateway forwarding an HTTP/2 pseudo-header. Keeping the body check for unknown paths means that if the assumption is wrong, behavior is no worse than before.
+- **Test the property that matters.** The meaningful assertion was equal token IDs across two code paths, not that a request deserialized.
+- **Scoped changes in a large codebase.** One file, a backward-compatible fallback, and adjacent gaps written down rather than fixed in the same PR.
