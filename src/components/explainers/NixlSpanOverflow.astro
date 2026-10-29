@@ -1,0 +1,330 @@
+---
+// Animated walkthrough of NIXL issue #2520: a strided run whose span wraps size_t.
+// Each scene is a `data-scene` state on the figure; CSS drives the motion, the script only steps and times it.
+const scenes = [
+	{
+		title: 'The request',
+		dur: 6000,
+		calc: '{ addr, len: 1, stride: 2⁶³, count: 3 }',
+		text: 'A strided run describes count blocks of len bytes, spaced stride bytes apart. Block 0 starts at addr, inside the registered buffer.',
+	},
+	{
+		title: 'Where the blocks land',
+		dur: 8000,
+		calc: 'block i at addr + i × stride  →  addr,  addr + 2⁶³,  addr + 2⁶⁴ ≡ addr',
+		text: 'Block 1 is 2⁶³ bytes past addr, far outside the buffer. Block 2 is 2⁶⁴ bytes past addr, which wraps the 64-bit address space back around to addr.',
+	},
+	{
+		title: 'The span wraps',
+		dur: 9000,
+		calc: 'span_len = (3 − 1) × 2⁶³ + 1 = 2⁶⁴ + 1  →  1 in size_t',
+		text: 'Before any I/O, NIXL checks one span from the first block to the end of the last. The true span is 2⁶⁴ + 1 bytes, but size_t keeps only the low 64 bits, so span_len comes out as 1.',
+	},
+	{
+		title: 'The check passes',
+		dur: 8000,
+		calc: 'covers(addr, span_len = 1)  →  true',
+		text: 'A 1-byte span at addr fits inside the buffer, so the coverage check accepts the run, and the transfer touches addr + 2⁶³: memory nobody registered.',
+	},
+	{
+		title: 'The fix',
+		dur: 8000,
+		calc: 'count − 1 > (SIZE_MAX − len) / stride  →  2 > 1  →  NIXL_ERR_INVALID_PARAM',
+		text: 'The guard tests the same inequality by dividing instead of multiplying, so the check itself cannot wrap. 2 > 1, so the run is rejected before any memory is touched.',
+	},
+	{
+		title: 'Only overflow is rejected',
+		dur: 10000,
+		calc: 'count 2:  1 > 1 is false  →  span_len = 2⁶³ + 1  →  covers() false',
+		text: 'With count 2 the span is 2⁶³ + 1 bytes, which fits in size_t. The guard lets it through, and the ordinary coverage check now sees the true size and rejects it as uncovered.',
+	},
+];
+// Captions are this file's own constants, so rendering them as HTML is safe.
+const sup = (text: string) => text.replaceAll('2⁶³', '2<sup>63</sup>').replaceAll('2⁶⁴', '2<sup>64</sup>');
+const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
+---
+
+<figure class="nx" data-explainer data-scene="1">
+	<figcaption class="nx-head">
+		<span class="nx-eyebrow">Animated explainer · {scenes.length} scenes · {total} s</span>
+		<span class="nx-now" aria-hidden="true"></span>
+	</figcaption>
+
+	<svg class="nx-stage" viewBox="0 0 720 300" role="img" aria-label="A 64-bit address space with a registered buffer near address 0. A strided run of three 1-byte blocks, stride 2^63, places block 1 halfway across the address space and wraps block 2 back to addr. The span check computes 2^64 + 1, which wraps to 1, so the check passes and I/O reaches unregistered memory. The fixed guard rejects the run before any I/O.">
+		<defs>
+			<marker id="nx-head-ink" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink-soft)" /></marker>
+			<marker id="nx-head-bad" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--nx-bad)" /></marker>
+		</defs>
+
+		<line class="axis" x1="40" x2="680" y1="200" y2="200" />
+		<line class="axis" x1="40" x2="40" y1="192" y2="208" />
+		<line class="axis" x1="360" x2="360" y1="192" y2="208" />
+		<line class="axis" x1="680" x2="680" y1="192" y2="208" />
+		<text class="tick" x="40" y="286">0</text>
+		<text class="tick" x="360" y="286">2<tspan class="sup" dy="-7">63</tspan></text>
+		<text class="tick" x="680" y="286">2<tspan class="sup" dy="-7">64</tspan></text>
+
+		<rect class="band" x="70" y="172" width="110" height="56" rx="6" />
+		<text class="label" x="125" y="254">registered</text>
+
+		<g class="span">
+			<rect class="span-bar" x="100" y="104" width="580" height="8" rx="2" />
+			<text class="label span-true" x="390" y="92">true span: 2<tspan class="sup" dy="-7">64</tspan><tspan dy="7"> + 1 bytes</tspan></text>
+			<text class="label span-one" x="100" y="92">span_len = 1</text>
+			<text class="label span-two" x="260" y="92">span_len = 2<tspan class="sup" dy="-7">63</tspan><tspan dy="7"> + 1</tspan></text>
+		</g>
+
+		<path class="wrap" d="M680 186 C 700 40, 110 40, 100 132" pathLength="1" marker-end="url(#nx-head-ink)" />
+		<text class="label wrap-label" x="390" y="44">addr + 2<tspan class="sup" dy="-7">64</tspan><tspan dy="7"> wraps back to addr</tspan></text>
+
+		<g class="blk b0"><rect x="89" y="185" width="22" height="30" rx="3" /><text x="100" y="205">0</text></g>
+		<g class="blk b1"><rect x="89" y="185" width="22" height="30" rx="3" /><text x="100" y="205">1</text></g>
+		<g class="blk b2"><rect x="89" y="185" width="22" height="30" rx="3" /><text x="100" y="205">2</text></g>
+		<g class="blk b2w"><rect x="89" y="136" width="22" height="30" rx="3" /><text x="100" y="156">2</text></g>
+		<text class="label b1-label" x="420" y="254">addr + 2<tspan class="sup" dy="-7">63</tspan></text>
+
+		<line class="io" x1="420" y1="72" x2="420" y2="176" pathLength="1" marker-end="url(#nx-head-bad)" />
+		<text class="label io-label" x="420" y="60">I/O lands here: never registered</text>
+		<text class="label check" x="100" y="68">✓ covered</text>
+		<text class="label reject" x="360" y="56">✗ rejected: INVALID_PARAM, no I/O</text>
+		<text class="label uncovered" x="100" y="68">✗ not covered: rejected as before</text>
+	</svg>
+
+	<ol class="nx-steps">
+		{scenes.map((scene, i) => (
+			<li data-step={i + 1} data-dur={scene.dur} data-title={scene.title}>
+				<code class="nx-calc" set:html={sup(scene.calc)} />
+				<p class="nx-text"><strong>{scene.title}.</strong> <span set:html={sup(scene.text)} /></p>
+			</li>
+		))}
+	</ol>
+
+	<div class="nx-controls" hidden>
+		<button type="button" class="nx-btn" data-act="prev" aria-label="Previous scene">←</button>
+		<button type="button" class="nx-btn nx-play" data-act="play">Play</button>
+		<button type="button" class="nx-btn" data-act="next" aria-label="Next scene">→</button>
+		<div class="nx-segs">
+			{scenes.map((scene, i) => (
+				<button type="button" class="nx-seg" data-go={i} aria-label={`Scene ${i + 1}: ${scene.title}`}><span></span></button>
+			))}
+		</div>
+	</div>
+</figure>
+
+<style>
+	.nx {
+		--nx-bad: #b8402a;
+		--nx-good: #55700d;
+		margin: 2.4em 0;
+		padding: 20px 20px 16px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: #fff;
+	}
+	.nx-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+	.nx-eyebrow { color: var(--muted); }
+	.nx-now { color: var(--ink); text-align: right; }
+	.nx-stage { display: block; width: 100%; height: auto; font-family: var(--font-mono); }
+
+	.axis { stroke: var(--ink-soft); stroke-width: 1.5; }
+	.tick { fill: var(--muted); font-size: 19px; text-anchor: middle; }
+	.sup { font-size: 13px; }
+	.label { fill: var(--ink-soft); font-size: 19px; text-anchor: middle; }
+	.band { fill: var(--accent); stroke: var(--accent-deep); stroke-width: 1.5; transition: stroke 0.4s; }
+	.blk rect { fill: var(--ink); transition: fill 0.5s, opacity 0.5s; }
+	.blk text { fill: var(--paper); font-size: 15px; font-weight: 600; text-anchor: middle; }
+	.span-bar { fill: var(--ink-soft); transform-box: view-box; transform-origin: 100px 108px; transform: scaleX(0); }
+	.span-one, .check, .uncovered { text-anchor: start; }
+	.wrap, .io { opacity: 0; }
+	[data-scene='2'] .wrap, [data-scene='4'] .io { opacity: 1; }
+	.wrap { fill: none; stroke: var(--ink-soft); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 1; }
+	.io { stroke: var(--nx-bad); stroke-width: 2.5; stroke-dasharray: 1; stroke-dashoffset: 1; }
+	.io-label, .uncovered { fill: var(--nx-bad); font-weight: 600; }
+	.check, .reject { fill: var(--nx-good); font-weight: 600; }
+
+	/* Everything optional starts hidden; each scene reveals its own parts. */
+	.span-true, .span-one, .span-two, .wrap-label, .b1, .b2, .b2w, .b1-label, .io-label, .check, .reject, .uncovered { opacity: 0; transition: opacity 0.5s; }
+
+	/* 2: blocks travel to their real addresses; block 2 runs off the end and wraps. */
+	[data-scene='2'] .b1 { animation: nx-b1 1.8s 0.3s ease-in-out both; }
+	[data-scene='2'] .b2 { animation: nx-b2 3s 1.4s ease-in-out both; }
+	[data-scene='2'] .wrap { animation: nx-draw 1.4s 3.6s ease-in-out both; }
+	[data-scene='2'] .wrap-label { opacity: 1; transition-delay: 3.8s; }
+	[data-scene='2'] .b2w { opacity: 1; transition-delay: 4.8s; }
+	[data-scene='2'] .b1-label { opacity: 1; transition-delay: 1.8s; }
+
+	[data-scene='3'] .b1, [data-scene='4'] .b1, [data-scene='5'] .b1, [data-scene='6'] .b1 { opacity: 1; transform: translateX(320px); }
+	[data-scene='3'] .b1-label, [data-scene='4'] .b1-label, [data-scene='5'] .b1-label, [data-scene='6'] .b1-label { opacity: 1; }
+	[data-scene='3'] .b2w, [data-scene='4'] .b2w, [data-scene='5'] .b2w { opacity: 1; }
+
+	/* 3: the true span stretches past 2⁶⁴, then collapses to one byte. */
+	[data-scene='3'] .span-bar { animation: nx-collapse 4.2s 0.4s ease-in-out both; }
+	[data-scene='3'] .span-true { animation: nx-flash 2.6s 0.6s both; }
+	[data-scene='3'] .span-one { opacity: 1; transition-delay: 3.6s; }
+
+	/* 4: the 1-byte span is covered, and I/O lands on block 1. */
+	[data-scene='4'] .span-bar { transform: scaleX(0.0103); }
+	[data-scene='4'] .span-one { opacity: 1; }
+	[data-scene='4'] .check { opacity: 1; transition-delay: 0.3s; }
+	[data-scene='4'] .io { animation: nx-draw 0.9s 1.4s ease-in both; }
+	[data-scene='4'] .io-label { opacity: 1; transition-delay: 2.2s; }
+	[data-scene='4'] .b1 rect { fill: var(--nx-bad); transition-delay: 2.2s; }
+
+	/* 5: the guard rejects the run before any block is touched. */
+	[data-scene='5'] .blk rect { opacity: 0.3; transition-delay: 0.6s; }
+	[data-scene='5'] .reject { opacity: 1; transition-delay: 1.2s; }
+
+	/* 6: count 2 fits in size_t, so the true span reaches the coverage check. */
+	[data-scene='6'] .span-bar { animation: nx-two 1.6s 0.5s ease-in-out both; }
+	[data-scene='6'] .span-two { opacity: 1; transition-delay: 1.6s; }
+	[data-scene='6'] .uncovered { opacity: 1; transition-delay: 3s; }
+	[data-scene='6'] .band { stroke: var(--nx-bad); transition-delay: 3s; }
+
+	@keyframes nx-b1 { from { opacity: 0; transform: translateX(0); } 15% { opacity: 1; transform: translateX(0); } to { opacity: 1; transform: translateX(320px); } }
+	@keyframes nx-b2 { from { opacity: 0; transform: translateX(0); } 10% { opacity: 1; transform: translateX(0); } 75% { opacity: 1; transform: translateX(580px); } to { opacity: 0; transform: translateX(580px); } }
+	@keyframes nx-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+	@keyframes nx-collapse { from { transform: scaleX(0); } 35% { transform: scaleX(1); } 62% { transform: scaleX(1); } to { transform: scaleX(0.0103); } }
+	@keyframes nx-flash { from { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } to { opacity: 0; } }
+	@keyframes nx-two { from { transform: scaleX(0); } to { transform: scaleX(0.5517); } }
+
+	.nx-steps { margin: 16px 0 0; padding: 0; list-style: none; }
+	.nx-steps li { margin: 0 0 14px; }
+	.nx-calc {
+		display: block;
+		padding: 8px 12px;
+		border-radius: 6px;
+		background: var(--paper-2);
+		color: var(--ink);
+		font: 13px/1.55 var(--font-mono);
+		overflow-wrap: anywhere;
+	}
+	.nx-steps :global(sup) { font-size: 0.7em; line-height: 0; }
+	.nx-text { margin: 10px 0 0; font-size: 15.5px; line-height: 1.6; }
+	.nx.is-js .nx-steps li { min-height: 8.5em; margin: 0; }
+
+	.nx-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+	.nx-controls[hidden] { display: none; }
+	.nx-btn {
+		min-width: 40px;
+		height: 34px;
+		padding: 0 12px;
+		border: 1px solid var(--line-strong);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink);
+		font: 500 12px/1 var(--font-mono);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		cursor: pointer;
+	}
+	.nx-btn:hover { border-color: var(--ink); }
+	.nx-btn:disabled { opacity: 0.4; cursor: default; }
+	.nx-play { min-width: 76px; background: var(--ink); border-color: var(--ink); color: var(--paper); }
+	.nx-segs { display: flex; flex: 1; gap: 4px; margin-left: 6px; }
+	.nx-seg { flex: 1; height: 34px; padding: 0; border: 0; background: none; cursor: pointer; }
+	.nx-seg span { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+	.nx-seg span::after { content: ''; position: absolute; inset: 0; background: var(--ink); transform: scaleX(var(--p, 0)); transform-origin: left; }
+
+	@media (max-width: 640px) {
+		.nx { padding: 14px 12px 12px; }
+		.nx-head { flex-direction: column; gap: 0; }
+		.nx-now { text-align: left; }
+		.nx.is-js .nx-steps li { min-height: 13.5em; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.nx *, .nx *::after { animation-duration: 1ms !important; animation-delay: 0s !important; transition-duration: 1ms !important; transition-delay: 0s !important; }
+	}
+</style>
+
+<script>
+	for (const fig of document.querySelectorAll<HTMLElement>('[data-explainer]')) {
+		const steps = [...fig.querySelectorAll<HTMLLIElement>('[data-step]')];
+		const segs = [...fig.querySelectorAll<HTMLButtonElement>('.nx-seg')];
+		const controls = fig.querySelector<HTMLElement>('.nx-controls')!;
+		const play = fig.querySelector<HTMLButtonElement>('[data-act="play"]')!;
+		const prev = fig.querySelector<HTMLButtonElement>('[data-act="prev"]')!;
+		const next = fig.querySelector<HTMLButtonElement>('[data-act="next"]')!;
+		const now = fig.querySelector<HTMLElement>('.nx-now')!;
+		const durs = steps.map((s) => Number(s.dataset.dur));
+		const last = steps.length - 1;
+		const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		let current = 0;
+		let playing = false;
+		let ended = false;
+		let touched = false;
+		let elapsed = 0;
+		let start = 0;
+		let frame = 0;
+
+		const show = (n: number) => {
+			current = n;
+			elapsed = 0;
+			start = performance.now();
+			ended = false;
+			fig.dataset.scene = String(n + 1);
+			steps.forEach((s, i) => (s.hidden = i !== n));
+			segs.forEach((s, i) => {
+				s.style.setProperty('--p', i < n ? '1' : '0');
+				if (i === n) s.setAttribute('aria-current', 'step');
+				else s.removeAttribute('aria-current');
+			});
+			now.textContent = `${n + 1} / ${steps.length} · ${steps[n].dataset.title}`;
+			prev.disabled = n === 0;
+			next.disabled = n === last;
+			if (!playing) play.textContent = 'Play';
+		};
+
+		const tick = (t: number) => {
+			if (!playing) return;
+			elapsed = t - start;
+			const p = Math.min(elapsed / durs[current], 1);
+			segs[current].style.setProperty('--p', String(p));
+			if (p >= 1) {
+				if (current === last) {
+					setPlaying(false);
+					ended = true;
+					play.textContent = 'Replay';
+					return;
+				}
+				show(current + 1);
+			}
+			frame = requestAnimationFrame(tick);
+		};
+
+		const setPlaying = (on: boolean) => {
+			playing = on;
+			play.textContent = on ? 'Pause' : 'Play';
+			cancelAnimationFrame(frame);
+			if (on) {
+				start = performance.now() - elapsed;
+				frame = requestAnimationFrame(tick);
+			}
+		};
+
+		play.addEventListener('click', () => {
+			touched = true;
+			if (ended) show(0);
+			setPlaying(!playing);
+		});
+		prev.addEventListener('click', () => { touched = true; show(Math.max(current - 1, 0)); });
+		next.addEventListener('click', () => { touched = true; show(Math.min(current + 1, last)); });
+		segs.forEach((s, i) => s.addEventListener('click', () => { touched = true; show(i); }));
+
+		// Autoplay once the figure is mostly on screen; pause while it is scrolled away.
+		let pausedByScroll = false;
+		new IntersectionObserver(([entry]) => {
+			if (entry.isIntersecting) {
+				if (pausedByScroll) { pausedByScroll = false; setPlaying(true); }
+				else if (!touched && !reduceMotion && !ended && !playing) { touched = true; setPlaying(true); }
+			} else if (playing) {
+				pausedByScroll = true;
+				setPlaying(false);
+			}
+		}, { threshold: 0.5 }).observe(fig);
+
+		fig.classList.add('is-js');
+		controls.hidden = false;
+		show(0);
+	}
+</script>

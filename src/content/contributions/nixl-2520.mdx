@@ -1,0 +1,107 @@
+---
+title: "An integer overflow that bypassed NIXL's registration bounds"
+description: "Rejecting strided runs whose span or flat block count overflows size_t, so a wrapped span can no longer pass the registration coverage check and reach unregistered memory."
+lede: "A strided run with stride 2⁶³ and count 3 spans 2⁶⁴ + 1 bytes. In 64-bit unsigned arithmetic that wraps to 1, a 1-byte span fits inside any registration, and the transfer reached memory nobody had registered."
+project: "NVIDIA NIXL"
+repository: "ai-dynamo/nixl"
+repositoryUrl: "https://github.com/ai-dynamo/nixl"
+issueNumber: "#2520"
+contributionType: "Memory-safety fix"
+technicalArea: "Inference data transfer / memory registration"
+status: "PR Open"
+prMerged: false
+date: "2026-10-29"
+complexity: "Medium"
+issueUrl: "https://github.com/ai-dynamo/nixl/issues/2520"
+prUrl: "https://github.com/ai-dynamo/nixl/pull/2548"
+stack: 
+  - "C++20"
+  - "GoogleTest"
+  - "Meson"
+shortSummary: "Replaced an overflowing multiply-and-add bounds check with an equivalent division form, so NIXL rejects strided runs that wrap size_t instead of letting them reach unregistered memory."
+concepts: 
+  - "Unsigned integer overflow"
+  - "Memory safety"
+  - "Defensive arithmetic"
+  - "Differential fuzzing"
+  - "Bounds checking"
+---
+
+import NixlSpanOverflow from '../../components/explainers/NixlSpanOverflow.astro';
+
+## Context: registration is the safety boundary
+
+I fixed a memory-safety bug in [NIXL](https://github.com/ai-dynamo/nixl) ([issue #2520](https://github.com/ai-dynamo/nixl/issues/2520)), NVIDIA's open-source library for fast point-to-point data transfer in inference frameworks such as Dynamo. NIXL moves data between CPU memory, GPU memory and storage through plug-in backends.
+
+Applications register the memory they want to transfer, and they trust NIXL to read and write only inside those registrations. That check is the library's memory-safety boundary. If a request can step over it, the result is a crash at best, and at worst data silently read from or written to the wrong place.
+
+A *strided run* describes many evenly spaced blocks with one descriptor: a start address, a block length, a stride and a count. Before accepting a run, `nixlMemSection::populate()` computes the run's full byte extent and checks that a registered region covers it:
+
+```cpp
+const size_t span_len = (run.count - 1) * run.stride + run.len;
+```
+
+The walkthrough below plays the bug and the fix end to end. The sections after it go through each step in detail.
+
+<NixlSpanOverflow />
+
+## Root cause: a span that wraps to one byte
+
+That line runs in 64-bit unsigned arithmetic with no overflow check. With count 3, stride 2⁶³ and length 1, the true span is 2⁶⁴ + 1 bytes, but the result wraps to 1. A 1-byte span fits inside any registration, so the coverage check passed, and `makeXferReq` then built descriptors outside the registered region. The transfer touched `addr + 2⁶³`. On the reporter's machine that crashed the I/O. Had the address been mapped, it would have read or written memory with no error at all.
+
+![The issue's strided run: before the fix the span wraps to 1 byte, passes the coverage check and reaches unregistered memory. After the fix the overflow guard rejects it with NIXL_ERR_INVALID_PARAM before any I/O](/images/nixl-2520/span-overflow.svg)
+
+The same unchecked arithmetic appeared in two related places: the running flat block index (`start_idx += run.count`) and `nixlMetaStrideDescList::flatSize()`, which returns `start_idx + count` of the last run.
+
+I traced the request path from `prepXferDlist` through `populate()` to the coverage check to confirm that this was the only place the wrapped value was accepted.
+
+## The fix: test the inequality without computing it
+
+Rather than compute the span and then ask whether it overflowed, the guard rewrites the inequality so it never multiplies. `(count - 1) * stride + len <= SIZE_MAX` is equivalent to `count - 1 <= (SIZE_MAX - len) / stride` for positive `stride`, and the right-hand side uses only a subtraction that cannot underflow and a division that cannot overflow.
+
+```cpp
+// Reject runs whose span or flat block count would overflow size_t.
+if ((run.count - 1 > (SIZE_MAX - run.len) / run.stride) ||
+    (run.count > SIZE_MAX - start_idx)) [[unlikely]] {
+    resp.clear();
+    return NIXL_ERR_INVALID_PARAM;
+}
+```
+
+- The first clause rejects a span that would overflow. For the issue's input, `(SIZE_MAX - 1) / 2⁶³` is 1, and `count - 1` is 2, so the run is rejected.
+- The second clause rejects a run whose count would overflow the running block index.
+- A validation check just above already rejects `count == 0`, `len == 0` and `stride < len`, so the division is always defined and `count - 1` cannot underflow.
+
+Rejected runs clear the partially built response and return `NIXL_ERR_INVALID_PARAM`, matching the error handling next to it. Callers of `prepXferDlist` see `NIXL_ERR_NOT_FOUND`, the same error as any other run that no registration covers.
+
+`flatSize()` has no way to report an error, so there I added a `NIXL_ASSERT(last.count <= SIZE_MAX - last.start_idx)` that documents the invariant `populate()` now enforces.
+
+I left one related wrap alone. `nixlBasicDesc::covers()` can overflow when `addr + span` wraps, but open [PR #2142](https://github.com/ai-dynamo/nixl/pull/2142) already handles it, so touching it would only have created conflicting changes. I called it out for reviewers instead.
+
+The change is 28 lines added and none removed across three files: `src/infra/nixl_memory_section.cpp` (the guard), `src/api/cpp/backend/backend_aux.h` (the assertion) and `test/gtest/unit/agent/agent.cpp` (the test).
+
+## Verification: differential fuzzing against 128-bit math
+
+An overflow guard written with division is easy to get subtly wrong at the boundary, so I checked it against a reference where nothing can overflow. The reference computes the span in 128-bit integers. Across 20,000,000 random `(count, stride, len)` inputs, the guard rejected exactly the overflowing cases and nothing else, with zero mismatches.
+
+| Scenario | Before | After |
+| --- | --- | --- |
+| Issue input: count 3, stride 2⁶³, len 1 | Accepted; I/O reached `addr + 2⁶³` | Rejected with `NIXL_ERR_INVALID_PARAM` |
+| Largest valid run at that stride: count 2 (span 2⁶³ + 1) | Accepted | Accepted |
+| Ordinary strided runs | Accepted | Accepted; one extra integer division per run |
+| Running block index overflow | Unchecked | Rejected |
+| `flatSize()` total | Unchecked | Guarded by a debug assertion |
+
+Extreme values such as `stride = SIZE_MAX` also behave correctly.
+
+The regression test, `PrepStrideDlistRejectsOverflowingSpan`, first prepares a valid strided run on the same buffer and asserts it succeeds, then submits the issue's overflowing run and asserts it is rejected with no handle returned. The positive control matters: without it, a test that only checks rejection would also pass if the buffer setup were broken. Without the fix, the second half fails.
+
+The PR's CI checks, including `clang-format` and pre-commit, pass.
+
+## Core concepts this exercised
+
+- **Unsigned overflow is silent.** In C++, unsigned arithmetic wraps by definition rather than being undefined behavior, so neither the compiler nor the default UndefinedBehaviorSanitizer flags it. A bounds check built on a wrapping expression can be bypassed by choosing inputs that wrap to a small value.
+- **Rewrite the check, not just the types.** Dividing instead of multiplying turns an overflow-prone comparison into an equivalent one that cannot wrap, at the cost of one integer division per run.
+- **Fail before touching memory.** The guard runs in `populate()`, before any descriptor is built, and clears the partial result so callers never see a half-populated list.
+- **Differential testing for arithmetic guards.** Comparing against exact 128-bit arithmetic over millions of random inputs checks the boundary far more thoroughly than a handful of hand-picked cases.
+- **Scope discipline.** The overlapping `covers()` wrap already had an open PR, so I left it alone and said so rather than racing it.
