@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 310" width="760" height="310" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">The issue's strided run, before and after the overflow guard</title>
+<desc id="d">Before: a strided run with count 3, stride 2^63 and length 1 has a true span of 2^64 + 1 bytes, which wraps to 1 byte in size_t. A 1-byte span fits the registration, the coverage check passes, and I/O reaches addr + 2^63, memory that was never registered. After: the overflow guard compares count - 1 = 2 against (SIZE_MAX - len) / stride = 1 and rejects the run with NIXL_ERR_INVALID_PARAM before any I/O.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.box{fill:#f3f2ef;stroke:#d6d5d0}.bad{fill:#fbe9e5;stroke:#d0452b}.good{fill:#e5f4ec;stroke:#1f9e74}.badt{fill:#b3361f}.goodt{fill:#17795a}.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace}.line{stroke:#9b9a95;fill:none}.arrow{fill:#9b9a95}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.box{fill:#24241f;stroke:#3d3d38}.bad{fill:#3a201b;stroke:#ef6a4f}.good{fill:#17302a;stroke:#2fb487}.badt{fill:#ef8a73}.goodt{fill:#5fcfa3}.line{stroke:#6f6e69}.arrow{fill:#6f6e69}}</style>
+<defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<rect class="bg" x="0" y="0" width="760" height="310" rx="8"/>
+<text class="ink" x="40" y="34" font-size="17" font-weight="600">The same request: accepted before the fix, rejected after</text>
+<text class="ink2" x="40" y="54" font-size="12.5">The issue's strided run through nixlMemSection::populate()</text>
+
+<text class="ink" x="40" y="126" font-size="14" font-weight="600">Before</text>
+<rect class="box" x="140" y="86" width="128" height="72" rx="6"/>
+<text class="ink" x="204" y="110" font-size="13" font-weight="600" text-anchor="middle">Strided run</text>
+<text class="ink2" x="204" y="129" font-size="12" text-anchor="middle">count 3, len 1</text>
+<text class="ink2" x="204" y="145" font-size="12" text-anchor="middle">stride 2⁶³</text>
+<line class="line" x1="268" x2="288" y1="122" y2="122" marker-end="url(#a)"/>
+<rect class="box" x="290" y="86" width="128" height="72" rx="6"/>
+<text class="ink" x="354" y="110" font-size="13" font-weight="600" text-anchor="middle">Span computed</text>
+<text class="ink2" x="354" y="129" font-size="12" text-anchor="middle">2⁶⁴ + 1 wraps</text>
+<text class="ink2" x="354" y="145" font-size="12" text-anchor="middle">to 1 byte</text>
+<line class="line" x1="418" x2="438" y1="122" y2="122" marker-end="url(#a)"/>
+<rect class="box" x="440" y="86" width="128" height="72" rx="6"/>
+<text class="ink" x="504" y="110" font-size="13" font-weight="600" text-anchor="middle">Coverage check</text>
+<text class="ink2" x="504" y="129" font-size="12" text-anchor="middle">1 byte fits:</text>
+<text class="ink2" x="504" y="145" font-size="12" text-anchor="middle">passes</text>
+<line class="line" x1="568" x2="588" y1="122" y2="122" marker-end="url(#a)"/>
+<rect class="bad" x="590" y="86" width="128" height="72" rx="6" stroke-width="1.5"/>
+<text class="badt" x="654" y="110" font-size="13" font-weight="600" text-anchor="middle">Unsafe I/O</text>
+<text class="badt" x="654" y="129" font-size="12" text-anchor="middle">at addr + 2⁶³</text>
+<text class="badt" x="654" y="145" font-size="12" text-anchor="middle">never registered</text>
+
+<line class="line" x1="40" x2="720" y1="184" y2="184" stroke-width="1"/>
+
+<text class="ink" x="40" y="248" font-size="14" font-weight="600">After</text>
+<rect class="box" x="140" y="208" width="128" height="72" rx="6"/>
+<text class="ink" x="204" y="232" font-size="13" font-weight="600" text-anchor="middle">Strided run</text>
+<text class="ink2" x="204" y="251" font-size="12" text-anchor="middle">count 3, len 1</text>
+<text class="ink2" x="204" y="267" font-size="12" text-anchor="middle">stride 2⁶³</text>
+<line class="line" x1="268" x2="288" y1="244" y2="244" marker-end="url(#a)"/>
+<rect class="box" x="290" y="208" width="128" height="72" rx="6"/>
+<text class="ink" x="354" y="232" font-size="13" font-weight="600" text-anchor="middle">Overflow guard</text>
+<text class="ink2" x="354" y="251" font-size="12" text-anchor="middle">count − 1 = 2,</text>
+<text class="ink2" x="354" y="267" font-size="12" text-anchor="middle">limit is 1</text>
+<line class="line" x1="418" x2="438" y1="244" y2="244" marker-end="url(#a)"/>
+<rect class="good" x="440" y="208" width="128" height="72" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="504" y="232" font-size="13" font-weight="600" text-anchor="middle">Rejected</text>
+<text class="goodt mono" x="504" y="251" font-size="10.5" text-anchor="middle">INVALID_PARAM</text>
+<text class="goodt" x="504" y="267" font-size="12" text-anchor="middle">before any I/O</text>
+</svg>
