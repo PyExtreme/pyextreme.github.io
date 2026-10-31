@@ -1,0 +1,138 @@
+---
+title: "Resetting vLLM's prefix cache without stopping running requests"
+description: "A keep_running_requests option for reset_prefix_cache that empties the prefix-cache lookup under load and leaves running requests alone, plus two crash fixes for code that assumed a held block always keeps its hash."
+lede: "On main, POST /reset_prefix_cache either refuses while any request is running or preempts every one of them. Under steady load that means no clean way to wipe the cache. The new keep_running_requests=true empties the lookup map and lets running requests carry on."
+project: "vLLM"
+repository: "vllm-project/vllm"
+repositoryUrl: "https://github.com/vllm-project/vllm"
+issueNumber: "#64853"
+contributionType: "Feature"
+technicalArea: "LLM inference / KV cache management"
+status: "PR Open"
+prMerged: false
+date: "2026-10-31"
+complexity: "Medium"
+issueUrl: "https://github.com/vllm-project/vllm/issues/64853"
+prUrl: "https://github.com/vllm-project/vllm/pull/64865"
+stack: 
+  - "Python"
+  - "vLLM"
+  - "pytest"
+shortSummary: "Added a keep_running_requests option to vLLM's prefix-cache reset that relaxes the BlockPool guard, so the cache can be wiped under load without preempting anyone, and fixed the two places that crashed once held blocks could lose their hashes."
+concepts: 
+  - "Prefix caching"
+  - "KV cache block management"
+  - "Scheduler invariants"
+  - "API design"
+  - "Test-first development"
+---
+
+import VllmPrefixReset from '../../components/explainers/VllmPrefixReset.astro';
+
+## Context: a reset that only works when the server is idle
+
+[Issue #64853](https://github.com/vllm-project/vllm/issues/64853) came from someone studying how a server recovers after it loses its prefix cache. One replica runs under steady open-loop load, they wipe the cache with `POST /reset_prefix_cache`, and they watch whether latency comes back. For that to measure anything, the wipe has to change only the cached state.
+
+Neither existing behaviour does that:
+
+- **The default reset** fails while any block is held. Under load, idle moments are rare. Their client logs showed nothing in flight 0.8 times a minute at 3 req/s, and never in an 11-minute window at 4 req/s.
+- **`reset_running_requests=true`** succeeds, but it preempts every running request. That restarts about 8 requests per reset at 3 req/s and 21 at 4 req/s, and the extra prefill gets mixed into the latency being measured.
+
+They asked for a flag that clears the hash lookup, leaves blocks held by running requests allocated, and clears hashes of unused blocks. They also said it isn't meant for weight updates.
+
+I reproduced both behaviours on `main` with a scheduler-only script on CPU:
+
+```text
+Failed to reset prefix cache because some blocks (3) are not freed yet
+running: ['0']
+cached hashes before reset: 3
+reset() -> False
+cached hashes after failed reset: 3
+reset(reset_running_requests=True) -> True
+running after: 0 waiting after: 1 num_preemptions: 1 num_computed_tokens: 0
+```
+
+## Prefix caching in one minute
+
+vLLM stores each request's KV cache in fixed-size blocks. When a block fills, it gets a hash of its tokens chained to its parent block's hash, so one hash stands for the whole prefix up to that block. `BlockPool` keeps a map from hash to block. A new request walks its own hashes from block 0, stops at the first miss, and reuses every block it found instead of recomputing it.
+
+Three facts matter for the rest of this write-up. `ref_cnt` counts who holds a block. A freed block keeps its hash and can still be hit until it is handed out again. Block #0, the null block, always counts as used, which is why the reset guard compares against 1.
+
+The simulator below starts from a busy server: request B is running and holds three blocks, and one freed block is still cached. Pick a mode and step through it. The code panel highlights what runs at each step. Default and preempt use the code on `main`, keep mode uses the code in the PR.
+
+<VllmPrefixReset />
+
+## Root cause: one guard
+
+A reset travels `api_router.py → core_client.py → core.py → scheduler.py → block_pool.py`, through the Python HTTP server, the Rust server or the offline `LLM` API. Every layer above `BlockPool` only passes arguments along. The real work is at the bottom, in `BlockPool.reset_prefix_cache`.
+
+The body of that method already does what keep mode needs. It replaces the map and calls `reset_hash()` on every block, held or not. The only thing stopping it under load is the guard:
+
+```diff
+-    def reset_prefix_cache(self) -> bool:
++    def reset_prefix_cache(self, allow_used_blocks: bool = False) -> bool:
+         num_used_blocks = self.num_gpu_blocks - self.get_num_free_blocks()
+-        if num_used_blocks != 1:  # The null block is always marked as used
++        # The null block is always marked as used
++        if num_used_blocks != 1 and not allow_used_blocks:
+             logger.warning(
+```
+
+A held block with no hash is already a state vLLM produces. When a KV load fails, the scheduler calls `evict_blocks`, whose docstring says blocks with `ref_cnt > 0` "are not freed from the block pool, only evicted from the prefix cache hash table." Keep mode does the same thing to every block at once. The reset never touches GPU memory either. It edits scheduler-side bookkeeping, so running requests' KV tensors stay exactly where they are.
+
+| BlockPool state | What it is | What reset does |
+| --- | --- | --- |
+| `cached_block_hash_to_block` | Hash → block lookup used by new requests | Replaced with an empty map |
+| `cached_block_hashes_by_block` | Extra hashes registered for a block | Cleared |
+| `block.block_hash` | The prefix a block's KV represents | Cleared on every block, held ones included |
+| `block.ref_cnt` | How many requests or transfers hold it | **Untouched.** Held blocks stay allocated |
+| `free_block_queue` | Reuse order (LRU) | Untouched |
+| `_reuse_watchers` | Callbacks that fire when a block may be reused | Notified |
+| `kv_event_queue` | KV events for subscribers | `AllBlocksCleared()` appended |
+
+## Two crash sites
+
+Lifting the guard is most of the change, but two other places assumed a held block always keeps its hash. I found both during design and gave each one a test that fails without its fix.
+
+**CPU offload store finishing after the reset.** `simple_kv_offload` holds a ref on a GPU block while it copies it to CPU. If a keep reset lands mid-copy, the block stays allocated but loses its hash, and `_process_store_completion` then hits `assert primary_hash is not None` and takes down the engine core. The fix skips registering the CPU copy when the hash is gone and still releases the GPU and CPU refs.
+
+**Aux output generation bump with output in flight.** After a successful reset, the scheduler calls `aux_output_connector.reset()`, which bumps the output generation. The worker asserts that nothing is pending when the generation changes, with a comment that says a reset only happens once all model output is consumed. Keep mode breaks that assumption, so with async scheduling the worker would fail with "auxiliary output generation changed with output in flight". Keep mode now skips the aux reset. Old rows stay valid because the weights haven't changed.
+
+## Options considered
+
+- **New bool, relaxed guard (chosen).** `keep_running_requests: bool = False` from the HTTP endpoint down to the scheduler, `allow_used_blocks` below that. It removes exactly the reason the reset refuses and reuses the existing reset body, events and metrics.
+- **Evict block by block (rejected).** Building keep mode from `_maybe_evict_cached_block` would emit N `BlockRemoved` events instead of one `AllBlocksCleared`, record bogus eviction lifetimes for live blocks, skip the watcher and metrics reset, and still need both crash fixes.
+- **A mode enum (asked maintainers).** `running_requests: "fail" | "preempt" | "keep"` is a cleaner API, but it changes an existing public parameter across Python, HTTP and Rust and needs a deprecation cycle. I asked about it on the issue.
+- **Dropping map entries but keeping `block.block_hash` (rejected).** That leaves blocks that can't be re-registered, and offload would store under stale keys.
+
+## What callers see
+
+Combining `keep_running_requests` with `reset_running_requests` raises `ValueError` in Python. The HTTP endpoint rejects the combination with a 400 before the RPC, because a `ValueError` raised inside the engine core would reach the caller as a 500 in multiprocess mode.
+
+Blocks a running request fills after the reset can be hit later. Right after the reset nothing can hit them, because every lookup starts at the first block's hash and that is gone. Once another request re-caches the shared prefix, the chain is whole again and the post-reset block joins it. That is fine for the issue's experiment, since the weights didn't change. After a weight update it would serve stale KV, so the docstrings and the serving README say not to use keep mode there. The pause and weight-update path is untouched and still preempts.
+
+The Rust server ignores unknown query params, so for now it does a default reset when given the new flag. The call stays wire-compatible because the new Python argument has a default. I left Rust parity for this PR or a follow-up, whichever maintainers prefer.
+
+The PR is one commit, 18 files, +251 / −34. About 40% of the added lines are tests. The real behaviour change is around 10 lines across `BlockPool`, the scheduler and the offload manager. The rest passes the flag through and documents it.
+
+## Verification
+
+I wrote the tests first. They failed on base with a `TypeError` because the keyword didn't exist yet, and the offload test failed with the `AssertionError` at the crash site once only the `BlockPool` flag was in.
+
+| Test | What it proves | Where |
+| --- | --- | --- |
+| `test_scheduler_reset_prefix_cache` (extended) | With 10 requests running, a keep reset returns True, empties the map, leaves running requests and `num_computed_tokens` unchanged, and doesn't call the aux reset. The flag combination raises `ValueError`. | CPU, local |
+| `test_reset_prefix_cache_keep_running_requests` (new) | With an async step in flight, the running request keeps its computed tokens, a same-prompt request gets 0 hits, the post-reset block is cached, and every block is freed at the end. | CPU, local |
+| `test_store_completion_after_gpu_reset_with_used_blocks` (new) | A store in flight across a reset caches nothing on CPU and releases both refs. | CPU, local |
+| Scheduler and prefix-cache suites | 881 passed. The 9 failures are `test_diffusion_*`, which fail the same way on base without Triton. | CPU, local |
+| `test_reset_prefix_cache_e2e.py` | With Qwen3-0.6B, the reset returns True mid-run, outputs match a no-reset run, and a later same-prompt request has 0 cached tokens. | GPU, upstream CI only |
+
+Pre-commit (ruff, mypy, typos, markdownlint) is clean. The end-to-end test needs a GPU, and I haven't run the change against a live server under real load, so those are left to CI and a GPU box. The PR is a draft while the API shape question is open.
+
+## Core concepts this exercised
+
+- **Find the one line that refuses.** The reset body already did the right thing. The whole feature came down to a guard that encoded "nothing is running" as a precondition.
+- **Hunt for hidden invariants.** Relaxing the guard made a new state reachable everywhere at once. The work was finding the code that silently assumed held blocks always have hashes.
+- **Reuse an existing state shape.** KV load-failure eviction already produces held blocks without hashes, which made keep mode much easier to argue for.
+- **Map errors at the right layer.** Rejecting the flag combination at the HTTP endpoint gives callers a 400 instead of a 500 from across a process boundary.
+- **Tests that fail first.** Each crash fix has a test that fails without it, so reverting either fix is caught.
