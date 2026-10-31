@@ -1,0 +1,531 @@
+---
+// Step-through simulator for vLLM issue #64853: the three prefix-cache reset modes on one BlockPool.
+// The model is a tiny copy of BlockPool bookkeeping; the script replays steps from the starting state on every render.
+---
+
+<figure class="pr" data-prefix-reset>
+	<figcaption class="pr-head">
+		<span class="pr-eyebrow">Interactive · BlockPool with 10 blocks</span>
+		<div class="pr-seg" role="group" aria-label="Reset mode">
+			<button type="button" data-mode="default" aria-pressed="true">default</button>
+			<button type="button" data-mode="preempt" aria-pressed="false">reset_running_requests</button>
+			<button type="button" data-mode="keep" aria-pressed="false">keep_running_requests</button>
+		</div>
+	</figcaption>
+
+	<div class="pr-sim">
+		<div>
+			<div class="pr-label">GPU block pool</div>
+			<div class="pr-pool"></div>
+			<div class="pr-legend">
+				<span><i class="n"></i>null block</span>
+				<span><i class="h"></i>held (ref_cnt &gt; 0)</span>
+				<span><i class="c"></i>free, still cached</span>
+				<span><i class="m"></i>counted as used</span>
+			</div>
+			<div class="pr-label pr-gap">free_block_queue · head is reused first</div>
+			<div class="pr-fq"></div>
+		</div>
+		<div class="pr-side">
+			<div><div class="pr-label">cached_block_hash_to_block</div><div class="pr-map"></div></div>
+			<div><div class="pr-label">Requests</div><div class="pr-reqs"></div></div>
+		</div>
+	</div>
+
+	<div class="pr-stage">
+		<div>
+			<p class="pr-narr" aria-live="polite"></p>
+			<div class="pr-ctrls">
+				<button type="button" class="pr-btn" data-act="prev">Back</button>
+				<button type="button" class="pr-btn pr-play" data-act="play">Play</button>
+				<button type="button" class="pr-btn" data-act="next">Next</button>
+				<span class="pr-count"></span>
+				<span class="pr-res" hidden></span>
+			</div>
+			<div class="pr-dots"></div>
+			<div class="pr-label pr-gap">Log</div>
+			<div class="pr-log"></div>
+		</div>
+		<div>
+			<div class="pr-codehead"><span class="pr-label pr-codetitle"></span><span class="pr-codetag"></span></div>
+			<pre class="pr-code"></pre>
+		</div>
+	</div>
+</figure>
+
+<style is:global>
+	.pr {
+		--pr-hash: #2150c2;
+		--pr-held: #a55e00;
+		--pr-ok: #1b7a50;
+		--pr-bad: #bc3126;
+		--pr-hash-t: color-mix(in srgb, var(--pr-hash) 10%, transparent);
+		--pr-held-t: color-mix(in srgb, var(--pr-held) 12%, transparent);
+		--pr-ok-t: color-mix(in srgb, var(--pr-ok) 12%, transparent);
+		--pr-bad-t: color-mix(in srgb, var(--pr-bad) 12%, transparent);
+		margin: 2.4em 0;
+		padding: 20px 20px 16px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: #fff;
+		color: var(--ink);
+		font-size: 15px;
+		line-height: 1.5;
+	}
+	.pr-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-bottom: 16px; }
+	.pr-eyebrow, .pr-label { font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+	.pr-label { display: block; margin: 0 0 8px; }
+	.pr-gap { margin-top: 16px; }
+	.pr-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+	.pr-seg button { font: 500 12px/1.2 var(--font-mono); border: 0; border-right: 1px solid var(--line-strong); background: transparent; color: var(--ink-soft); padding: 8px 12px; cursor: pointer; }
+	.pr-seg button:last-child { border-right: 0; }
+	.pr-seg button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+
+	.pr-sim { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px 22px; }
+	.pr-side { display: grid; gap: 16px; align-content: start; min-width: 0; }
+	.pr-pool { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+	.pr .blk { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; min-height: 78px; padding: 6px 7px; border: 1.5px solid var(--line); border-radius: 8px; background: #fff; font: 400 11.5px/1.25 var(--font-mono); color: var(--ink-soft); transition: background-color 0.35s, border-color 0.35s, box-shadow 0.35s; }
+	.pr .blk .top { display: flex; justify-content: space-between; gap: 4px; }
+	.pr .blk .bid { color: var(--muted); }
+	.pr .blk .own { color: var(--pr-held); font-weight: 600; }
+	.pr .blk .bh { align-self: center; color: var(--pr-hash); font: 600 15px/1 var(--font-mono); }
+	.pr .blk .bh.none { color: var(--muted); font-weight: 400; }
+	.pr .blk.null { background: repeating-linear-gradient(135deg, var(--paper-2) 0 5px, transparent 5px 10px); }
+	.pr .blk.held { border-color: var(--pr-held); background: var(--pr-held-t); }
+	.pr .blk.cached { border-style: dashed; border-color: var(--pr-hash); }
+	.pr .blk.mark { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pr-bad) 55%, transparent); }
+	.pr .chg { animation: pr-chg 0.9s ease; }
+	@keyframes pr-chg { 35% { transform: scale(1.07); } }
+
+	.pr-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+	.pr-legend span { display: inline-flex; align-items: center; gap: 6px; }
+	.pr-legend i { display: inline-block; width: 14px; height: 10px; border: 1.5px solid var(--line); border-radius: 3px; }
+	.pr-legend i.h { border-color: var(--pr-held); background: var(--pr-held-t); }
+	.pr-legend i.c { border-color: var(--pr-hash); border-style: dashed; }
+	.pr-legend i.n { background: repeating-linear-gradient(135deg, var(--paper-2) 0 3px, transparent 3px 6px); }
+	.pr-legend i.m { box-shadow: 0 0 0 2px color-mix(in srgb, var(--pr-bad) 55%, transparent); }
+
+	.pr-fq { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font: 500 12px/1 var(--font-mono); }
+	.pr-fq .q { padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink-soft); }
+	.pr-fq .q.c { border-color: var(--pr-hash); border-style: dashed; color: var(--pr-hash); }
+	.pr-fq .end { color: var(--muted); font-size: 11px; }
+
+	.pr-map { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+	.pr .maprow { display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px dashed var(--line); font: 500 13px/1.4 var(--font-mono); }
+	.pr .maprow:last-child { border-bottom: 0; }
+	.pr .maprow .h { color: var(--pr-hash); font-weight: 600; }
+	.pr .maprow.gone, .pr .maprow.gone .h { color: var(--muted); text-decoration: line-through; }
+	.pr .maprow.new { background: var(--pr-hash-t); }
+	.pr .maprow.empty { color: var(--muted); font: italic 400 13px/1.4 var(--font-sans); }
+
+	.pr-reqs { display: grid; gap: 6px; }
+	.pr .req { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: 400 12.5px/1.35 var(--font-mono); }
+	.pr .req .id { color: var(--pr-held); font-size: 14px; font-weight: 600; }
+	.pr .req .meta { min-width: 0; color: var(--ink-soft); overflow-wrap: anywhere; }
+	.pr .req .st { justify-self: end; padding: 3px 6px; border-radius: 4px; background: var(--paper-2); color: var(--ink-soft); font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; }
+	.pr .req .st.RUNNING { background: var(--pr-held-t); color: var(--pr-held); }
+	.pr .req .st.WAITING { background: var(--pr-bad-t); color: var(--pr-bad); }
+	.pr .req .note { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; }
+	.pr .noreq { color: var(--muted); font-size: 13px; font-style: italic; }
+
+	.pr-stage { display: grid; gap: 18px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+	.pr-narr { min-height: 4.8em; margin: 0 0 12px; font-size: 15.5px; line-height: 1.6; }
+	.pr-ctrls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+	.pr-btn { height: 34px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--paper); color: var(--ink); font: 500 12px/1 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; }
+	.pr-btn:hover { border-color: var(--ink); }
+	.pr-btn:disabled { opacity: 0.4; cursor: default; }
+	.pr-play { min-width: 76px; background: var(--ink); border-color: var(--ink); color: var(--paper); }
+	.pr-count { color: var(--muted); font: 500 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+	.pr-res { padding: 7px 10px; border-radius: 6px; font: 600 12.5px/1 var(--font-mono); }
+	.pr-res.ok { background: var(--pr-ok-t); color: var(--pr-ok); }
+	.pr-res.bad { background: var(--pr-bad-t); color: var(--pr-bad); }
+	.pr-dots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+	.pr-dots button { width: 22px; height: 6px; padding: 0; border: 0; border-radius: 99px; background: var(--line); cursor: pointer; }
+	.pr-dots button.past { background: var(--line-strong); }
+	.pr-dots button.on { background: var(--ink); }
+
+	.pr-log { min-height: 6.4em; padding: 9px 11px; border-radius: 8px; background: var(--paper-2); font: 400 12px/1.55 var(--font-mono); color: var(--ink-soft); overflow-x: auto; }
+	.pr-log div { white-space: pre-wrap; overflow-wrap: anywhere; }
+	.pr-log .warn { color: var(--pr-held); }
+	.pr-log .ret { color: var(--pr-ok); }
+	.pr-log .ret.f { color: var(--pr-bad); }
+
+	.pr-codehead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
+	.pr-codetag { color: var(--pr-held); font: 500 11px/1 var(--font-mono); }
+	.pr-code { margin: 0; padding: 10px 0; border-radius: 8px; background: var(--paper-2); font: 400 12px/1.6 var(--font-mono); overflow-x: auto; }
+	.pr-code .l { position: relative; display: block; padding: 0 14px 0 30px; color: var(--ink-soft); white-space: pre; transition: background-color 0.25s; }
+	.pr-code .l.c { color: var(--muted); }
+	.pr-code .l.hl { background: var(--pr-hash-t); color: var(--ink); }
+	.pr-code .l.hl::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--pr-hash); }
+	.pr-code .dm { position: absolute; left: 12px; font-weight: 600; }
+	.pr-code .dm.add { color: var(--pr-ok); }
+	.pr-code .dm.mod { color: var(--pr-held); }
+
+	@media (max-width: 820px) {
+		.pr-sim { grid-template-columns: 1fr; }
+	}
+	@media (max-width: 640px) {
+		.pr { padding: 14px 12px 12px; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.pr .chg { animation: none; }
+		.pr .blk, .pr-code .l { transition: none; }
+	}
+</style>
+
+<script>
+	type Block = { id: number; ref: number; hash: string | null; own: string[] };
+	type Req = { id: string; status: string; comp: number; tot: number; blocks: number[]; note?: string };
+	type State = {
+		blocks: Block[];
+		map: { h: string; b: number }[];
+		freeQ: number[];
+		reqs: Req[];
+		log: { k: string; t: string }[];
+		result: { ok: boolean; t: string } | null;
+		mark: number[];
+	};
+	type Step = { t: string; hl: string[]; do: (s: State) => void };
+	type CodeLine = [id: string, text: string, kind?: string, diff?: string];
+
+	const NBLK = 10;
+	const fresh = (): State => ({
+		blocks: Array.from({ length: NBLK }, (_, i) => ({ id: i, ref: 0, hash: null, own: [] })),
+		map: [],
+		freeQ: Array.from({ length: NBLK - 1 }, (_, i) => i + 1),
+		reqs: [],
+		log: [],
+		result: null,
+		mark: [],
+	});
+	const R = (s: State, id: string) => s.reqs.find((r) => r.id === id)!;
+	const log = (s: State, k: string, t: string) => s.log.push({ k, t });
+	function alloc(s: State, rid: string, n: number) {
+		const got = s.freeQ.splice(0, n);
+		for (const b of got) {
+			const k = s.blocks[b];
+			if (k.hash) { s.map = s.map.filter((m) => m.b !== b); k.hash = null; }
+			k.ref = 1;
+			k.own = [rid];
+		}
+		R(s, rid).blocks.push(...got);
+	}
+	function cache(s: State, b: number, h: string) { s.blocks[b].hash = h; s.map.push({ h, b }); }
+	function touch(s: State, rid: string, bids: number[]) {
+		for (const b of bids) {
+			const k = s.blocks[b];
+			if (k.ref === 0) s.freeQ = s.freeQ.filter((x) => x !== b);
+			k.ref += 1;
+			k.own.push(rid);
+		}
+		R(s, rid).blocks.push(...bids);
+	}
+	// Mirrors free_blocks: frees in reverse order, unhashed blocks to the head, hashed ones to the tail.
+	function release(s: State, rid: string) {
+		const r = R(s, rid);
+		const first: number[] = [];
+		const last: number[] = [];
+		for (const b of [...r.blocks].reverse()) {
+			const k = s.blocks[b];
+			k.ref -= 1;
+			k.own = k.own.filter((o) => o !== rid);
+			if (k.ref === 0) (k.hash ? last : first).push(b);
+		}
+		s.freeQ = [...first, ...s.freeQ, ...last];
+		r.blocks = [];
+	}
+
+	// A finished and freed #3 (h2); B shares h0, h1 and holds a partial #4.
+	function steady(): State {
+		const s = fresh();
+		s.reqs.push({ id: 'A', status: 'RUNNING', comp: 48, tot: 48, blocks: [] });
+		alloc(s, 'A', 3);
+		cache(s, 1, 'h0'); cache(s, 2, 'h1'); cache(s, 3, 'h2');
+		s.reqs.push({ id: 'B', status: 'RUNNING', comp: 40, tot: 40, blocks: [] });
+		touch(s, 'B', [1, 2]);
+		alloc(s, 'B', 1);
+		release(s, 'A');
+		s.reqs = s.reqs.filter((r) => r.id !== 'A');
+		return s;
+	}
+
+	const START: Step = {
+		t: 'Starting state under load: B is running and holds #1, #2 and #4. #3 is free but still cached under h2, left behind by a finished request. The map has h0, h1, h2. Press Play or Next.',
+		hl: [],
+		do: () => {},
+	};
+
+	const MODES: Record<string, { code: 'cur' | 'new'; steps: Step[] }> = {
+		default: { code: 'cur', steps: [START,
+			{ hl: ['s0', 's1', 's5'], t: 'POST /reset_prefix_cache with no flags. reset_running_requests is False, so the scheduler skips preemption and calls the KV cache manager, which calls BlockPool.',
+				do: (s) => log(s, 'call', 'Scheduler.reset_prefix_cache()') },
+			{ hl: ['b0', 'b1'], t: 'BlockPool counts used blocks: num_gpu_blocks minus free blocks = 10 − 6 = 4. That is the null block plus B\'s three.',
+				do: (s) => { s.mark = [0, 1, 2, 4]; } },
+			{ hl: ['b2', 'b3', 'b4'], t: '4 ≠ 1, so the guard fires. It logs a warning and returns False. Nothing changes: h0, h1 and h2 can all still be hit.',
+				do: (s) => { log(s, 'warn', 'WARNING Failed to reset prefix cache because some blocks (3) are not freed yet'); log(s, 'retf', 'reset_prefix_cache() -> False'); s.result = { ok: false, t: '{"success": false}' }; } },
+			{ hl: ['b2'], t: 'Retrying doesn\'t help under load. Used blocks only drop to 1 when nothing is running at all. In the issue that happened 0.8 times a minute at 3 req/s, and never in 11 minutes at 4 req/s.', do: () => {} },
+		] },
+		preempt: { code: 'cur', steps: [START,
+			{ hl: ['s1', 's2', 's3'], t: 'reset_running_requests=true. The scheduler pops each running request and calls _preempt_request(..., drop_stale_output=True).',
+				do: (s) => log(s, 'call', 'Scheduler.reset_prefix_cache(reset_running_requests=True)') },
+			{ hl: ['s3'], t: 'Preemption frees B\'s blocks. #4 has no hash, so it goes to the head of the free queue. #1 and #2 keep their hashes and go to the tail. B\'s num_computed_tokens is set to 0 and B goes back to waiting.',
+				do: (s) => { const r = R(s, 'B'); release(s, 'B'); r.status = 'WAITING'; r.comp = 0; r.note = 'preempted, 40 → 0 computed tokens'; } },
+			{ hl: ['s4', 's5', 'b0', 'b1', 'b2'], t: 'Only the null block is used now: 10 − 9 = 1. The guard passes.',
+				do: (s) => { s.mark = [0]; } },
+			{ hl: ['b5', 'b6', 'b7', 'b8', 'b9'], t: 'The map is replaced with an empty one and every block\'s hash is cleared. AllBlocksCleared goes out on the KV event stream and metrics reset.',
+				do: (s) => { s.map = []; s.blocks.forEach((b) => { b.hash = null; }); s.mark = []; log(s, 'info', 'INFO Successfully reset prefix cache'); } },
+			{ hl: ['s6', 's7', 's8', 'b10'], t: 'If an aux output connector is configured, its reset() bumps the output generation. The call returns True.',
+				do: (s) => { log(s, 'ret', 'reset_prefix_cache() -> True'); s.result = { ok: true, t: '{"success": true}' }; } },
+			{ hl: [], t: 'The cost shows up next step. B is scheduled again with nothing cached and prefills all 40 tokens a second time. The issue estimates 8 restarted requests per reset at 3 req/s and 21 at 4 req/s, all adding prefill to the latency being measured.',
+				do: (s) => { const r = R(s, 'B'); r.status = 'RUNNING'; alloc(s, 'B', 3); cache(s, r.blocks[0], 'h0'); cache(s, r.blocks[1], 'h1'); r.comp = 40; r.note = 'prefilled the same 40 tokens again'; log(s, 'call', 'get_computed_blocks(B) -> 0 cached tokens'); } },
+		] },
+		keep: { code: 'new', steps: [START,
+			{ hl: ['n1', 'n2', 'n3'], t: 'reset_prefix_cache(keep_running_requests=True). Combining it with reset_running_requests raises ValueError in the scheduler, and the HTTP endpoint rejects that combo with a 400 before the RPC. Nobody is preempted.',
+				do: (s) => log(s, 'call', 'Scheduler.reset_prefix_cache(keep_running_requests=True)') },
+			{ hl: ['n5', 'm0', 'm1', 'm2'], t: 'The manager and coordinator pass allow_used_blocks=True to each distinct pool. Used blocks are still 4, but the relaxed guard lets the reset go ahead.',
+				do: (s) => { s.mark = [0, 1, 2, 4]; } },
+			{ hl: ['m5'], t: 'The map is swapped for an empty one. From here on no lookup can return a block cached before the reset.',
+				do: (s) => { s.map = []; s.mark = []; } },
+			{ hl: ['m6', 'm7', 'm8'], t: 'reset_hash() runs on every block, including #1, #2 and #4 that B still holds. Their ref_cnt and their KV on the GPU don\'t change. Only the label goes.',
+				do: (s) => { s.blocks.forEach((b) => { b.hash = null; }); log(s, 'info', 'INFO Successfully reset prefix cache'); } },
+			{ hl: ['m9', 'm10', 'n7', 'n8', 'n9', 'n10'], t: 'AllBlocksCleared is emitted as before. The aux output connector reset is skipped in keep mode, because running requests may still have output in flight. Returns True.',
+				do: (s) => { log(s, 'ret', 'reset_prefix_cache() -> True'); s.result = { ok: true, t: '{"success": true}' }; } },
+			{ hl: [], t: 'B keeps going from 40 computed tokens. It decodes 8 more and fills #4, which then gets a hash like any full block: hB, chained on h1.',
+				do: (s) => { const r = R(s, 'B'); r.comp = 48; r.tot = 48; r.note = 'kept running, never restarted'; cache(s, 4, 'hB'); log(s, 'info', 'cache_full_blocks: hB -> #4'); } },
+			{ hl: [], t: 'Request C arrives with the same 48-token prompt that produced h0, h1, h2. h0 isn\'t in the map, so C gets 0 cached tokens and prefills everything into #5, #6, #7. That is the cold-cache hit the issue wants to measure, with no restarted requests mixed in.',
+				do: (s) => { s.reqs.push({ id: 'C', status: 'RUNNING', comp: 48, tot: 48, blocks: [] }); log(s, 'call', 'get_computed_blocks(C) -> 0 cached tokens'); alloc(s, 'C', 3); cache(s, 5, 'h0'); cache(s, 6, 'h1'); cache(s, 7, 'h2'); } },
+			{ hl: [], t: 'Request D repeats B\'s text. h0 and h1 now hit C\'s blocks, and hB hits #4, the block B filled after the reset: 48 cached tokens. That is fine while the weights are unchanged, which is why the docs keep keep mode away from weight updates.',
+				do: (s) => { s.reqs.push({ id: 'D', status: 'RUNNING', comp: 48, tot: 49, blocks: [] }); log(s, 'call', 'get_computed_blocks(D) -> 48 cached tokens'); touch(s, 'D', [5, 6, 4]); } },
+		] },
+	};
+
+	const CODE: Record<'cur' | 'new', { title: string; tag: string; lines: CodeLine[] }> = {
+		cur: { title: 'Code on main', tag: '', lines: [
+			['s0', '# vllm/v1/core/sched/scheduler.py', 'c'],
+			['s0', 'def reset_prefix_cache(self, reset_running_requests=False,'],
+			['s0', '                       reset_connector=False) -> bool:'],
+			['s1', '    if reset_running_requests:'],
+			['s2', '        while self.running:'],
+			['s3', '            request = self.running.pop()'],
+			['s3', '            self._preempt_request(request, timestamp, drop_stale_output=True)'],
+			['s4', '        self.prev_step_scheduled_req_ids.clear()'],
+			['s5', '    reset_successful = self.kv_cache_manager.reset_prefix_cache()'],
+			['x', '    ...  # RuntimeError if preempting did not free everything; connector', 'c'],
+			['s6', '    if reset_successful and self.aux_output_connector is not None:'],
+			['s7', '        self.aux_output_connector.reset()'],
+			['s8', '    return reset_successful'],
+			['x', ''],
+			['b0', '# vllm/v1/core/block_pool.py', 'c'],
+			['b0', 'def reset_prefix_cache(self) -> bool:'],
+			['b1', '    num_used_blocks = self.num_gpu_blocks - self.get_num_free_blocks()'],
+			['b2', '    if num_used_blocks != 1:  # The null block is always marked as used'],
+			['b3', '        logger.warning("Failed to reset prefix cache because some "'],
+			['b3', '                       "blocks (%d) are not freed yet", num_used_blocks - 1)'],
+			['b4', '        return False'],
+			['b5', '    self.cached_block_hash_to_block = BlockHashToBlockMap()'],
+			['b5', '    self.cached_block_hashes_by_block.clear()'],
+			['b6', '    if self._reuse_watchers: ...  # notify'],
+			['b7', '    for block in self.blocks:'],
+			['b7', '        block.reset_hash()'],
+			['b8', '    if self.metrics_collector: self.metrics_collector.reset()'],
+			['b9', '    if self.enable_kv_cache_events: self.kv_event_queue.append(AllBlocksCleared())'],
+			['b10', '    return True'],
+		] },
+		new: { title: 'Code in PR #64865', tag: '+ added   ~ changed', lines: [
+			['n0', '# vllm/v1/core/sched/scheduler.py', 'c'],
+			['n0', 'def reset_prefix_cache('],
+			['n0', '    self,'],
+			['n0', '    reset_running_requests: bool = False,'],
+			['n0', '    reset_connector: bool = False,'],
+			['n1', '    keep_running_requests: bool = False,', '', '+'],
+			['n0', ') -> bool:'],
+			['n2', '    if reset_running_requests and keep_running_requests:', '', '+'],
+			['n2', '        raise ValueError(', '', '+'],
+			['n2', '            "reset_running_requests and keep_running_requests cannot both be True."', '', '+'],
+			['n2', '        )', '', '+'],
+			['n3', '    if reset_running_requests:'],
+			['n3', '        ...  # preempt all running, unchanged', 'c'],
+			['n5', '    reset_successful = self.kv_cache_manager.reset_prefix_cache(', '', '~'],
+			['n5', '        allow_used_blocks=keep_running_requests', '', '+'],
+			['n5', '    )', '', '~'],
+			['x', '    ...  # RuntimeError check and connector reset, unchanged', 'c'],
+			['n6', '    # A new aux output generation requires no output in flight, which', 'c', '+'],
+			['n6', '    # running requests may still have.', 'c', '+'],
+			['n7', '    if (', '', '~'],
+			['n7', '        reset_successful'],
+			['n8', '        and not keep_running_requests', '', '+'],
+			['n7', '        and self.aux_output_connector is not None'],
+			['n7', '    ):', '', '~'],
+			['n9', '        self.aux_output_connector.reset()'],
+			['n10', '    return reset_successful'],
+			['x', ''],
+			['m0', '# vllm/v1/core/block_pool.py (manager and coordinator pass the flag through)', 'c'],
+			['m0', 'def reset_prefix_cache(self, allow_used_blocks: bool = False) -> bool:', '', '~'],
+			['m1', '    num_used_blocks = self.num_gpu_blocks - self.get_num_free_blocks()'],
+			['m2', '    # The null block is always marked as used', 'c'],
+			['m2', '    if num_used_blocks != 1 and not allow_used_blocks:', '', '~'],
+			['m3', '        logger.warning(...)'],
+			['m3', '        return False'],
+			['m5', '    self.cached_block_hash_to_block = BlockHashToBlockMap()'],
+			['m5', '    self.cached_block_hashes_by_block.clear()'],
+			['m6', '    if self._reuse_watchers: ...  # notify'],
+			['m7', '    for block in self.blocks:'],
+			['m8', '        block.reset_hash()'],
+			['m9', '    ...  # metrics reset, AllBlocksCleared, unchanged', 'c'],
+			['m10', '    return True'],
+		] },
+	};
+
+	const STEP_MS = 3600;
+	const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const el = (tag: string, cls = '', text?: string) => {
+		const e = document.createElement(tag);
+		if (cls) e.className = cls;
+		if (text != null) e.textContent = text;
+		return e;
+	};
+
+	for (const root of document.querySelectorAll<HTMLElement>('[data-prefix-reset]')) {
+		const q = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+		const E = {
+			pool: q('.pr-pool'), fq: q('.pr-fq'), map: q('.pr-map'), reqs: q('.pr-reqs'), log: q('.pr-log'),
+			narr: q('.pr-narr'), count: q('.pr-count'), dots: q('.pr-dots'), res: q('.pr-res'), code: q('.pr-code'),
+			codeTitle: q('.pr-codetitle'), codeTag: q('.pr-codetag'),
+			play: q<HTMLButtonElement>('[data-act="play"]'), prev: q<HTMLButtonElement>('[data-act="prev"]'), next: q<HTMLButtonElement>('[data-act="next"]'),
+		};
+		const modeButtons = [...root.querySelectorAll<HTMLButtonElement>('[data-mode]')];
+		let mode = 'default';
+		let i = 0;
+		let shown = -1;
+		let last: State | null = null;
+		let timer = 0;
+
+		const steps = () => MODES[mode].steps;
+		const stateAt = (k: number) => {
+			const s = steady();
+			for (let j = 0; j <= k; j++) steps()[j].do(s);
+			return s;
+		};
+
+		function render() {
+			const s = stateAt(i);
+			const st = steps()[i];
+			const prev = last && shown === i - 1 ? last : null;
+			const sig = (b: Block) => [b.ref, b.hash, b.own.join()].join('|');
+
+			E.pool.replaceChildren(...s.blocks.map((b) => {
+				let cls = 'blk';
+				if (b.id === 0) cls += ' null';
+				else if (b.ref > 0) cls += ' held';
+				else if (b.hash) cls += ' cached';
+				if (s.mark.includes(b.id)) cls += ' mark';
+				if (prev && sig(prev.blocks[b.id]) !== sig(b) && !reduceMotion) cls += ' chg';
+				const d = el('div', cls);
+				const top = el('div', 'top');
+				top.append(el('span', 'bid', '#' + b.id), el('span', 'own', b.own.join(' ')));
+				const h = b.id === 0 ? el('span', 'bh none', 'null') : el('span', 'bh' + (b.hash ? '' : ' none'), b.hash || '·');
+				d.append(top, h, el('span', 'ref', b.id === 0 ? 'always used' : 'ref_cnt ' + b.ref));
+				d.setAttribute('aria-label', `block ${b.id}${b.hash ? ', hash ' + b.hash : ', no hash'}, ref_cnt ${b.ref}`);
+				return d;
+			}));
+
+			E.fq.replaceChildren(
+				el('span', 'end', 'head'),
+				...s.freeQ.map((b) => el('span', 'q' + (s.blocks[b].hash ? ' c' : ''), '#' + b + (s.blocks[b].hash ? ' ' + s.blocks[b].hash : ''))),
+				el('span', 'end', 'tail'),
+			);
+
+			const key = (m: { h: string; b: number }) => m.h + '@' + m.b;
+			const prevKeys = prev ? new Set(prev.map.map(key)) : null;
+			const row = (cls: string, m: { h: string; b: number }) => {
+				const r = el('div', cls);
+				r.append(el('span', 'h', m.h), el('span', '', '→ #' + m.b));
+				return r;
+			};
+			const rows = [
+				...(prev ? prev.map.filter((m) => !s.map.some((n) => key(n) === key(m))).map((m) => row('maprow gone', m)) : []),
+				...s.map.map((m) => row('maprow' + (prevKeys && !prevKeys.has(key(m)) ? ' new' : ''), m)),
+			];
+			if (!s.map.length) rows.push(el('div', 'maprow empty', 'empty: no lookup can hit'));
+			E.map.replaceChildren(...rows);
+
+			E.reqs.replaceChildren(...s.reqs.map((r) => {
+				const was = prev?.reqs.find((x) => x.id === r.id);
+				const changed = prev && (!was || was.status !== r.status || was.comp !== r.comp || was.blocks.join() !== r.blocks.join());
+				const d = el('div', 'req' + (changed && !reduceMotion ? ' chg' : ''));
+				d.append(
+					el('span', 'id', r.id),
+					el('span', 'meta', `${r.comp}/${r.tot} tok · blocks [${r.blocks.map((b) => '#' + b).join(' ')}]`),
+					el('span', 'st ' + r.status, r.status),
+				);
+				if (r.note) d.append(el('span', 'note', r.note));
+				return d;
+			}));
+
+			const logs = s.log.slice(-5);
+			E.log.replaceChildren(...(logs.length ? logs.map((l) => el('div', l.k === 'retf' ? 'ret f' : l.k, l.t)) : [el('div', '', '…')]));
+
+			E.narr.textContent = st.t;
+			E.count.textContent = `${i + 1} / ${steps().length}`;
+			E.prev.disabled = i === 0;
+			E.next.disabled = i === steps().length - 1;
+			E.dots.replaceChildren(...steps().map((_, k) => {
+				const b = el('button', k === i ? 'on' : k < i ? 'past' : '') as HTMLButtonElement;
+				b.type = 'button';
+				b.setAttribute('aria-label', 'Go to step ' + (k + 1));
+				b.addEventListener('click', () => { stop(); go(k); });
+				return b;
+			}));
+			E.res.hidden = !s.result;
+			if (s.result) {
+				E.res.className = 'pr-res ' + (s.result.ok ? 'ok' : 'bad');
+				E.res.textContent = s.result.t;
+			}
+
+			const c = CODE[MODES[mode].code];
+			E.codeTitle.textContent = c.title;
+			E.codeTag.textContent = c.tag;
+			const hl = new Set(st.hl);
+			E.code.replaceChildren(...c.lines.map(([id, text, kind, dm]) => {
+				const l = el('span', 'l' + (kind === 'c' ? ' c' : '') + (hl.has(id) ? ' hl' : ''));
+				if (dm) l.append(el('span', 'dm ' + (dm === '+' ? 'add' : 'mod'), dm));
+				l.append(document.createTextNode(text || ' '));
+				return l;
+			}));
+
+			last = s;
+			shown = i;
+		}
+
+		const go = (k: number) => { i = Math.max(0, Math.min(k, steps().length - 1)); render(); };
+		function stop() {
+			clearInterval(timer);
+			timer = 0;
+			E.play.textContent = 'Play';
+		}
+		function play() {
+			if (timer) { stop(); return; }
+			if (i >= steps().length - 1) go(0);
+			E.play.textContent = 'Pause';
+			timer = window.setInterval(() => {
+				go(i + 1);
+				if (i >= steps().length - 1) stop();
+			}, STEP_MS);
+			if (i === 0) go(1);
+		}
+
+		E.prev.addEventListener('click', () => { stop(); go(i - 1); });
+		E.next.addEventListener('click', () => { stop(); go(i + 1); });
+		E.play.addEventListener('click', play);
+		for (const b of modeButtons) {
+			b.addEventListener('click', () => {
+				mode = b.dataset.mode!;
+				modeButtons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+				stop();
+				last = null;
+				go(0);
+			});
+		}
+		go(0);
+	}
+</script>
