@@ -1,0 +1,116 @@
+---
+title: "Pinning Dynamo sessions to one data-parallel rank"
+description: "Making hard session affinity in NVIDIA Dynamo's router pin a session to a (worker, DP rank) pair under every built-in routing policy, so multi-turn conversations keep hitting the same rank's prefix cache."
+lede: "Dynamo promised that a hard-pinned session stays on one worker and, when available, one data-parallel rank. Under KV routing it did. Under round-robin, random and the other built-in policies, only the worker was pinned, so the engine moved each turn to whichever rank it liked."
+project: "NVIDIA Dynamo"
+repository: "ai-dynamo/dynamo"
+repositoryUrl: "https://github.com/ai-dynamo/dynamo"
+issueNumber: "#17641"
+contributionType: "Routing correctness fix"
+technicalArea: "LLM request routing / session affinity"
+status: "PR Open"
+prMerged: false
+date: "2026-11-01"
+complexity: "Medium"
+issueUrl: "https://github.com/ai-dynamo/dynamo/issues/17641"
+prUrl: "https://github.com/ai-dynamo/dynamo/pull/17761"
+stack: 
+  - "Rust"
+  - "xxHash"
+  - "vLLM"
+shortSummary: "Fixed Dynamo's built-in routing policies so hard session affinity pins a (worker, DP rank) pair instead of just a worker, choosing the rank from the worker's advertised range by hashing the session ID."
+concepts: 
+  - "Session affinity"
+  - "Data parallelism in LLM serving"
+  - "Prefix cache locality"
+  - "Consistent hashing"
+  - "Backward compatibility"
+  - "Design trade-offs"
+---
+
+## In short
+
+[NVIDIA Dynamo](https://github.com/ai-dynamo/dynamo) is an open-source serving framework that routes LLM requests across GPU workers. A large model is often served with *data parallelism*: one worker runs several copies of the model, called DP ranks, and each rank keeps its own prefix cache of recently seen tokens.
+
+For multi-turn chats, Dynamo offers *hard session affinity*: every turn of a conversation goes to the same place, so the next turn can reuse the cache the last one built. A maintainer reported in [issue #17641](https://github.com/ai-dynamo/dynamo/issues/17641) that this only held at the worker level for most routing policies. I found the root cause in the Rust router, chose a fix that needed no changes to workers or the wire format, and opened [PR #17761](https://github.com/ai-dynamo/dynamo/pull/17761): about 45 lines of core logic, three regression tests, and documentation that now says exactly what hard and soft affinity guarantee.
+
+![Before the fix, one session's three turns land on ranks 5, 7 and 4 and miss the cache. After the fix, all three turns land on rank 6 and reuse its cache](/images/dynamo-17641/rank-pin.svg)
+
+## The problem
+
+Dynamo's router has a KV-aware mode and several built-in policies: round-robin, random, power-of-two choices, least-loaded and device-aware weighted. With KV routing, a hard session binding already stored `(worker, rank)`. With the built-in policies it stored `(worker, None)`.
+
+Every later turn was then dispatched to the right worker with no rank. The vLLM handler passes a missing rank through as "no preference", so vLLM's own load balancer picked a rank for each request. The session stayed on one machine but hopped between its model copies, losing the per-rank cache that affinity exists to keep.
+
+I reproduced it before changing anything with a test that ran each built-in policy in hard mode for two turns:
+
+```text
+RoundRobin:  pin=RouteTarget { worker_id: …, dp_rank: None }  dispatched dp_ranks=[None, None]
+Random:      pin=RouteTarget { worker_id: …, dp_rank: None }  dispatched dp_ranks=[None, None]
+LeastLoaded: pin=RouteTarget { worker_id: …, dp_rank: None }  dispatched dp_ranks=[None, None]
+```
+
+## Root cause
+
+In `routing_host/builtin.rs`, the closure that builds the dispatch target, `target_for_worker`, restored a stored rank only in **soft** mode. In hard mode it always returned a worker-only target. That target was committed as the session binding after the first successful dispatch, and every later turn read it back and sent `dp_rank = None`.
+
+The KV path didn't have the problem because its scheduler always chooses a rank and commits it with the worker.
+
+## Choosing a fix
+
+The issue suggested two directions, and I weighed three designs before writing code:
+
+| Option | What it needs | Decision |
+| --- | --- | --- |
+| **Record the rank the engine actually used** | A new field in the engine output protocol, handler changes in three backends, and vLLM doesn't expose which DP engine served a request. The binding is also committed before the first response arrives. | Rejected: 300+ lines, a wire change, and backward-compatibility handling for older workers |
+| **Let each policy pick the rank** | Changes to public selection APIs across three crates | Rejected: 120+ lines, and it would collide with ongoing work to turn built-in policies into plugins |
+| **Router picks the rank when the binding is created** | The router already tracks each worker's declared DP ranks in its worker monitor; nothing new is needed from workers | **Chosen**: small, contained to the router, and no wire format change |
+
+I posted the trade-off on the issue before building, and offered the maintainer a load-aware rank pick as an alternative.
+
+## The fix
+
+One helper decides the rank for a hard-pinned session (lightly simplified):
+
+```rust
+fn hard_affinity_dp_rank(&self, worker_id: u64, bound: Option<AffinityTarget>, binding_key: &str) -> Option<u32> {
+    // 1. Keep the rank the session is already bound to on this worker.
+    if let Some(dp_rank) = bound.filter(|b| b.worker_id == worker_id).and_then(|b| b.dp_rank) {
+        return Some(dp_rank);
+    }
+    // 2. Otherwise pick one from the worker's declared range by hashing the session key.
+    let dp_ranks = self.routing_context.as_ref()?.monitor()?.declared_dp_ranks(worker_id)?;
+    let dp_size = dp_ranks.len() as u64;
+    (dp_size > 1).then(|| dp_ranks.start + (xxh3_64(binding_key.as_bytes()) % dp_size) as u32)
+}
+```
+
+- **Hashing the session ID** is deterministic, needs no extra state, and spreads sessions evenly across ranks. Every turn and every router replica computes the same answer.
+- **Using the declared range** (for example ranks 4 to 7) matters. Hard-coding rank 0 would break workers whose ranks don't start at 0.
+- **Single-rank workers keep today's behaviour**, so DP=1 traffic is identical on the wire.
+- **A worker-only hint keeps the bound rank.** A design review caught that a later turn naming only the worker would otherwise fail the hard binding's validation, so the bound rank is merged in, the same way the KV path already does it.
+- **Older worker-only bindings** from older router replicas, or from before the router saw a worker's config, hash to the same rank on every turn.
+
+The rest of the change is a small accessor on the worker monitor, a getter for the session key, and documentation updates for the router guide and the TensorRT-LLM DP-rank page.
+
+## Verification
+
+I wrote the failing test first. On `main` it failed with *"RoundRobin hard pin must include a DP rank"*.
+
+| Test | What it checks |
+| --- | --- |
+| `builtin_hard_affinity_pins_declared_dp_rank_for_every_policy` | All five built-in policies, a worker declaring DP ranks 4 to 7, several sessions with three turns each. Every pin is `(worker, r)` with `r` in range, every turn dispatches `r`, and a request without a session still sends no rank. |
+| `builtin_hard_affinity_assigns_rank_to_worker_only_binding` | An existing worker-only binding gets the same hashed rank on every turn. |
+| `builtin_soft_affinity_does_not_pin_declared_dp_rank` | Soft mode is unchanged. |
+
+An independent code review confirmed that removing the worker-only-hint merge makes the main test fail with *"bound to DP rank 6, but dispatch did not select a DP rank"*. Locally, 492 router tests pass, along with the session-affinity and discovery suites, `cargo fmt`, `clippy` and pre-commit.
+
+These are unit tests of the router. They show that it picks, pins and sends the rank. I don't have a GPU, so an end-to-end run with vLLM at DP>1 is left to upstream CI and maintainers.
+
+## What this work shows
+
+- **Reading an unfamiliar codebase quickly.** I traced a request across the Rust router, the worker discovery monitor and the Python vLLM handler to find the single closure responsible.
+- **Picking the smallest correct design.** I compared three approaches by blast radius, compatibility and conflict with ongoing work, and chose the one that needed no protocol change.
+- **Test-first, with a failing reproduction.** Each test was shown to fail before the fix, and the subtle merge case was confirmed by reverting it.
+- **Being honest about limits.** The PR spells out what was tested locally, what needs a GPU, and the remaining trade-offs: rank choice is load-blind, and an older router replica can still reject a worker-only hint during a rolling upgrade.
+- **Working with maintainers.** I claimed the issue, shared the root cause and trade-off on the thread, and kept the change compatible with the planned plugin refactor.
