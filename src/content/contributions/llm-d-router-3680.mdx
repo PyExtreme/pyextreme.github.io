@@ -1,0 +1,154 @@
+---
+title: "Warning about data producers nobody reads in llm-d-router"
+description: "A startup warning in the EPP for a configured data producer whose output no plugin reads because its consumer fell back to an auto-created default."
+lede: "Give a prefix producer a custom name, forget to point the scorer at it, and the EPP quietly builds a second producer and runs both. Nothing in the logs says so. The fix is a startup warning, and the hard part was making it fire on that mistake and stay quiet on every shipped config."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#3680"
+contributionType: "Configuration diagnostics"
+technicalArea: "LLM request routing / EPP data layer"
+status: "PR Open"
+prMerged: false
+date: "2026-10-31"
+complexity: "Medium"
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/3680"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/3825"
+stack:
+  - "Go"
+  - "Kubernetes"
+  - "Gateway API Inference Extension"
+  - "logr"
+shortSummary: "Added a startup warning in CreateMissingDataProducers for a configured producer key that no other plugin reads while a consumer of the same data type reads an auto-created default. It catches the issue's config and the cross-type prefix producers, and stays silent on every shipped config."
+concepts:
+  - "Dependency resolution"
+  - "Plugin data graphs"
+  - "False-positive budgets"
+  - "Config diagnostics"
+  - "Log-capture testing"
+---
+
+## Context: a data graph that fills its own gaps
+
+The [llm-d router](https://github.com/llm-d/llm-d-router)'s Endpoint Picker (EPP) is assembled from plugins listed in a YAML config. Some plugins produce data (prefix-cache match info, tokenized prompts, latency predictions) and others consume it to score and pick a vLLM endpoint. Each plugin declares what it `Produces()` and what it `Consumes()`, and at startup the EPP builds a dependency graph from those declarations.
+
+To keep configs short, the graph fills its own gaps. `CreateMissingDataProducers` in `pkg/epp/datalayer/data_graph.go` walks every consumer, and for each required data key that no configured plugin produces, it looks the key up in a registry of default producers and instantiates one. A config that lists only `prefix-cache-scorer` still works, because the EPP adds an `approx-prefix-cache-producer` behind it.
+
+[Issue #3680](https://github.com/llm-d/llm-d-router/issues/3680) asked for a log line for the case where that convenience hides a mistake.
+
+## Symptom: the producer you configured is not the one being used
+
+Data keys carry the name of the producer that writes them. An `approx-prefix-cache-producer` named `prefix-producer` writes `PrefixCacheMatchInfoDataKey/prefix-producer`. A `prefix-cache-scorer` reads from the producer named in its `prefixMatchInfoProducerName` parameter, and when that is unset it reads `PrefixCacheMatchInfoDataKey/approx-prefix-cache-producer`, the key of the type-named default.
+
+So this config, from the issue, runs two prefix producers:
+
+```yaml
+plugins:
+  - name: prefix-producer
+    type: approx-prefix-cache-producer
+    parameters:
+      autoTune: false
+      blockSizeTokens: 128
+  - name: prefix-scorer
+    type: prefix-cache-scorer
+```
+
+![The configured prefix-producer writes a key nobody reads. The scorer reads the key of an auto-created approx-prefix-cache-producer instead. The fix logs a warning naming the unread producer](/images/llm-d-router-3680/unread-producer.svg)
+
+The scorer requires the default key, nobody produces it, so the EPP creates a default producer with default parameters. The user's producer, with the `blockSizeTokens` they chose, keeps hashing every prompt and its output is never read. Routing still works, so nothing looks wrong, but the tuning in the config has no effect, and the EPP does the prefix work twice per request.
+
+I reproduced this by running the issue config through the runner's two config-parsing phases in a scratch test. The handle held both `prefix-producer/approx-prefix-cache-producer` and an auto-created `approx-prefix-cache-producer/approx-prefix-cache-producer`, with the scorer consuming the second. No log line mentioned the first.
+
+## Root cause: resolution only looks from the consumer side
+
+`CreateMissingDataProducers` asks one question per consumer: is each key it needs produced by someone? Missing required keys get a default. Missing optional keys get a `Warning:` log saying the plugin will use a fallback. Nobody asks the reverse question, whether each configured producer's output is read by anyone, so a producer that was silently replaced by a default is never reported.
+
+## Constraints: the obvious check is wrong twice
+
+The issue suggested warning when a configured producer's keys are consumed by no plugin. Before writing anything I tested that idea against the real plugins, and it failed in both directions.
+
+**It misses the issue's own config.** `approx-prefix-cache-producer` also produces a `PrefixHashSet` key and reads it back itself as an optional input. A naive count sees one consumed key and stays quiet. Consumption by the producer itself has to be ignored.
+
+**It is noisy everywhere else.** I wrote a throwaway test that loads every shipped config that parses standalone (32 across `deploy/config`, `test/testdata` and `test/integration`) and lists configured producers with unread keys. Five plugin types showed up across 13 configs: `disagg-profile-handler`, `prefix-based-pd-decider`, `program-aware-fairness`, `thunder-agent` and `models-data-extractor`. They declare `Produces` but their output is read by code outside the plugin consumer interface, or by themselves. Narrowing the check to the request-control `DataProducer` plugins cleared those, but then it would misfire on `p2p-source-producer`, which `docs/disaggregation.md` documents using on its own for the side effect of setting a KV-cache source header.
+
+A warning that fires on correct, documented setups trains people to ignore it. The check needed to describe the specific mistake, not "some output is unused".
+
+## Design: tie the warning to the default that replaced it
+
+The precise signal already exists inside `CreateMissingDataProducers`. It knows which plugins were on the handle before it ran (the configured ones), and which keys it resolved by creating a default. The mistake in the issue is exactly: a configured producer emits a key that no other plugin reads, while a consumer of the same data type reads an auto-created default.
+
+Three options went through a design review before any code was written:
+
+- **Same plugin type as an auto-created producer.** Catches the issue config, but misses the cross-type case. `precise-prefix-cache-producer`, `burst-prefix-cache-producer` and `multicluster-approx-prefix-cache-producer` write the same `PrefixCacheMatchInfoDataKey` data type, and a scorer left at its default still falls back to `approx-prefix-cache-producer`. The precise producer's README documents this trap. I confirmed with a scratch run that those configs hit it.
+- **Any configured producer whose type is in the default registry and is unread.** Too noisy, since `predicted-latency` and `inflight-load` have side effects beyond their keys.
+- **Per key, matched on data type.** Record each key resolved by a default. For each configured producer key that no other plugin reads, rename its producer part to the default's name and check whether that equals a defaulted key. A default key's producer name is its registry type, so the two only match when the data types match.
+
+I went with the third. It covers same-type and cross-type cases using only the existing `DataKey.WithNonEmptyProducerName` API, and it cannot produce a false positive from the naming convention. If a default's producer name ever differed from its registry type, the result would be a missed warning, not a wrong one.
+
+I also kept it out of the #3583 validation path the issue author mentioned. That path returns errors and runs on a registry that no longer distinguishes configured plugins from auto-created ones. This is a warning about a config that works.
+
+## The fix: about 50 lines in one function
+
+Before the resolution loop, snapshot the configured plugins. Inside the loop, record each default as it is assigned. After the loop, walk the configured producers:
+
+```go
+for _, p := range configured {
+	producer, ok := p.(plugin.ProducerPlugin)
+	if !ok {
+		continue
+	}
+	for key := range producer.Produces() {
+		if consumedByOther(handle, p, key) {
+			continue
+		}
+		for defaultKey, d := range defaulted {
+			if key.WithNonEmptyProducerName(d.producer).String() == defaultKey {
+				logger.Info("Warning: configured producer's data key has no consumer, a consumer of the same data type reads an auto-created default producer",
+					"producer", p.TypedName().String(), "dataKey", key.String(),
+					"defaultProducer", d.producer, "consumer", d.consumer)
+			}
+		}
+	}
+}
+```
+
+`consumedByOther` checks the `Required` and `Optional` sets of every plugin except `p`, which handles the self-read `PrefixHashSet`. The level and `Warning:` prefix copy the existing optional-key warning a few lines above, so both show up under the same grep. For the issue config the EPP now logs:
+
+```
+"msg"="Warning: configured producer's data key has no consumer, a consumer of the same data type reads an auto-created default producer" "producer"="prefix-producer/approx-prefix-cache-producer" "dataKey"="PrefixCacheMatchInfoDataKey/prefix-producer" "defaultProducer"="approx-prefix-cache-producer" "consumer"="prefix-scorer"
+```
+
+The line names everything needed to fix the config: which producer is unread, which consumer to point at it, and what it is reading instead.
+
+## Verification: fire on the mistake, stay quiet everywhere else
+
+I wrote `TestCreateMissingDataProducers_UnconsumedConfiguredProducer` first, as a table test that captures logs through a `funcr` logger and compares warning fields with `ElementsMatch`, since plugin iteration order is random.
+
+| Case | Warns |
+| --- | --- |
+| Same-type producer under a custom name | Yes |
+| Producer that also reads its own key | Yes |
+| Producer of another type emitting the same data type | Yes |
+| Multi-key default, each unread key | Yes, once per key |
+| Multi-key producer where only one key is unread | Only that key |
+| Configured key read by another consumer | No |
+| Configured key read by the auto-created producer | No |
+| Unread producer, nothing auto-created | No |
+| Unrelated data type | No |
+| Resolution fails with `ErrUnresolvedDataKeys` | No |
+
+The four warn cases failed before the fix and passed after. An independent code review pointed out that my first self-consumption case didn't actually exercise self-consumption, so I rewrote it, then checked the test the other way round: removing the self-exclusion from `consumedByOther` makes that case fail, and recording a default after the "already created" skip instead of before makes the multi-key case fail.
+
+Unit tests use mock plugins, so I also ran real plugins through the runner config path in a scratch test that isn't committed. The issue config, precise and burst producers without `prefixMatchInfoProducerName`, multicluster approx with its scorer, and a custom-named `token-producer` all log the warning. `tiered-prefix-cache-cpu` (a configured CPU producer next to an auto-created approx one, both read), a standalone `p2p-source-producer`, and every shipped config that loads log nothing.
+
+All of this ran on my Mac: `go test` for `pkg/epp/datalayer`, the affected plugin packages and `cmd/epp`, `go vet`, and the project's golangci-lint, typos and gosec configs inside the builder image under colima. The full `make lint` and `govulncheck ./...` were OOM-killed in a 4 GiB VM, so I ran the same linters with memory limits and govulncheck on the changed package. The full run and the hermetic integration tests are left to CI.
+
+One side finding: a custom-named `token-producer` gets the warning correctly, but no consumer can be pointed at it, because they all read the unqualified `TokenizedPromptDataKey`. That is a separate bug and stays out of this PR.
+
+## Core concepts this exercised
+
+- **Ask the reverse question.** Dependency resolution that only walks from consumers to producers can't see a producer that was replaced. Recording what the resolver did is what makes the reverse check precise.
+- **A warning has a false-positive budget.** "Some output is unused" fired on 13 shipped configs. Tying the warning to the default that replaced the producer brought that to zero without losing the case the issue was about.
+- **Test the idea on real plugins first.** The suggested check failed on the issue's own config because of a self-read key. A throwaway survey over every shipped config found that before any design was picked.
+- **Match on the data contract, not the plugin type.** Keying the check on data type rather than plugin type is what catches precise, burst and multicluster producers falling back to the approx default.
+- **Prove the test catches the bug.** Breaking the fix on purpose and watching the right case fail is the only way to know a test does what its name says.
