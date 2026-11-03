@@ -1,1284 +1,156 @@
 ---
 title: "MarketLane Research"
-description: "Production AI infrastructure for institutional-grade, evidence-grounded equity research."
-lede: "Production AI infrastructure for institutional-grade equity research: SEC filings, XBRL facts and market data resolved to company, period, filing, section and fact before an answer is generated."
+headline: "Hybrid search made my financial RAG worse. Here is what shipped instead."
+description: "Evidence-grounded retrieval over SEC filings, and the measurement system that decided what shipped: 13 pre-registered experiments, two adopted changes, eleven rejected with mechanisms, about $40 of model spend."
+lede: "A production-style equity-research system over SEC filings: content-addressed idempotent ingestion, PostgreSQL with pgvector, FastAPI on Cloud Run, OpenTelemetry end to end. The more important half is the measurement system around it. I built that after the first obvious upgrade made answers worse, and I could only tell because I had started to measure properly."
 year: 2026
+updated: "2026-11-03"
 order: 2
 kind: "Infrastructure"
-stack: 
-  - "Python"
-  - "PostgreSQL + pgvector"
-  - "Hybrid retrieval"
-  - "XBRL"
-  - "Docling"
-  - "GCP Cloud Run"
-  - "Vertex AI"
-outcome: "Evidence-first generation with citation validation, temporal reasoning and deterministic financial calculation."
-links: []
+stack:
+  - "Python 3.12"
+  - "FastAPI"
+  - "PostgreSQL 18 + pgvector"
+  - "Next.js"
+  - "Vertex AI (Gemini)"
+  - "Cloud Run + GCS"
+  - "OpenTelemetry + Phoenix"
+  - "SEC EDGAR + XBRL"
+outcome: "Two deterministic changes cleared pre-registered bars: an issuer-aware selector (+10 / −0 on complete evidence, p = 0.002) and an XBRL numeric route (16/17 vs 9/17 judged correct, p = 0.039). Eleven techniques rejected with mechanisms, for about $40 of total model spend."
+links:
+  - label: "Target architecture (design document)"
+    href: "https://pyextreme.github.io/projects/marketlane-research-architecture/"
 ---
 
-MarketLane Research is an AI-native equity intelligence platform designed to turn fragmented financial information into structured, traceable research.
-
-The system combines:
-
-* SEC regulatory filings
-* financial statements and XBRL facts
-* investor materials
-* market data
-* multi-period financial analysis
-* document-level retrieval
-* deterministic financial calculations
-* temporal reasoning
-* grounded LLM synthesis
-
-into a single research interface capable of answering questions that normally require an analyst to move repeatedly between filings, spreadsheets, financial databases, and company disclosures.
-
-The core engineering problem is not simply document search.
-
-It is building a system that can determine:
-
-**which company → which reporting period → which filing → which section → which financial fact → which calculation → which supporting evidence**
-
-before generating an answer.
-
----
-
-## The Problem
-
-Traditional financial research is fragmented across multiple systems.
-
-A single question such as:
-
-> How has Microsoft's operating margin changed over the last four quarters, and what did management say drove the change?
-
-can require:
-
-1. identifying the correct fiscal periods;
-2. retrieving revenue and operating income for each quarter;
-3. normalizing reported financial concepts;
-4. calculating margins consistently;
-5. locating the relevant MD&A commentary across several filings;
-6. separating current-period commentary from historical discussion;
-7. comparing changes across quarters;
-8. linking conclusions back to primary-source evidence.
-
-Generic RAG architectures are poorly suited to this problem.
-
-A vector database can retrieve semantically similar text, but it cannot reliably provide:
-
-* exact financial numbers;
-* fiscal-period normalization;
-* deterministic arithmetic;
-* latest/previous filing resolution;
-* multi-document comparison;
-* evidence lineage;
-* structured table reasoning;
-* financial metric consistency.
-
-MarketLane Research therefore treats financial intelligence as a **multi-source evidence orchestration problem**, rather than a conventional chatbot problem.
-
----
-
-## System Architecture
+import MarketLaneRetrievalLedger from '../../components/explainers/MarketLaneRetrievalLedger.astro';
 
-```text
-                            USER QUERY
-                                │
-                                ▼
-                       Query Understanding
-                                │
-               ┌────────────────┼─────────────────┐
-               │                │                 │
-               ▼                ▼                 ▼
-          Entity/Period       Intent         Metric Detection
-           Resolution       Classification
-               │                │                 │
-               └────────────────┼─────────────────┘
-                                ▼
-                         Research Planner
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          │                     │                     │
-          ▼                     ▼                     ▼
-   Filing Intelligence   Structured Financials   Market Intelligence
-          │                     │                     │
-          ▼                     ▼                     ▼
-   Hybrid Retrieval        SEC XBRL Facts        Market Data APIs
-   Dense + Lexical              │                     │
-          │                     ▼                     │
-          │              Financial Calculator         │
-          │                     │                     │
-          └─────────────────────┼─────────────────────┘
-                                ▼
-                       Evidence Assembly
-                                │
-                                ▼
-                          Reranking Layer
-                                │
-                                ▼
-                       Grounded Reasoning
-                                │
-                                ▼
-                      Citation Validation
-                                │
-                                ▼
-                       Research Response
-```
+**TL;DR**
 
-The architecture deliberately separates **retrieval, numerical truth, calculation and reasoning**.
+- I built an evidence-grounded research system over SEC 10-K and 10-Q filings, with SEC XBRL facts as the authority for numbers, and the evaluation harness that tells me whether a change helps: frozen corpus, source-audited benchmark, hash-pinned candidate pools, pre-registered decision rules, paired statistics and a certified LLM judge.
+- The first obvious upgrade, **hybrid dense plus full-text retrieval with rank fusion, made answers worse** (judged correctness 0.610 to 0.531). The lexical branch was issuer-blind: 82% of its top-20 chunks came from the wrong company.
+- Two cheap, deterministic changes cleared a pre-registered bar and were adopted: an **issuer-aware selector** (complete evidence 68 to 78 of 149, 10 gains and 0 regressions, p = 0.002, about 2 ms) and a **deterministic XBRL numeric route** in front of the generator (16/17 vs 9/17 on the rows it touches, p = 0.039).
+- **Eleven techniques were tested and rejected** with an inspectable mechanism each: BM25 and SPLADE fusion, a cross-encoder reranker, MMR, three deterministic selectors and a bounded agent. The whole programme cost about $40 in model calls.
+- Before replacing the served route I benchmarked it. It was indistinguishable from the challenger, so production stayed unchanged. When the project changed clouds, I archived the 1.06-million-row database and 15 GB of filing artifacts to S3 with a verified zero-error test restore, then deleted the GCP project.
 
-The language model is not treated as the database, calculator, or source of financial truth.
+Every number on this page is from a recorded run on development rows of a frozen 28-company corpus. A 32-row reserve set has never been run. Nothing here is a production generalisation claim; the [last section](#what-i-would-not-claim) says exactly what is not established. The system design on its own, the data plane, the ingestion state machine and the evaluation and observability architecture, is written up separately as the [target architecture](/projects/marketlane-research-architecture/).
 
----
+## The problem
 
-## 1. Multi-Layer Financial Data Plane
+An analyst question such as *"Give the percentage change in operating income from FY2018 to FY2020"* does not need *a* relevant passage. It needs the right company, consolidated operating income for both years, a consistent accounting basis, the right units and a valid calculation.
 
-MarketLane Research uses different systems for different classes of information.
+The corpus makes this hard in a specific way. 63% of the chunks are financial tables, and the same table recurs in every filing of an issuer with different numbers. A retriever that rewards passages that *look* relevant finds the right table and the wrong year, and the model then writes a numerically precise, well-cited, wrong answer.
 
-### Narrative evidence
+The hard requirements were: every claim cited, every number traceable to a filing or an XBRL fact, say "insufficient evidence" rather than guess, and ingestion that is idempotent and safe under partial failure.
 
-SEC filings and company disclosures provide qualitative context:
+## What I built
 
-* management discussion and analysis;
-* risk factors;
-* operating commentary;
-* liquidity discussion;
-* business trends;
-* capital expenditure commentary;
-* segment performance;
-* strategic priorities.
+![As-built architecture: Next.js workspace, HTTPS load balancer, FastAPI on Cloud Run with retrieve, research and compare-filings endpoints, one PostgreSQL plus pgvector database, Vertex AI, and an ingestion job from SEC EDGAR through content-addressed raw artifacts, parsing, chunking, embedding and atomic publish](/images/marketlane-research-rag/architecture.svg)
 
-These are handled through the document retrieval layer.
+**Serving.** Retrieval and answering are separate endpoints, so the workspace can show the evidence before an answer exists and the server validates every citation ID against the evidence it was given. A private session cookie is verified before any paid work starts. Filing comparison (latest versus previous 10-K or 10-Q, topic by topic) uses no model at all.
 
-### Numerical truth
+**Ingestion.** Raw filings are immutable, content-addressed objects written create-only. Parsing, chunking and embedding are prepared outside the transaction; publication commits sections, tables, chunks, vectors and metadata together, so a failed refresh leaves the last complete version searchable. A per-document advisory lock stops two workers publishing the same accession. Reruns skip unchanged work by content hash and by parser, chunker and embedding version.
 
-Structured financial values are sourced from XBRL and normalized financial facts.
+**Numbers.** SEC CompanyFacts (XBRL) is the authority for reported values. A deterministic calculator does percentage change, margins, differences and CAGR. Text retrieval cites and explains; it does not compute.
 
-Examples include:
+**Observability.** OpenTelemetry behind a repository-owned facade so a missing collector can never fail a request: one server span per request with W3C propagation, model spans with GenAI semantic attributes, retrieval spans with bounded candidate diagnostics and no chunk text, Prometheus metrics with low-cardinality labels, tail-sampled traces into Phoenix, evaluation runs linked to traces, and a deterministic root-cause classifier for failed evaluation cases.
 
-* revenue;
-* operating income;
-* net income;
-* EPS;
-* cash flow from operations;
-* capex;
-* gross profit;
-* assets;
-* cash;
-* debt.
+**Scale at archive.** 110 companies, 3,783 filings, 283,982 chunks with 768-dimensional vectors, 167,493 XBRL facts, 1,058,558 rows and 33.2 GB in one PostgreSQL 18 database, plus 15.2 GB of raw and normalized filing artifacts.
 
-These values bypass the document-generation path whenever structured data is available.
+## The measurement system
 
-### Market context
+Everything below depends on being able to tell a real gain from noise, label error, judge error or planner luck. This is the part of the project I would defend hardest.
 
-Price and market information can be independently queried through MarketLane's market-data layer.
+- **Frozen inputs pinned by hash.** Corpus (28 companies, 930 filings, 28,452 chunks), dataset release, dense candidate pool, selector code, judge rubric and fact store. The runner refuses to start if any pin drifts.
+- **A benchmark that shrank on purpose.** The legacy question sets had fiscal-year labels holding Q4 values and gold chunks that could not be reconstructed; an audit of 18 apparent retrieval failures found 17 annotation problems. I rebuilt from the frozen corpus, architecture-blind: 3,162 candidates, 2,171 tiered, 190 proposed, **131 after four audit rounds**, because a number matching a labelled figure elsewhere does not prove which entity an unheaded table describes. Strict multi-hop went from 79 author-labelled questions to 8.
+- **Evidence obligations, not chunk IDs.** A question passes complete evidence@k only if every required fact, every period and every operand, is supported in the top k. Answer obligations (524) and evidence obligations (825) are tracked separately.
+- **A retrieval-state contract.** Found because a request for 20 candidates returned 16: on fresh connections PostgreSQL ran the approximate HNSW scan *before* the frozen-corpus filter, and the plan switched after five executions of the prepared statement. The evaluation retriever now applies eligibility before ranking, uses exact cosine distance and breaks ties by chunk UUID; 61 of 61 top-20 prefixes are stable across connections and plan modes.
+- **Pre-registration with a bound approval.** Hypothesis, arms, endpoint, decision rule and statistics are written and hashed before the first output exists. Exact McNemar on discordant rows, a cluster bootstrap, Holm correction, and rules that name minimum gains and maximum losses. An n = 14 result is reported as a direction, not an effect.
+- **Gold never reaches the runtime.** Retrieval, selection, routing and generation receive only the question. A 32-row reserve cannot be returned by the loader, and every run folder is scanned for it.
+- **Cost caps on every live run**, enforced from returned token counts. Unscored rows stay unscored; invalid runs are kept beside valid ones.
 
-This allows research questions to combine fundamentals with market behavior without placing market time-series inside the RAG corpus.
+## A confident hypothesis, a negative result, a root cause
 
----
+The hypothesis was the one everybody holds: financial questions are full of exact terminology, so add PostgreSQL full-text search and fuse it with dense retrieval by reciprocal rank fusion.
 
-## 2. Financial Document Intelligence Pipeline
+Judged answer correctness fell from 0.610 to 0.531, complete evidence at rank 1 halved, and retrieval p50 went from 1.4 s to 18.9 s.
 
-MarketLane Research uses document-type-aware ingestion rather than routing every document through the same parser.
+![Before: dense and full-text branches fused with equal weight, 82% of the lexical top-20 from the wrong company, half of every context wrong. After: exact dense to depth 80 then an issuer-aware selector, wrong-issuer passages 76 to 17 of 400](/images/marketlane-research-rag/issuer-blind.svg)
 
-```text
-                        Incoming Document
-                                │
-                ┌───────────────┴───────────────┐
-                │                               │
-            SEC HTML                      Complex PDF
-                │                               │
-                ▼                               ▼
-       Structural HTML Parser               Docling
-                │                               │
-                │                      Parse Quality Checks
-                │                               │
-                │                       ┌───────┴────────┐
-                │                       │                │
-                │                     PASS             FALLBACK
-                │                       │                │
-                └───────────────────────┼────────────────┘
-                                        ▼
-                             Normalized Document Model
-```
+The mechanism was not "lexical search is weak". 82% of the lexical branch's top-20 chunks came from the wrong company, against 19% for dense. In 39 of 61 queries the two branches shared no chunk at all, so equal-weight fusion simply interleaved them and wrong-company passages took half of every context. Fused ranks 1 and 2 tied exactly in 40 of 61 queries, and a chunk-ID string sort decided rank 1. An independent review reconstructed every fused ordering and overturned three apparent lexical wins.
 
-SEC HTML is parsed structurally instead of first being converted into flat text.
+What I did not do was drop lexical search and move on. On the larger benchmark I tested a real Okapi BM25 (fused 60 against 68 for dense; BM25 did recover 7 questions dense missed), then a learned sparse retriever (SPLADE fused: 38), then lexical as a candidate source feeding the selector rather than a rank competitor (2 extra rows in the pool, 0 in the context). The problem was never the strength of the lexical arm. In a corpus of near-duplicate tables that differ by fiscal period, no bag of terms can tell this year's table from last year's.
 
-The normalized document representation preserves:
+## The fix that cleared the bar, and the one I did not ship
 
-* filing sections;
-* heading hierarchy;
-* paragraphs;
-* tables;
-* document order;
-* fiscal metadata;
-* company metadata;
-* source locations;
-* document lineage.
+The change that worked is small. A deterministic selector over the dense top-80 resolves the issuer from the question text and a metadata catalog, prefers that issuer's highest-ranked passages, and falls back conservatively on ambiguous names. Wrong-issuer passages in context fell from 76 to 17 of 400. On the 149-question development set, complete evidence@8 went from 68 to 78 with **10 gains and 0 regressions (p = 0.002)**, and under the certified judge the paired answer comparison was 8/14 against 5/14. It costs about 2 ms and makes no model call.
 
-The same normalized representation can be produced from PDFs, allowing downstream retrieval to remain independent of the original document format.
+Then I benchmarked the thing I was about to replace. The served route already filters by the user's selected ticker in SQL, so it had zero off-issuer passages. On 50 answer cases it and the new selector were indistinguishable (4 gains, 5 losses) and both beat unscoped dense. The frozen deployment rule allowed a change only if the challenger won. **Production stayed as it was.** The selector's value is in the evaluated pipeline that does not depend on the UI's selection, and wiring that pipeline into the API is the recorded next step, not a thing I claim happened.
 
----
+## Where the loss actually is
 
-## 3. Structural Financial Chunking
+Candidate depth showed the funnel, and the funnel decided where the next six experiments went. At dense depth 80, complete evidence is *available* for 119 of 149 questions. The selector keeps it for 78. The other 41 have it in the pool and lose it at selection.
 
-Financial reports contain strong document hierarchy.
+<MarketLaneRetrievalLedger />
 
-For example:
+The map that came out of this: topical relevance, whether from dense similarity, a cross-encoder, SPLADE expansion, BM25 terms or sub-query hits, finds the right company and the right table about three quarters of the time and cannot tell this year's instance from last year's. One post hoc query settled a line of three experiments: in 39 of the 41 selection losses the missing chunk is a *sibling* of a filing the selector had already chosen, and 36 of those chunks carry no section heading. The signal that is missing is "which statement is this chunk", and the parser had dropped it. The next lever is representation, not ranking, and that is where the roadmap starts.
 
-```text
-10-Q
- └── Item 2 — Management's Discussion and Analysis
-      └── Results of Operations
-           └── Intelligent Cloud
-                └── Revenue
-```
+## Numbers without a judge, then a judge that earns its verdicts
 
-MarketLane preserves this hierarchy rather than treating the filing as an arbitrary token stream.
+**The judge failed first.** Before the first judged experiment on the new benchmark, a 13-case conformance suite (130 calls, $0.14) showed the LLM judge accepting a wrong liability measure, accepting "in thousands" for a USD-millions fact, crediting levels from a percentage change, and letting the answer contaminate evidence grading. The pre-registered stop rule halted every judged experiment. Retrieval work continued on a deterministic proxy.
 
-The retrieval architecture supports parent-child representations:
+**So numbers were scored without one.** A deterministic route parses the question into issuer, metric and periods, reads SEC XBRL facts, computes the shape (level, change, ratio, CAGR) and abstains on anything qualified, multi-part or unparseable. Scored by parsing the reference answers with tolerances, no model in the loop, it beat the text pipeline 7 to 1 on the rows both answered, then 8 to 0 after two named fixes. It was rejected for adoption both times because the paired cohort was nine rows against a floor of ten set before the first run. The deterministic scorer also caught the judge passing a sign error.
 
-```text
-Parent section
-~1,500–2,500 tokens
+**Then the judge was rebuilt.** The model reports findings (measure, period, units, sign, value) and code makes the verdict. The evidence call never sees the answer. Oracle and adversarial providers test the rules offline; live suites rerun whole on any infrastructure failure.
 
-        │
-        ├── Child chunk
-        ├── Child chunk
-        ├── Child chunk
-        └── Child chunk
-             ~400–700 tokens
-```
+| Judge version | Live conformance suite | κ, answers (40 rows) | κ, evidence (111 obligations) |
+| --- | --- | --- | --- |
+| v4 (original) | 6 of 13 failed | 0.90 | 0.65 |
+| v5.2 | 13/13 | 0.95 | 0.62 |
+| v5.4 (certified) | 19/19 | **0.95** | **0.68** |
 
-Smaller units improve search precision, while parent context allows the reasoning layer to recover surrounding financial context.
+The honest headline is the residual. Twelve evidence false accepts remain because the model reports the period and value the obligation asks for even when the passage does not contain them. A rule on a self-reported field inherits the honesty of the self-report; the next rule checks the quoted value against the passage text. Judge versions were only allowed to move verdicts the calibration packet had predicted, and v5.4 moved exactly those two on 77 rows. The calibration labels are the agent's blind labels confirmed by the owner, not independent human labels, and that disclosure travels with every judged number.
 
-Tables are preserved as atomic evidence wherever possible rather than being split blindly across chunks.
+**And the route shipped under it.** With a fixed budget for one pre-registered pipeline change judged on answer correctness, I read the route's 19 answers against their questions before any model call and wrote four into the pre-registration as expected losses. The run rejected the route at 6 gains and 4 losses, and the four losses were those four. I fixed exactly those defects, two of them by making the route refuse, kept the rule, and ran again on fresh outputs.
 
----
+| | Required | Route v2 (K1) | Route v3 (K2) |
+| --- | --- | --- | --- |
+| Routed rows scored in both arms | at least 10 | 19 | 17 |
+| Gains | at least 5 | 6 | **8** |
+| Losses | at most 2 | 4 | **1** |
+| Exact McNemar p | under 0.05 | 0.75 | **0.039** |
+| Route correct / text pipeline correct | | 12 / 10 | **16 / 9** |
+| Model spend | | $2.66 | $2.37 |
 
-## 4. Hybrid Retrieval
+The text pipeline's failures on these rows were reading and arithmetic errors on passages that contained the right figures. The pipeline configuration now carries the route as version 2 with a stable hash and a parity check that reproduces the evaluation contexts 160 of 160.
 
-Semantic similarity alone is insufficient for financial documents.
+## Operating it, and moving it
 
-Queries often contain exact language such as:
+- **Deployment.** API and web on Cloud Run (1 vCPU, 512 MiB, scale to zero), ingestion as a Cloud Run job, a global HTTPS load balancer with a managed certificate, five secrets in Secret Manager, and a deploy script that refuses a dirty tree.
+- **Operations.** A rollout runbook with staged gates (1, 5, 20, then 100 issuers) and the measurements to capture at each, and a failure-mode table mapping SEC rate limits, fetch and parse failures, publication rollback and lost claims to the durable boundary and the operator action. The real scale gates were never executed, and I say so.
+- **Cost policy.** The database was started only for runs and stopped after. Standing burn was about $36 a month. Six of the thirteen dev160 experiments cost $0 in model calls; the whole programme cost about $40.
+- **The cloud move.** On 20 October the project moved to AWS and the Claude API. I inventoried fifteen GCP dependencies with a replacement, a risk and a phase for each, and made the research-integrity point first: swapping the generator, the embeddings or the judge changes what the system computes, so each is a pre-registered experiment, and judge certification does not transfer. On 24 October I archived everything needed to rebuild to S3 in Glacier Instant Retrieval: a logical dump of the database, test-restored into pgvector 18 with zero errors, all eight tables matching on row counts and seven on content digests; every filing artifact with keys unchanged (7,564 objects, 0 differences); a database-independent embeddings export; the three deployed images; secrets moved by value with hash checks and never written to disk; the load-balancer and Cloud Run settings that were not in the repo; and the evaluation backups under Object Lock legal hold. Then the GCP project was deleted with a 30-day undelete window. One-off cost about $1.35; ongoing about $0.25 a month.
 
-* ASC 606;
-* deferred revenue;
-* operating margin;
-* fiscal Q3 2026;
-* $14.2 billion;
-* Intelligent Cloud;
-* remaining performance obligations.
+## What I would not claim
 
-MarketLane combines two retrieval systems.
+- Any number on the reserve set, the 110-company production corpus or live traffic.
+- Production latency or cost per answer inside Cloud Run. The 4.7 to 5.4 s retrieval p50 in the production benchmark was measured from a laptop through a database proxy.
+- That the judge's agreement with owner-confirmed labels equals agreement with independent human labels.
+- Ingestion throughput at scale. The gates were defined and not run.
+- That the system is running today. It is a verified archive and a written migration plan with phases, gates and a rollback per phase.
 
-```text
-                         Query
-                           │
-                ┌──────────┴──────────┐
-                │                     │
-                ▼                     ▼
-           Dense Search          Lexical Search
-            pgvector           PostgreSQL FTS
-                │                     │
-                └──────────┬──────────┘
-                           ▼
-                  Reciprocal Rank Fusion
-                           │
-                           ▼
-                    Candidate Evidence
-                           │
-                           ▼
-                        Reranker
-                           │
-                           ▼
-                   Final Evidence Set
-```
+## What I learned
 
-Dense retrieval captures semantic similarity.
+1. **Build the measuring instrument before the system it measures.** A retrieval failure report had turned into a label-quality report: 17 of 18 "failures" were annotations.
+2. **A reproducible benchmark is a systems artifact.** A corpus hash is not enough if the query planner can change which candidates survive.
+3. **Read per-query diffs, not means.** A mean hid that rank 1 was decided by a string sort. A net +2 can hide 20 gains and 18 losses.
+4. **In a multi-entity corpus, scoping is retrieval.** Ranking only orders what scoping allows.
+5. **Measure which axis the loss is on before building a selector for it.** One query would have saved an experiment.
+6. **Numbers belong to structured data, and abstention is the product.** Two of the five fixes that got the route adopted were refusals.
+7. **A rubric is a wish; a rule is a guarantee; a reported field is a claim.** Grade the evidence without the answer, then verify the finding against the source text.
+8. **Benchmark the thing you ship before you replace it.**
+9. **A provider swap is an experiment, not a config edit.** Certification, frozen vectors and baselines are properties of model plus rubric plus config, and none of them transfer.
+10. **"I measured it and it did not earn its place" is a stronger answer than adding it.**
 
-Lexical retrieval captures exact financial terminology, named concepts and numerical references.
+## Read next
 
-Metadata filtering restricts the search space before ranking using dimensions such as:
-
-* ticker;
-* filing type;
-* filing date;
-* reporting period;
-* document;
-* filing section;
-* fiscal year;
-* fiscal quarter.
-
----
-
-## 5. Temporal Financial Reasoning
-
-Financial research is inherently temporal.
-
-Queries such as:
-
-> latest 10-Q
-
-> previous annual filing
-
-> last four quarters
-
-> compared with the same period last year
-
-cannot safely depend on model memory.
-
-MarketLane resolves temporal expressions against filing metadata and structured reporting periods.
-
-For example:
-
-```text
-"Microsoft's latest 10-Q"
-
-          ↓
-
-ticker = MSFT
-form = 10-Q
-selector = LATEST
-
-          ↓
-
-database resolution
-
-          ↓
-
-specific SEC accession
-```
-
-The resolved filing becomes a retrieval constraint.
-
-This prevents semantic search from accidentally returning highly similar but outdated disclosures.
-
----
-
-## 6. Structured Financial Reasoning
-
-A core design principle is:
-
-> **RAG retrieves explanations. Structured systems provide numbers.**
-
-For example:
-
-> What was Microsoft's operating margin last quarter?
-
-does not require the model to search paragraphs for two numbers and perform division.
-
-Instead:
-
-```text
-get_financial_facts(
-    ticker=MSFT,
-    metrics=[
-        revenue,
-        operating_income
-    ],
-    period=latest_quarter
-)
-
-          ↓
-
-deterministic calculator
-
-          ↓
-
-operating_margin
-```
-
-Supported deterministic operations can include:
-
-* percentage change;
-* year-over-year growth;
-* quarter-over-quarter growth;
-* margins;
-* basis-point movement;
-* difference;
-* aggregation;
-* CAGR;
-* return calculations.
-
-The language model receives calculated results rather than being responsible for financial arithmetic.
-
----
-
-## 7. Research Orchestration
-
-MarketLane Research uses tool-based orchestration for questions requiring several evidence sources.
-
-Core research tools include:
-
-```text
-search_filings()
-
-get_financial_facts()
-
-calculate()
-
-compare_filings()
-
-get_market_data()
-```
-
-Consider:
-
-> How has Microsoft's operating margin changed over the last four quarters and why?
-
-The research plan can decompose this into:
-
-```text
-1. Resolve MSFT and the four relevant reporting periods
-
-2. Retrieve revenue by period
-
-3. Retrieve operating income by period
-
-4. Calculate operating margin deterministically
-
-5. Search corresponding filings for margin drivers
-
-6. Rerank management commentary
-
-7. Align quantitative changes with qualitative evidence
-
-8. Generate a cited synthesis
-```
-
-This separation creates a much more controllable research system than allowing an LLM to reason over an unrestricted context window.
-
----
-
-## 8. Filing Change Intelligence
-
-One of the core workflows in MarketLane Research is longitudinal filing analysis.
-
-Instead of asking the model to read two complete filings simultaneously, the system first aligns their structure.
-
-```text
-Latest Filing                    Previous Filing
-      │                                │
-      ▼                                ▼
-Section Extraction                Section Extraction
-      │                                │
-      └──────────── Section Alignment ─┘
-                         │
-                         ▼
-                 Evidence Retrieval
-                         │
-                         ▼
-                   Change Analysis
-```
-
-This supports questions such as:
-
-* What risks were added?
-* What risks disappeared?
-* How did management's AI capex language change?
-* What changed in liquidity commentary?
-* What shifted in demand expectations?
-* Did management become more cautious?
-* Which business areas received greater emphasis?
-
-The output can be represented as a structured change set:
-
-```text
-Topic
-
-Previous disclosure
-
-Current disclosure
-
-Material change
-
-Evidence from previous filing
-
-Evidence from current filing
-```
-
----
-
-## 9. Cross-Company Research
-
-The same architecture supports research across multiple companies.
-
-Example:
-
-> Compare Nvidia and AMD management commentary around data-center demand over the last four quarters.
-
-The engine resolves:
-
-```text
-NVDA
-  ├── Q1
-  ├── Q2
-  ├── Q3
-  └── Q4
-
-AMD
-  ├── Q1
-  ├── Q2
-  ├── Q3
-  └── Q4
-```
-
-Retrieval operates within each company's reporting context before the evidence sets are merged.
-
-This reduces the risk of cross-company evidence contamination and enables structured comparative research.
-
----
-
-## 10. Evidence-First Generation
-
-The reasoning model never receives anonymous text blobs.
-
-Each piece of context is represented as explicit evidence.
-
-```text
-E1
-Company: Microsoft
-Form: 10-Q
-Period: FY2026 Q2
-Section: MD&A
-Source: <SEC filing>
-Text: ...
-
-E2
-Company: Microsoft
-Form: 10-Q
-Period: FY2026 Q1
-Section: Results of Operations
-Source: <SEC filing>
-Text: ...
-```
-
-The model can cite only evidence IDs provided by the retrieval system.
-
-The response layer subsequently maps those IDs back to:
-
-* SEC filing;
-* document;
-* filing section;
-* reporting period;
-* source URL;
-* document location.
-
-This creates explicit lineage from answer → evidence → source document.
-
----
-
-## 11. Citation Validation
-
-Citation generation and citation validation are separate operations.
-
-Before returning an answer, the system can verify:
-
-```text
-Does the referenced evidence exist?
-
-Did it belong to the retrieved context?
-
-Does the cited source correspond to the correct company?
-
-Does it correspond to the correct reporting period?
-
-Does a numerical statement match structured financial data?
-
-Are key research claims supported by evidence?
-```
-
-Unsupported evidence references can therefore be rejected before reaching the final response.
-
----
-
-## 12. Incremental SEC Ingestion
-
-The research corpus is designed to update incrementally as companies publish new filings.
-
-```text
-Cloud Scheduler
-       │
-       ▼
-SEC Filing Discovery
-       │
-       ▼
-New Filing Detection
-       │
-       ▼
-Raw Document Storage
-       │
-       ▼
-Parsing
-       │
-       ▼
-Normalization
-       │
-       ▼
-Chunking
-       │
-       ▼
-Embeddings
-       │
-       ▼
-Search Index
-```
-
-Each document moves through an explicit ingestion state machine:
-
-```text
-DISCOVERED
-    ↓
-DOWNLOADED
-    ↓
-PARSED
-    ↓
-NORMALIZED
-    ↓
-CHUNKED
-    ↓
-EMBEDDED
-    ↓
-INDEXED
-```
-
-Processing is designed to be idempotent.
-
-A retry should not create duplicate documents, duplicate chunks or unnecessary embedding calls.
-
-Version metadata can track:
-
-* parser version;
-* chunker version;
-* embedding model;
-* embedding dimension;
-* document hash;
-* chunk hash.
-
-This makes selective reprocessing possible as the pipeline evolves.
-
----
-
-## 13. Cloud Architecture
-
-MarketLane's existing product and the research platform remain independently deployable.
-
-```text
-                      marketlaneai.com
-                            │
-                    Cloudflare DNS
-                            │
-               ┌────────────┴────────────┐
-               │                         │
-               ▼                         ▼
-     the app hostname      the research hostname
-               │                         │
-              AWS                 GCP HTTPS Layer
-                                         │
-                              ┌──────────┴───────────┐
-                              │                      │
-                            Web API              Research API
-                              │                      │
-                           Cloud Run              Cloud Run
-                                                     │
-                       ┌─────────────────────────────┼──────────────┐
-                       │                             │              │
-                       ▼                             ▼              ▼
-                    Vertex AI                  Cloud SQL          GCS
-                 Gemini + Embeddings       Postgres/pgvector
-```
-
-The architecture intentionally minimizes cross-cloud coupling.
-
-Research workloads remain primarily on GCP.
-
-Existing MarketLane infrastructure is accessed only when the research query requires information already owned by the core platform, such as market-data functionality.
-
----
-
-## 14. Storage Architecture
-
-Different data classes are stored independently.
-
-### Object storage
-
-GCS stores:
-
-```text
-raw SEC filings
-
-normalized documents
-
-complex PDF sources
-
-evaluation artifacts
-
-processing artifacts
-```
-
-### PostgreSQL
-
-Cloud SQL stores:
-
-```text
-companies
-
-document metadata
-
-sections
-
-chunks
-
-financial facts
-
-ingestion state
-
-retrieval metadata
-```
-
-### pgvector
-
-The same PostgreSQL layer provides vector retrieval for the initial corpus.
-
-This avoids introducing an additional vector database before scale requires one.
-
-The retrieval abstraction is intentionally storage-independent so the indexing layer can later move to a distributed retrieval system without changing research orchestration.
-
----
-
-## 15. Evaluation Architecture
-
-MarketLane Research treats evaluation as part of the system rather than a post-launch manual check.
-
-The evaluation suite separates:
-
-### Retrieval quality
-
-```text
-Recall@1
-
-Recall@5
-
-Recall@10
-
-MRR
-```
-
-### Grounding
-
-```text
-citation precision
-
-citation coverage
-
-evidence attribution
-
-unsupported claim rate
-```
-
-### Financial correctness
-
-```text
-numeric accuracy
-
-calculation accuracy
-
-reporting-period accuracy
-
-temporal correctness
-```
-
-### System performance
-
-```text
-retrieval latency
-
-reranking latency
-
-generation latency
-
-end-to-end latency
-
-token consumption
-
-cost per research request
-```
-
----
-
-## 16. Retrieval Ablation Framework
-
-The system is structured so retrieval configurations can be benchmarked independently.
-
-For example:
-
-```text
-A
-fixed token chunks
-+
-dense retrieval
-
-B
-structural chunks
-+
-dense retrieval
-
-C
-structural chunks
-+
-hybrid retrieval
-
-D
-structural chunks
-+
-hybrid retrieval
-+
-reranking
-```
-
-Each experiment produces an immutable evaluation artifact.
-
-This makes architecture decisions measurable instead of subjective.
-
-External datasets such as FinanceBench can also be used to measure financial retrieval against third-party evidence annotations.
-
----
-
-## 17. Observability
-
-Each research request can be traced across the entire inference path.
-
-A request trace can include:
-
-```text
-trace_id
-
-original query
-
-resolved companies
-
-resolved reporting periods
-
-research plan
-
-tool calls
-
-retrieved chunk IDs
-
-dense ranks
-
-lexical ranks
-
-fusion ranks
-
-reranker scores
-
-financial facts retrieved
-
-calculations executed
-
-model invocation
-
-token usage
-
-retrieval latency
-
-model latency
-
-end-to-end latency
-
-citations
-
-final status
-```
-
-This provides enough visibility to investigate whether a poor answer originated from:
-
-```text
-query understanding
-
-temporal resolution
-
-retrieval
-
-ranking
-
-missing source data
-
-financial normalization
-
-calculation
-
-generation
-```
-
-rather than treating every failure as an LLM failure.
-
----
-
-## 18. Reliability Model
-
-AI systems fail differently from traditional APIs.
-
-MarketLane Research therefore separates failure classes such as:
-
-```text
-source acquisition failure
-
-document parse failure
-
-partial extraction
-
-embedding failure
-
-indexing failure
-
-retrieval miss
-
-reranker degradation
-
-tool failure
-
-insufficient evidence
-
-citation validation failure
-
-LLM generation failure
-```
-
-Ingestion failures can be retried independently from online research requests.
-
-Unavailable evidence should result in an explicit insufficient-evidence response rather than unsupported generation.
-
----
-
-## 19. Cost-Aware AI Infrastructure
-
-The architecture is designed around selective use of expensive inference.
-
-Examples:
-
-**Document parsing**
-
-```text
-SEC HTML
-→ deterministic parser
-
-Complex PDF
-→ document AI parser
-
-Poor extraction
-→ expensive fallback
-```
-
-**Query execution**
-
-```text
-simple financial fact
-→ structured lookup
-
-retrieval question
-→ hybrid search
-
-complex research question
-→ retrieval + reranking + LLM synthesis
-```
-
-**Indexing**
-
-```text
-unchanged chunk hash
-→ skip embedding
-
-new/changed chunk
-→ embed
-```
-
-This prevents high-cost models from becoming the default implementation for operations that can be handled deterministically.
-
----
-
-## 20. Enterprise Evolution
-
-The current architecture is intentionally modular so individual components can evolve independently as corpus size, research complexity and query volume increase.
-
-The design can extend toward:
-
-### Retrieval infrastructure
-
-```text
-pgvector
-        ↓
-distributed vector retrieval
-        ↓
-partitioned / multi-stage retrieval
-```
-
-### Data processing
-
-```text
-scheduled ingestion
-        ↓
-event-driven ingestion
-        ↓
-distributed document-processing workers
-```
-
-### Model infrastructure
-
-```text
-single-provider inference
-        ↓
-model routing
-        ↓
-task-specific model selection
-        ↓
-fallback and resilience policies
-```
-
-### Research engine
-
-```text
-single-company analysis
-        ↓
-cross-company research
-        ↓
-sector intelligence
-        ↓
-portfolio-level research
-```
-
-The important property is that these changes do not require redesigning the financial evidence model itself.
-
----
-
-## Representative Research Workflows
-
-### Fundamental Analysis
-
-> How has Amazon AWS operating income changed over the last three quarters and what drove the change?
-
-Uses:
-
-```text
-structured financial data
-
-quarter resolution
-
-deterministic calculations
-
-multi-filing retrieval
-
-management commentary
-
-citations
-```
-
----
-
-### Management Commentary Analysis
-
-> Compare management's AI infrastructure commentary across Microsoft's last four reporting periods.
-
-Uses:
-
-```text
-temporal resolution
-
-multi-document retrieval
-
-semantic + lexical retrieval
-
-reranking
-
-longitudinal synthesis
-```
-
----
-
-### Filing Intelligence
-
-> What risk factors were materially added or removed from Nvidia's latest annual filing?
-
-Uses:
-
-```text
-document resolution
-
-section alignment
-
-filing diff
-
-evidence comparison
-
-dual-source citations
-```
-
----
-
-### Competitive Intelligence
-
-> Compare Nvidia and AMD's commentary about data-center demand.
-
-Uses:
-
-```text
-multi-company retrieval
-
-company-level evidence isolation
-
-temporal alignment
-
-comparative synthesis
-```
-
----
-
-### Market Reaction Research
-
-> What changed fundamentally after the latest earnings release and how did the stock trade over the following five sessions?
-
-Uses:
-
-```text
-SEC filings
-
-structured fundamentals
-
-MarketLane market data
-
-financial calculations
-
-multi-source synthesis
-```
-
----
-
-## What Makes MarketLane Research Different
-
-The goal is not to build a better chatbot.
-
-It is to build a **financial evidence engine** capable of transforming heterogeneous financial information into reproducible research.
-
-The architecture is based on several principles:
-
-**LLMs reason; databases provide facts.**
-
-**Retrieval finds evidence; it does not determine financial truth.**
-
-**Arithmetic is deterministic.**
-
-**Time is explicit.**
-
-**Every meaningful claim should be traceable.**
-
-**Document structure should survive ingestion.**
-
-**Evaluation should determine architecture choices.**
-
-**AI failures must be observable.**
-
-These constraints turn the system from a conventional RAG application into infrastructure for programmable financial research.
-
----
-
-## Technology
-
-```text
-AI
-Vertex AI
-Gemini
-Vertex embeddings
-
-Retrieval
-PostgreSQL
-pgvector
-full-text retrieval
-hybrid search
-reciprocal rank fusion
-reranking
-
-Document Intelligence
-SEC EDGAR
-XBRL
-structural HTML parsing
-Docling
-table-aware normalization
-
-Backend
-Python
-FastAPI
-Pydantic
-SQLAlchemy
-Alembic
-
-Infrastructure
-Google Cloud Run
-Cloud Run Jobs
-Cloud Scheduler
-Cloud SQL
-Google Cloud Storage
-Secret Manager
-Cloud Logging
-Cloud Monitoring
-
-Platform Integration
-Cloudflare
-AWS-hosted MarketLane services
-market-data APIs
-```
-
----
-
-## Product Direction
-
-MarketLane Research is intended to become the intelligence layer behind MarketLane.
-
-The long-term opportunity is larger than SEC search.
-
-The same evidence architecture can support:
-
-```text
-public filings
-
-company announcements
-
-earnings materials
-
-transcripts
-
-macro data
-
-market data
-
-alternative datasets
-
-internal research
-
-portfolio data
-```
-
-while keeping one consistent research interface above them.
-
-The eventual system can continuously transform new information into:
-
-```text
-structured facts
-
-retrievable evidence
-
-company timelines
-
-change detection
-
-cross-company comparisons
-
-research signals
-
-portfolio-level intelligence
-```
-
-The objective is to move financial research from a workflow dominated by manual discovery and document navigation toward a system where complex questions can be expressed directly and answered with transparent evidence.
-
-**MarketLane Research is the architecture for that transition.**
+The [target architecture](/projects/marketlane-research-architecture/) is the design document for this system: the multi-layer data plane, structural chunking, temporal resolution, the research orchestrator, filing change intelligence and the evaluation and observability design it is built toward. [MarketLane AI](/projects/marketlane-ai/) is the other half of the product: a verified multi-stage LLM scan pipeline for NSE equities, measured the same way, on accuracy, cost and latency together.

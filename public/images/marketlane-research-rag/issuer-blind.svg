@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 350" width="760" height="350" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Why hybrid retrieval hurt, and what replaced it</title>
+<desc id="d">Before: a query feeds a dense top-20 branch with 19 percent off-issuer chunks and a full-text top-20 branch with 82 percent off-issuer chunks. Equal-weight reciprocal rank fusion interleaves them, so about half of every context comes from the wrong company. In 39 of 61 queries the branches share no chunk, and fused ranks 1 and 2 tie in 40 of 61 so a string sort decides rank 1. After: the query feeds exact dense retrieval to depth 80 with eligibility applied before ranking, then an issuer-aware deterministic selector picks 8 passages in about 2 milliseconds. Wrong-issuer passages in context fall from 76 to 17 of 400 and complete evidence at 8 rises from 68 to 78 of 149 with 10 gains and no regressions.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.box{fill:#f3f2ef;stroke:#d6d5d0}.bad{fill:#fbe9e5;stroke:#d0452b}.good{fill:#e6effa;stroke:#2a78d6}.badt{fill:#b3361f}.goodt{fill:#1f5fae}.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace}.line{stroke:#9b9a95;fill:none}.arrow{fill:#9b9a95}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.box{fill:#24241f;stroke:#3d3d38}.bad{fill:#3a201b;stroke:#ef6a4f}.good{fill:#1b2a3d;stroke:#3987e5}.badt{fill:#ef8a73}.goodt{fill:#79acef}.line{stroke:#6f6e69}.arrow{fill:#6f6e69}}</style>
+<defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<rect class="bg" x="0" y="0" width="760" height="350" rx="8"/>
+<text class="ink" x="40" y="34" font-size="17" font-weight="600">Why hybrid retrieval hurt: the lexical branch was issuer-blind</text>
+<text class="ink2" x="40" y="54" font-size="12.5">Experimental-50 v3, 61 queries · judged answer correctness 0.610 → 0.531 · retrieval p50 1.4 s → 18.9 s</text>
+
+<text class="ink" x="40" y="106" font-size="14" font-weight="600">Before · E1</text>
+<text class="ink2" x="40" y="124" font-size="12">dense + full-text, equal RRF</text>
+<rect class="box" x="200" y="90" width="80" height="56" rx="6"/>
+<text class="ink" x="240" y="122" font-size="13" font-weight="600" text-anchor="middle">Query</text>
+<line class="line" x1="280" x2="308" y1="110" y2="98" marker-end="url(#a)"/>
+<line class="line" x1="280" x2="308" y1="126" y2="146" marker-end="url(#a)"/>
+<rect class="box" x="310" y="74" width="160" height="44" rx="6"/>
+<text class="ink" x="390" y="92" font-size="13" font-weight="600" text-anchor="middle">Dense top-20</text>
+<text class="ink2 mono" x="390" y="109" font-size="11.5" text-anchor="middle">19% off-issuer</text>
+<rect class="bad" x="310" y="128" width="160" height="44" rx="6" stroke-width="1.5"/>
+<text class="badt" x="390" y="146" font-size="13" font-weight="600" text-anchor="middle">Full-text top-20</text>
+<text class="badt mono" x="390" y="163" font-size="11.5" text-anchor="middle">82% off-issuer</text>
+<line class="line" x1="470" x2="508" y1="96" y2="112" marker-end="url(#a)"/>
+<line class="line" x1="470" x2="508" y1="150" y2="130" marker-end="url(#a)"/>
+<rect class="box" x="510" y="90" width="90" height="56" rx="6"/>
+<text class="ink" x="555" y="114" font-size="13" font-weight="600" text-anchor="middle">RRF</text>
+<text class="ink2 mono" x="555" y="133" font-size="11.5" text-anchor="middle">equal weight</text>
+<line class="line" x1="600" x2="626" y1="118" y2="118" marker-end="url(#a)"/>
+<rect class="bad" x="628" y="90" width="92" height="56" rx="6" stroke-width="1.5"/>
+<text class="badt" x="674" y="114" font-size="13" font-weight="600" text-anchor="middle">Context</text>
+<text class="badt mono" x="674" y="133" font-size="11.5" text-anchor="middle">½ wrong co.</text>
+<text class="ink2" x="40" y="200" font-size="12">In 39 of 61 queries the two branches share no chunk · fused ranks 1 and 2 tie in 40 of 61 and a chunk-ID string sort picks rank 1</text>
+
+<line class="line" x1="40" x2="720" y1="218" y2="218" stroke-width="1"/>
+
+<text class="ink" x="40" y="268" font-size="14" font-weight="600">After · E5A</text>
+<text class="ink2" x="40" y="286" font-size="12">dense + issuer selector</text>
+<rect class="box" x="200" y="250" width="80" height="56" rx="6"/>
+<text class="ink" x="240" y="282" font-size="13" font-weight="600" text-anchor="middle">Query</text>
+<line class="line" x1="280" x2="306" y1="278" y2="278" marker-end="url(#a)"/>
+<rect class="good" x="308" y="250" width="150" height="56" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="383" y="274" font-size="13" font-weight="600" text-anchor="middle">Exact dense top-80</text>
+<text class="goodt mono" x="383" y="293" font-size="11.5" text-anchor="middle">eligibility first</text>
+<line class="line" x1="458" x2="484" y1="278" y2="278" marker-end="url(#a)"/>
+<rect class="good" x="486" y="250" width="110" height="56" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="541" y="274" font-size="13" font-weight="600" text-anchor="middle">Issuer-aware</text>
+<text class="goodt mono" x="541" y="293" font-size="11.5" text-anchor="middle">selector · 2 ms</text>
+<line class="line" x1="596" x2="622" y1="278" y2="278" marker-end="url(#a)"/>
+<rect class="good" x="624" y="250" width="96" height="56" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="672" y="274" font-size="13" font-weight="600" text-anchor="middle">8 passages</text>
+<text class="goodt mono" x="672" y="293" font-size="11.5" text-anchor="middle">17/400 off</text>
+<text class="ink2" x="40" y="330" font-size="12">Wrong-issuer passages in context 76 → 17 of 400 · complete evidence@8 68 → 78 of 149 · 10 gains, 0 regressions, p = 0.002</text>
+</svg>

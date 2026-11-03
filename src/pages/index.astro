@@ -6,7 +6,7 @@ import ContributionCard from '../components/ContributionCard.astro';
 import StatStrip from '../components/StatStrip.astro';
 import { site } from '../data/site';
 
-const projects = (await getCollection('projects', ({ data }) => !data.draft)).sort((a, b) => a.data.order - b.data.order);
+const projects = (await getCollection('projects', ({ data }) => !data.draft && data.listed)).sort((a, b) => a.data.order - b.data.order);
 const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort((a, b) => {
 	if (a.data.prMerged !== b.data.prMerged) return a.data.prMerged ? -1 : 1;
 	return b.data.date.localeCompare(a.data.date);
@@ -39,7 +39,7 @@ const areas = [
 	},
 	{
 		title: 'Retrieval systems',
-		text: 'Hybrid retrieval, structural chunking, temporal reasoning, and citation validation over financial filings.',
+		text: 'Evidence-grounded RAG over SEC filings, with a pre-registered evaluation programme that rejected eleven techniques and shipped two.',
 		evidence: [{ label: 'MarketLane Research', href: '/projects/marketlane-research-rag/' }],
 	},
 	{

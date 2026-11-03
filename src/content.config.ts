@@ -21,6 +21,8 @@ const projects = defineCollection({
 		outcome: z.string().optional(),
 		links: z.array(link).default([]),
 		draft: z.boolean().default(false),
+		/** Built and linkable, but left out of the project listings (companion pages). */
+		listed: z.boolean().default(true),
 	}),
 });
 

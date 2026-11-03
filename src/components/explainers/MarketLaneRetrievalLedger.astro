@@ -1,0 +1,359 @@
+---
+// Interactive ledger of the MarketLane Research retrieval experiments on dev160 (149 semantic rows, 8-passage budget).
+// Every number is from a recorded run; the funnel is Experiment B at dense depth 80. Clicking a row reveals its mechanism.
+type Verdict = 'reference' | 'adopt' | 'reject';
+type Row = {
+	id: string;
+	label: string;
+	value: number;
+	verdict: Verdict;
+	tag: string;
+	delta?: string;
+	p?: string;
+	why: string;
+	run: string;
+};
+type Group = { title: string; rows: Row[] };
+
+const TOTAL = 149;
+const DENSE = 68;
+const E5A = 78;
+
+const groups: Group[] = [
+	{
+		title: 'Reference',
+		rows: [
+			{
+				id: 'e0',
+				label: 'Exact dense, top 8',
+				value: 68,
+				verdict: 'reference',
+				tag: 'Baseline',
+				why: 'Dense retrieval with eligibility applied before ranking, the fix for the pgvector planner bug. Every later arm is compared with this or with E5A on the same 149 rows under the same eight-passage budget.',
+				run: 'Experiment A, 10 Oct',
+			},
+		],
+	},
+	{
+		title: 'Lexical retrieval and rank fusion',
+		rows: [
+			{
+				id: 'bm25',
+				label: 'Okapi BM25 only',
+				value: 27,
+				verdict: 'reject',
+				tag: 'Reject',
+				why: 'A real BM25 index (k1 1.2, b 0.75, 67 ms per query). Issuer share of its top 8 was 0.54 against 0.92 for dense. A bag of terms cannot tell this year’s table from last year’s.',
+				run: 'Experiment C, 10 Oct',
+			},
+			{
+				id: 'hyb',
+				label: 'Dense + BM25, reciprocal rank fusion',
+				value: 60,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '14 gains / 22 regressions vs dense',
+				p: 'p = 0.24',
+				why: 'BM25 fully recovered 7 questions dense top-8 missed, so lexical does carry complementary evidence. Equal-weight fusion let the weaker list demote the stronger one on 22 others.',
+				run: 'Experiment C, 10 Oct',
+			},
+			{
+				id: 'splade',
+				label: 'SPLADE learned sparse only',
+				value: 20,
+				verdict: 'reject',
+				tag: 'Reject',
+				why: '54% of the required gold chunks fall outside SPLADE’s top 120 (dense: 13%). The encoder works, but WordPiece splits “FY2023” into f, ##20, ##23, and the fiscal period is lost.',
+				run: 'Experiment F, 13 Oct',
+			},
+			{
+				id: 'splade-hyb',
+				label: 'SPLADE + dense, reciprocal rank fusion',
+				value: 38,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '3 gains / 33 regressions vs dense',
+				p: 'p = 2.3e-7',
+				why: 'Same mechanism as BM25 fusion, worse. E5A over the fused list reached 44 against 78 over dense alone.',
+				run: 'Experiment F, 13 Oct',
+			},
+		],
+	},
+	{
+		title: 'Reranking',
+		rows: [
+			{
+				id: 'bge',
+				label: 'BGE cross-encoder reranker, then E5A',
+				value: 56,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '8 gains / 30 regressions vs E5A',
+				p: 'p = 0.0005',
+				why: 'bge-reranker-v2-m3 at 1,024 tokens ranked tabular evidence below prose that read as more relevant. Truncation was not the cause: 18% of evidence chunks in the lost rows were truncated against 35% overall. About 106 s per query on a CPU; a GPU would fix the latency, not the quality.',
+				run: 'Experiment E, 10 Oct',
+			},
+		],
+	},
+	{
+		title: 'Selection over dense top-80',
+		rows: [
+			{
+				id: 'e5a',
+				label: 'Issuer-aware selector (E5A)',
+				value: 78,
+				verdict: 'adopt',
+				tag: 'Adopted',
+				delta: '10 gains / 0 regressions vs dense',
+				p: 'p = 0.002',
+				why: 'Resolve the issuer from the question text and a metadata catalog, prefer that issuer’s highest-ranked passages, fall back conservatively on ambiguous names and short tickers. Wrong-issuer passages in context fell from 76 to 17 of 400. About 2 ms, no model call. Later confirmed under the certified judge: 8/14 against 5/14 on the paired rows.',
+				run: 'Experiment A, 10 Oct',
+			},
+			{
+				id: 'd1',
+				label: 'Coverage-aware scoring (D1)',
+				value: 77,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '2 gains / 3 regressions',
+				p: 'p = 1.0',
+				why: 'Scored requested metrics, fiscal years, diversity and redundancy. It promoted cover pages that mention the requested years over the balance sheet that holds the figures, and cost 213 ms against 3.6 ms.',
+				run: 'Experiment D, 10 Oct',
+			},
+			{
+				id: 'g1',
+				label: 'Period-structural promotion (G1)',
+				value: 78,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '1 gain / 1 regression',
+				p: 'p = 1.0',
+				why: 'Swapped in passages from other filings that cover a missing period. The post hoc query that mattered: in 39 of the 41 selection-loss rows the missing chunk is a sibling of a filing already in context. Every one of G1’s 34 swaps came from a different filing. Wrong axis.',
+				run: 'Experiment G1, 18 Oct',
+			},
+			{
+				id: 'g1p',
+				label: 'Within-filing sibling by metric row (G1′)',
+				value: 77,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '2 gains / 3 regressions',
+				p: 'p = 1.0',
+				why: 'Right axis, wrong instrument. The regex detector misses gold tables whose captions are outside its vocabulary and fires on footers and cover pages. 19 of the 41 loss rows were gated as ambiguous before the rule ran. The deterministic selection line was closed here.',
+				run: 'Experiment G1′, 18 Oct',
+			},
+			{
+				id: 'h1',
+				label: 'Statement-typed selection over a structure sidecar (H1)',
+				value: 79,
+				verdict: 'reject',
+				tag: 'Below bar',
+				delta: '2 gains / 1 regression',
+				p: 'p = 1.0',
+				why: 'A corpus-only sidecar built in 12 seconds typed 13,404 table chunks by statement from their row labels. The selector maps a named metric to the statement it lives on and swaps in a same-filing sibling of that type. First selector since E5A with a net gain and no exact-gold loss, still short of the pre-registered bar. The sidecar was kept.',
+				run: 'Experiment H1, 18 Oct',
+			},
+		],
+	},
+	{
+		title: 'Agentic retrieval',
+		rows: [
+			{
+				id: 'e8',
+				label: 'Obligation-planned sub-query retrieval (bounded agent)',
+				value: 65,
+				verdict: 'reject',
+				tag: 'Reject',
+				delta: '4 gains / 17 regressions vs E5A',
+				p: 'p = 0.007 against',
+				why: 'Decompose each question into metric-by-period obligations, retrieve once per sub-query (221 in all), reserve four of eight slots for the hits. The pool barely changed: complete rows 119 to 120. The reserved slots displaced E5A’s positions 5 to 8, where 13 of the 17 lost rows had their comparison-period statement.',
+				run: 'Experiment E8, 18 Oct',
+			},
+		],
+	},
+];
+
+const funnel = [
+	{ key: 'complete', label: 'Complete in the final 8', value: 78, note: 'where E5A lands' },
+	{ key: 'lost', label: 'Complete in the pool, lost at selection', value: 41, note: '39 of 41: the missing chunk is a sibling of a filing already chosen' },
+	{ key: 'miss', label: 'Never complete in the 80-candidate pool', value: 30, note: 'retrieval, not selection' },
+];
+const pct = (n: number) => `${((n / TOTAL) * 100).toFixed(1)}%`;
+---
+
+<figure class="lr" data-lr>
+	<figcaption class="lr-head">
+		<span class="lr-eyebrow">Interactive · 149 development questions · frozen 28-company corpus · 8-passage budget</span>
+	</figcaption>
+
+	<section class="lr-funnel" aria-labelledby="lr-funnel-title">
+		<h4 id="lr-funnel-title">Where each question ends up at dense depth 80</h4>
+		<div class="lr-seg" role="img" aria-label={funnel.map((f) => `${f.label}: ${f.value} of ${TOTAL}`).join('; ')}>
+			{funnel.map((f) => (
+				<span class={`lr-seg-part ${f.key}`} style={`flex-basis:${(f.value / TOTAL) * 100}%`}><b>{f.value}</b></span>
+			))}
+		</div>
+		<ul class="lr-funnel-legend">
+			{funnel.map((f) => (
+				<li>
+					<i class={`lr-sw ${f.key}`} aria-hidden="true"></i>
+					<span class="lr-funnel-label">{f.label} <em>· {f.value} of {TOTAL}, {pct(f.value)}</em></span>
+					<span class="lr-funnel-note">{f.note}</span>
+				</li>
+			))}
+		</ul>
+	</section>
+
+	<section class="lr-ledger" aria-labelledby="lr-ledger-title">
+		<div class="lr-ledger-head">
+			<h4 id="lr-ledger-title">Complete evidence@8: every retrieval arm against the same bar</h4>
+			<p class="lr-rule">Pre-registered rule for adoption: at least 5 gains, at most 1 regression, Holm-corrected p &lt; 0.05, macro recall not lower. Select a row for the mechanism.</p>
+		</div>
+		<div class="lr-axis" aria-hidden="true">
+			<span class="lr-axis-label"></span>
+			<span class="lr-axis-track">
+				<span class="lr-ref lr-ref-dense" style={`left:${(DENSE / TOTAL) * 100}%`}><i>68 dense</i></span>
+				<span class="lr-ref lr-ref-e5a" style={`left:${(E5A / TOTAL) * 100}%`}><i>78 E5A</i></span>
+			</span>
+			<span class="lr-axis-val">of 149</span>
+		</div>
+		{groups.map((g) => (
+			<div class="lr-group">
+				<p class="lr-group-title">{g.title}</p>
+				{g.rows.map((r) => (
+					<div class={`lr-row ${r.verdict}`} data-row={r.id}>
+						<button type="button" class="lr-row-btn" aria-expanded={r.id === 'e5a' ? 'true' : 'false'} aria-controls={`lr-detail-${r.id}`}>
+							<span class="lr-row-label">{r.label}</span>
+							<span class="lr-track">
+								<span class="lr-refline" style={`left:${(DENSE / TOTAL) * 100}%`}></span>
+								<span class="lr-refline strong" style={`left:${(E5A / TOTAL) * 100}%`}></span>
+								<span class={`lr-bar ${r.verdict}`} style={`width:${(r.value / TOTAL) * 100}%`}></span>
+							</span>
+							<span class="lr-val"><b>{r.value}</b><span class={`lr-tag ${r.verdict}`}>{r.tag}</span></span>
+						</button>
+						<div class="lr-detail" id={`lr-detail-${r.id}`} hidden={r.id !== 'e5a'}>
+							{(r.delta || r.p) && (
+								<p class="lr-detail-stats">
+									{r.delta && <span>{r.delta}</span>}
+									{r.p && <span>{r.p}</span>}
+								</p>
+							)}
+							<p class="lr-detail-why">{r.why}</p>
+							<p class="lr-detail-run">{r.run} · 0 USD in model calls</p>
+						</div>
+					</div>
+				))}
+			</div>
+		))}
+	</section>
+
+	<table class="lr-table">
+		<caption>Same data as a table</caption>
+		<thead><tr><th>Arm</th><th>Complete evidence@8 of 149</th><th>Paired result</th><th>Verdict</th></tr></thead>
+		<tbody>
+			{groups.flatMap((g) => g.rows).map((r) => (
+				<tr><th>{r.label}</th><td>{r.value}</td><td>{[r.delta, r.p].filter(Boolean).join(', ') || '—'}</td><td>{r.tag}</td></tr>
+			))}
+		</tbody>
+	</table>
+</figure>
+
+<style is:global>
+	.lr {
+		--lr-ok: #1b7a50;
+		--lr-warn: #a55e00;
+		--lr-gray: var(--line-strong);
+		--lr-ref: var(--ink);
+		margin: 2.4em 0;
+		padding: 20px 20px 16px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: #fff;
+		color: var(--ink);
+		font-size: 15px;
+		line-height: 1.5;
+	}
+	.lr-head { margin-bottom: 16px; }
+	.lr-eyebrow { font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+	.lr h4 { margin: 0 0 10px; font-size: 16px; font-weight: 700; letter-spacing: -0.015em; color: var(--ink); }
+
+	.lr-seg { display: flex; gap: 2px; height: 28px; margin: 0 0 12px; }
+	.lr-seg-part { display: flex; align-items: center; padding: 0 10px; border-radius: 4px; font: 600 12.5px/1 var(--font-mono); color: #fff; min-width: 0; }
+	.lr-seg-part.complete { background: var(--lr-ok); }
+	.lr-seg-part.lost { background: var(--lr-warn); }
+	.lr-seg-part.miss { background: var(--lr-gray); color: var(--ink); }
+	.lr-funnel-legend { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13.5px; }
+	.lr-funnel-legend li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 2px 8px; align-items: baseline; }
+	.lr-funnel-label { color: var(--ink); font-weight: 600; }
+	.lr-funnel-label em { font-style: normal; font-weight: 400; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+	.lr-funnel-note { grid-column: 2; color: var(--ink-soft); font-size: 13px; }
+	.lr-sw { display: inline-block; width: 14px; height: 10px; border-radius: 3px; position: relative; top: 1px; }
+	.lr-sw.complete { background: var(--lr-ok); }
+	.lr-sw.lost { background: var(--lr-warn); }
+	.lr-sw.miss { background: var(--lr-gray); }
+
+	.lr-ledger { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+	.lr-ledger-head { margin-bottom: 10px; }
+	.lr-rule { margin: 0; color: var(--ink-soft); font-size: 13.5px; max-width: 70ch; }
+	.lr-axis, .lr-row-btn { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr) 118px; gap: 0 14px; align-items: center; }
+	.lr-axis { margin: 18px 0 2px; }
+	.lr-axis-track { position: relative; height: 16px; }
+	.lr-axis-val { font: 500 11px/1 var(--font-mono); color: var(--muted); }
+	.lr-ref { position: absolute; top: 0; font: 500 10.5px/1 var(--font-mono); color: var(--muted); white-space: nowrap; }
+	.lr-ref i { font-style: normal; }
+	.lr-ref-dense { transform: translateX(calc(-100% - 5px)); }
+	.lr-ref-e5a { transform: translateX(5px); color: var(--ink); font-weight: 500; }
+	.lr-group-title { margin: 22px 0 4px; font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+	.lr-row { border-top: 1px solid var(--line); }
+	.lr-row-btn { width: 100%; padding: 8px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 4px; }
+	.lr-row-btn:hover .lr-row-label, .lr-row-btn[aria-expanded='true'] .lr-row-label { text-decoration: underline; text-decoration-color: var(--accent-deep); text-underline-offset: 3px; }
+	.lr-row-label { font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+	.lr-row.reject .lr-row-label { font-weight: 500; color: var(--ink-soft); }
+	.lr-track { position: relative; display: block; height: 14px; background: var(--paper-2); border-radius: 0 4px 4px 0; }
+	.lr-refline { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--line-strong); }
+	.lr-refline.strong { background: var(--ink); }
+	.lr-bar { position: absolute; left: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; transition: width 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+	.lr-bar.adopt { background: var(--lr-ok); }
+	.lr-bar.reference { background: var(--lr-ref); }
+	.lr-bar.reject { background: var(--lr-gray); }
+	.lr-val { display: flex; align-items: center; gap: 8px; font: 600 13px/1 var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+	.lr-val b { min-width: 24px; }
+	.lr-tag { padding: 3px 7px; border-radius: 999px; font: 600 9.5px/1.3 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+	.lr-tag.adopt { background: color-mix(in srgb, var(--lr-ok) 14%, transparent); color: var(--lr-ok); }
+	.lr-tag.reference { background: var(--paper-2); color: var(--ink-soft); }
+	.lr-tag.reject { background: var(--paper-2); color: var(--muted); }
+	.lr-detail { padding: 2px 0 14px; max-width: 72ch; animation: lr-in 0.3s ease; }
+	@keyframes lr-in { from { opacity: 0; transform: translateY(-3px); } }
+	.lr-detail p { margin: 0 0 6px; }
+	.lr-detail-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font: 600 12px/1.4 var(--font-mono); color: var(--ink); }
+	.lr-detail-why { color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+	.lr-detail-run { font: 400 11.5px/1.4 var(--font-mono); color: var(--muted); }
+
+	.lr-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+	@media (max-width: 720px) {
+		.lr-axis, .lr-row-btn { grid-template-columns: minmax(0, 1fr) 110px; gap: 4px 10px; }
+		.lr-row-label { grid-column: 1 / -1; }
+		.lr-axis-label { display: none; }
+		.lr-seg-part { padding: 0 6px; }
+	}
+	@media (max-width: 640px) {
+		.lr { padding: 14px 12px 12px; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.lr-bar, .lr-detail { animation: none; transition: none; }
+	}
+</style>
+
+<script>
+	for (const fig of document.querySelectorAll<HTMLElement>('[data-lr]')) {
+		for (const btn of fig.querySelectorAll<HTMLButtonElement>('.lr-row-btn')) {
+			btn.addEventListener('click', () => {
+				const open = btn.getAttribute('aria-expanded') === 'true';
+				const detail = document.getElementById(btn.getAttribute('aria-controls') ?? '');
+				btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+				if (detail) detail.hidden = open;
+			});
+		}
+	}
+</script>
