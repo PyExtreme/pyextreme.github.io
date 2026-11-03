@@ -17,12 +17,16 @@ stack:
   - "OpenTelemetry + Phoenix"
   - "SEC EDGAR + XBRL"
 outcome: "Two deterministic changes cleared pre-registered bars: an issuer-aware selector (+10 / −0 on complete evidence, p = 0.002) and an XBRL numeric route (16/17 vs 9/17 judged correct, p = 0.039). Eleven techniques rejected with mechanisms, for about $40 of total model spend."
-links: []
+links:
+  - label: "Detailed experiment record"
+    href: "https://pyextreme.github.io/projects/marketlane-research-record/"
+  - label: "Design document"
+    href: "https://pyextreme.github.io/projects/marketlane-research-architecture/"
 ---
 
 import MarketLaneRetrievalLedger from '../../components/explainers/MarketLaneRetrievalLedger.astro';
 
-> **Design document.** The [target architecture](/projects/marketlane-research-architecture/) describes the system this page measures: the multi-layer financial data plane, structural chunking and hybrid retrieval, temporal resolution, the research orchestrator, filing change intelligence, and the evaluation and observability design. This page is about what was measured and what shipped.
+> **Design document.** The [architecture document](/projects/marketlane-research-architecture/) describes the system this page measures: the multi-layer financial data plane, structural chunking and hybrid retrieval, temporal resolution, the research orchestrator, filing change intelligence, and the evaluation and observability design. This page is about what was measured and what shipped.
 
 **TL;DR**
 
@@ -32,7 +36,7 @@ import MarketLaneRetrievalLedger from '../../components/explainers/MarketLaneRet
 - **Eleven techniques were tested and rejected** with an inspectable mechanism each: BM25 and SPLADE fusion, a cross-encoder reranker, MMR, three deterministic selectors and a bounded agent. The whole programme cost about $40 in model calls.
 - Before replacing the served route I benchmarked it. It was indistinguishable from the challenger, so production stayed unchanged. The deployment rule allowed a change only if the challenger won, and it did not.
 
-Every number on this page comes from a recorded run on a frozen 28-company corpus and is reported with its denominator.
+Every number on this page comes from a recorded run on a frozen 28-company corpus and is reported with its denominator. The [detailed experiment record](/projects/marketlane-research-record/) has every run, ledger row and identifier behind it.
 
 ## The problem
 
@@ -143,4 +147,4 @@ The text pipeline's failures on these rows were reading and arithmetic errors on
 
 ## Read next
 
-[MarketLane AI](/projects/marketlane-ai/) is the other half of the product: a verified multi-stage LLM scan pipeline for NSE equities, measured the same way, on accuracy, cost and latency together.
+The [detailed experiment record](/projects/marketlane-research-record/) is the complete version of this page: the as-built system and operations, the methodology, the legacy benchmark lineage, all thirty ledger rows with run IDs, the judge certifications, the trade-offs, the roadmap and the handover notes. [MarketLane AI](/projects/marketlane-ai/) is the other half of the product: a verified multi-stage LLM scan pipeline for NSE equities, measured the same way, on accuracy, cost and latency together.
