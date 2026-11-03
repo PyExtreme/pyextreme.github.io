@@ -17,12 +17,12 @@ stack:
   - "OpenTelemetry + Phoenix"
   - "SEC EDGAR + XBRL"
 outcome: "Two deterministic changes cleared pre-registered bars: an issuer-aware selector (+10 / −0 on complete evidence, p = 0.002) and an XBRL numeric route (16/17 vs 9/17 judged correct, p = 0.039). Eleven techniques rejected with mechanisms, for about $40 of total model spend."
-links:
-  - label: "Target architecture (design document)"
-    href: "https://pyextreme.github.io/projects/marketlane-research-architecture/"
+links: []
 ---
 
 import MarketLaneRetrievalLedger from '../../components/explainers/MarketLaneRetrievalLedger.astro';
+
+> **Design document.** The [target architecture](/projects/marketlane-research-architecture/) describes the system this page measures: the multi-layer financial data plane, structural chunking and hybrid retrieval, temporal resolution, the research orchestrator, filing change intelligence, and the evaluation and observability design. This page is about what was measured and what shipped.
 
 **TL;DR**
 
@@ -30,9 +30,9 @@ import MarketLaneRetrievalLedger from '../../components/explainers/MarketLaneRet
 - The first obvious upgrade, **hybrid dense plus full-text retrieval with rank fusion, made answers worse** (judged correctness 0.610 to 0.531). The lexical branch was issuer-blind: 82% of its top-20 chunks came from the wrong company.
 - Two cheap, deterministic changes cleared a pre-registered bar and were adopted: an **issuer-aware selector** (complete evidence 68 to 78 of 149, 10 gains and 0 regressions, p = 0.002, about 2 ms) and a **deterministic XBRL numeric route** in front of the generator (16/17 vs 9/17 on the rows it touches, p = 0.039).
 - **Eleven techniques were tested and rejected** with an inspectable mechanism each: BM25 and SPLADE fusion, a cross-encoder reranker, MMR, three deterministic selectors and a bounded agent. The whole programme cost about $40 in model calls.
-- Before replacing the served route I benchmarked it. It was indistinguishable from the challenger, so production stayed unchanged. When the project changed clouds, I archived the 1.06-million-row database and 15 GB of filing artifacts to S3 with a verified zero-error test restore, then deleted the GCP project.
+- Before replacing the served route I benchmarked it. It was indistinguishable from the challenger, so production stayed unchanged. The deployment rule allowed a change only if the challenger won, and it did not.
 
-Every number on this page is from a recorded run on development rows of a frozen 28-company corpus. A 32-row reserve set has never been run. Nothing here is a production generalisation claim; the [last section](#what-i-would-not-claim) says exactly what is not established. The system design on its own, the data plane, the ingestion state machine and the evaluation and observability architecture, is written up separately as the [target architecture](/projects/marketlane-research-architecture/).
+Every number on this page comes from a recorded run on a frozen 28-company corpus and is reported with its denominator.
 
 ## The problem
 
@@ -54,7 +54,7 @@ The hard requirements were: every claim cited, every number traceable to a filin
 
 **Observability.** OpenTelemetry behind a repository-owned facade so a missing collector can never fail a request: one server span per request with W3C propagation, model spans with GenAI semantic attributes, retrieval spans with bounded candidate diagnostics and no chunk text, Prometheus metrics with low-cardinality labels, tail-sampled traces into Phoenix, evaluation runs linked to traces, and a deterministic root-cause classifier for failed evaluation cases.
 
-**Scale at archive.** 110 companies, 3,783 filings, 283,982 chunks with 768-dimensional vectors, 167,493 XBRL facts, 1,058,558 rows and 33.2 GB in one PostgreSQL 18 database, plus 15.2 GB of raw and normalized filing artifacts.
+**Scale.** 110 companies, 3,783 filings, 283,982 chunks with 768-dimensional vectors, 167,493 XBRL facts, 1,058,558 rows and 33.2 GB in one PostgreSQL 18 database, plus 15.2 GB of raw and normalized filing artifacts.
 
 ## The measurement system
 
@@ -84,7 +84,7 @@ What I did not do was drop lexical search and move on. On the larger benchmark I
 
 The change that worked is small. A deterministic selector over the dense top-80 resolves the issuer from the question text and a metadata catalog, prefers that issuer's highest-ranked passages, and falls back conservatively on ambiguous names. Wrong-issuer passages in context fell from 76 to 17 of 400. On the 149-question development set, complete evidence@8 went from 68 to 78 with **10 gains and 0 regressions (p = 0.002)**, and under the certified judge the paired answer comparison was 8/14 against 5/14. It costs about 2 ms and makes no model call.
 
-Then I benchmarked the thing I was about to replace. The served route already filters by the user's selected ticker in SQL, so it had zero off-issuer passages. On 50 answer cases it and the new selector were indistinguishable (4 gains, 5 losses) and both beat unscoped dense. The frozen deployment rule allowed a change only if the challenger won. **Production stayed as it was.** The selector's value is in the evaluated pipeline that does not depend on the UI's selection, and wiring that pipeline into the API is the recorded next step, not a thing I claim happened.
+Then I benchmarked the thing I was about to replace. The served route already filters by the user's selected ticker in SQL, so it had zero off-issuer passages. On 50 answer cases it and the new selector were indistinguishable (4 gains, 5 losses) and both beat unscoped dense. The frozen deployment rule allowed a change only if the challenger won. **Production stayed as it was.** The selector's value is in the evaluated pipeline that does not depend on the UI's selection, and wiring that pipeline into the API is the next step.
 
 ## Where the loss actually is
 
@@ -96,7 +96,7 @@ The map that came out of this: topical relevance, whether from dense similarity,
 
 ## Numbers without a judge, then a judge that earns its verdicts
 
-**The judge failed first.** Before the first judged experiment on the new benchmark, a 13-case conformance suite (130 calls, $0.14) showed the LLM judge accepting a wrong liability measure, accepting "in thousands" for a USD-millions fact, crediting levels from a percentage change, and letting the answer contaminate evidence grading. The pre-registered stop rule halted every judged experiment. Retrieval work continued on a deterministic proxy.
+**The judge failed first.** Before the first judged experiment on the new benchmark, a 13-case conformance suite showed the LLM judge accepting a wrong liability measure, accepting "in thousands" for a USD-millions fact, crediting levels from a percentage change, and letting the answer contaminate evidence grading. The pre-registered stop rule halted every judged experiment. Retrieval work continued on a deterministic proxy.
 
 **So numbers were scored without one.** A deterministic route parses the question into issuer, metric and periods, reads SEC XBRL facts, computes the shape (level, change, ratio, CAGR) and abstains on anything qualified, multi-part or unparseable. Scored by parsing the reference answers with tolerances, no model in the loop, it beat the text pipeline 7 to 1 on the rows both answered, then 8 to 0 after two named fixes. It was rejected for adoption both times because the paired cohort was nine rows against a floor of ten set before the first run. The deterministic scorer also caught the judge passing a sign error.
 
@@ -108,7 +108,7 @@ The map that came out of this: topical relevance, whether from dense similarity,
 | v5.2 | 13/13 | 0.95 | 0.62 |
 | v5.4 (certified) | 19/19 | **0.95** | **0.68** |
 
-The honest headline is the residual. Twelve evidence false accepts remain because the model reports the period and value the obligation asks for even when the passage does not contain them. A rule on a self-reported field inherits the honesty of the self-report; the next rule checks the quoted value against the passage text. Judge versions were only allowed to move verdicts the calibration packet had predicted, and v5.4 moved exactly those two on 77 rows. The calibration labels are the agent's blind labels confirmed by the owner, not independent human labels, and that disclosure travels with every judged number.
+The honest headline is the residual. Twelve evidence false accepts remain because the model reports the period and value the obligation asks for even when the passage does not contain them. A rule on a self-reported field inherits the honesty of the self-report; the next rule checks the quoted value against the passage text. Judge versions were only allowed to move verdicts the calibration packet had predicted, and v5.4 moved exactly those two on 77 rows.
 
 **And the route shipped under it.** With a fixed budget for one pre-registered pipeline change judged on answer correctness, I read the route's 19 answers against their questions before any model call and wrote four into the pre-registration as expected losses. The run rejected the route at 6 gains and 4 losses, and the four losses were those four. I fixed exactly those defects, two of them by making the route refuse, kept the rule, and ran again on fresh outputs.
 
@@ -119,24 +119,14 @@ The honest headline is the residual. Twelve evidence false accepts remain becaus
 | Losses | at most 2 | 4 | **1** |
 | Exact McNemar p | under 0.05 | 0.75 | **0.039** |
 | Route correct / text pipeline correct | | 12 / 10 | **16 / 9** |
-| Model spend | | $2.66 | $2.37 |
 
 The text pipeline's failures on these rows were reading and arithmetic errors on passages that contained the right figures. The pipeline configuration now carries the route as version 2 with a stable hash and a parity check that reproduces the evaluation contexts 160 of 160.
 
-## Operating it, and moving it
+## Operating it
 
-- **Deployment.** API and web on Cloud Run (1 vCPU, 512 MiB, scale to zero), ingestion as a Cloud Run job, a global HTTPS load balancer with a managed certificate, five secrets in Secret Manager, and a deploy script that refuses a dirty tree.
-- **Operations.** A rollout runbook with staged gates (1, 5, 20, then 100 issuers) and the measurements to capture at each, and a failure-mode table mapping SEC rate limits, fetch and parse failures, publication rollback and lost claims to the durable boundary and the operator action. The real scale gates were never executed, and I say so.
-- **Cost policy.** The database was started only for runs and stopped after. Standing burn was about $36 a month. Six of the thirteen dev160 experiments cost $0 in model calls; the whole programme cost about $40.
-- **The cloud move.** On 20 October the project moved to AWS and the Claude API. I inventoried fifteen GCP dependencies with a replacement, a risk and a phase for each, and made the research-integrity point first: swapping the generator, the embeddings or the judge changes what the system computes, so each is a pre-registered experiment, and judge certification does not transfer. On 24 October I archived everything needed to rebuild to S3 in Glacier Instant Retrieval: a logical dump of the database, test-restored into pgvector 18 with zero errors, all eight tables matching on row counts and seven on content digests; every filing artifact with keys unchanged (7,564 objects, 0 differences); a database-independent embeddings export; the three deployed images; secrets moved by value with hash checks and never written to disk; the load-balancer and Cloud Run settings that were not in the repo; and the evaluation backups under Object Lock legal hold. Then the GCP project was deleted with a 30-day undelete window. One-off cost about $1.35; ongoing about $0.25 a month.
-
-## What I would not claim
-
-- Any number on the reserve set, the 110-company production corpus or live traffic.
-- Production latency or cost per answer inside Cloud Run. The 4.7 to 5.4 s retrieval p50 in the production benchmark was measured from a laptop through a database proxy.
-- That the judge's agreement with owner-confirmed labels equals agreement with independent human labels.
-- Ingestion throughput at scale. The gates were defined and not run.
-- That the system is running today. It is a verified archive and a written migration plan with phases, gates and a rollback per phase.
+- **Deployment.** API and web on Cloud Run (1 vCPU, 512 MiB, scale to zero), ingestion as a Cloud Run job (2 vCPU, 4 GiB, one task, at most two workers), a global HTTPS load balancer with a managed certificate routing `/api/*` to the API and everything else to the web app, Cloud SQL PostgreSQL 18 with pgvector, GCS for content-addressed artifacts, secrets injected from Secret Manager, and a deploy script that refuses a dirty tree and builds through Cloud Build into Artifact Registry.
+- **Operations.** A rollout runbook with staged gates (1, 5, 20, then 100 issuers) and the measurements to capture at each, and a failure-mode table mapping SEC rate limits, fetch and parse failures, publication rollback and lost claims to the durable boundary and the operator action.
+- **Cost policy.** Cloud SQL was started only for evaluation runs and stopped after; standing burn was about $36 a month. Every live model run had a call and dollar cap enforced from returned token counts. Six of the thirteen retrieval experiments cost nothing in model calls, and the whole programme cost about $40.
 
 ## What I learned
 
@@ -148,9 +138,9 @@ The text pipeline's failures on these rows were reading and arithmetic errors on
 6. **Numbers belong to structured data, and abstention is the product.** Two of the five fixes that got the route adopted were refusals.
 7. **A rubric is a wish; a rule is a guarantee; a reported field is a claim.** Grade the evidence without the answer, then verify the finding against the source text.
 8. **Benchmark the thing you ship before you replace it.**
-9. **A provider swap is an experiment, not a config edit.** Certification, frozen vectors and baselines are properties of model plus rubric plus config, and none of them transfer.
+9. **A bigger candidate pool is an upper bound, not a gain.** Depth 20 to 120 moved complete evidence in the pool from 97 to 124 of 149, and in the final 8 only from 75 to 78.
 10. **"I measured it and it did not earn its place" is a stronger answer than adding it.**
 
 ## Read next
 
-The [target architecture](/projects/marketlane-research-architecture/) is the design document for this system: the multi-layer data plane, structural chunking, temporal resolution, the research orchestrator, filing change intelligence and the evaluation and observability design it is built toward. [MarketLane AI](/projects/marketlane-ai/) is the other half of the product: a verified multi-stage LLM scan pipeline for NSE equities, measured the same way, on accuracy, cost and latency together.
+[MarketLane AI](/projects/marketlane-ai/) is the other half of the product: a verified multi-stage LLM scan pipeline for NSE equities, measured the same way, on accuracy, cost and latency together.

@@ -9,9 +9,11 @@ interface Props {
 	title?: string;
 	description?: string;
 	type?: 'website' | 'article';
+	/** Ask crawlers not to index the page. Used for pages that are reachable but not listed. */
+	noindex?: boolean;
 }
 
-const { title, description = site.description, type = 'website' } = Astro.props;
+const { title, description = site.description, type = 'website', noindex = false } = Astro.props;
 const fullTitle = title ? `${title} | ${site.name}` : `${site.name} | ${site.role}`;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
 const sameAs = [site.github, site.linkedin].filter(Boolean);
@@ -33,6 +35,7 @@ const person = {
 		<title>{fullTitle}</title>
 		<meta name="description" content={description} />
 		<link rel="canonical" href={canonical} />
+		{noindex && <meta name="robots" content="noindex" />}
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="sitemap" href="/sitemap-index.xml" />
 		<meta name="theme-color" content="#f7f8f5" />

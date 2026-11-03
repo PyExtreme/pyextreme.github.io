@@ -19,7 +19,7 @@ const pageTitle = data.headline ?? data.title;
 const eyebrow = [data.kind, String(data.year), data.headline ? data.title : null].filter(Boolean).join(' · ');
 ---
 
-<BaseLayout title={pageTitle} description={data.description} type="article">
+<BaseLayout title={pageTitle} description={data.description} type="article" noindex={!data.listed}>
 	<main id="main" class="article-page">
 		<header class="article-header">
 			<p class="eyebrow">{eyebrow}</p>

@@ -26,3 +26,12 @@ pnpm-debug.log*
 # Local project source briefs
 marketlaneai.md
 marketlane research rag.md
+
+# Local drafts and exports (never publish)
+*.pdf
+/801_llm-d.md
+/ai-incident-commander.md
+/When Every 200 Became an Error.md
+/Routing v1 responses Through Dynamo's EPP.md
+/Fixing an Integer-Overflow Bug in NVIDIA NIXL.md
+.oss/
