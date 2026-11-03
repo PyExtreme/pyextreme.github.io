@@ -1,19 +1,515 @@
 ---
+import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import PageHeader from '../../components/PageHeader.astro';
+import StatStrip from '../../components/StatStrip.astro';
 import { site } from '../../data/site';
-import '../../styles/prose.css';
+
+const contributions = await getCollection('contributions', ({ data }) => !data.draft);
+const merged = contributions.filter((c) => c.data.prMerged).length;
+const repositories = new Set(contributions.map((c) => c.data.repository)).size;
+
+const stats = [
+	{ value: `${site.yearsExperience}+`, label: 'Years shipping ML and LLM systems' },
+	{ value: '2.5M', label: 'Products under review moderation' },
+	{ value: 'Millions', label: 'Of transactions scored at Paytm' },
+	{ value: contributions.length, label: `Upstream PRs across ${repositories} repos` },
+];
+
+const principles = [
+	{
+		title: 'The whole stack, not one layer',
+		text: 'Agents, retrieval, model serving and the infrastructure under them. I can debug a bad answer down to the prompt, the retriever, the router or the KV cache, and fix it where it actually breaks.',
+	},
+	{
+		title: 'Measure before shipping',
+		text: 'Every change is judged on accuracy, cost and latency together, against a bar set before the experiment runs. On MarketLane Research that meant two techniques shipped and eleven were rejected with a reason.',
+	},
+	{
+		title: 'Built for real scale',
+		text: 'Catalogs of millions of products, payment flows with millions of transactions, and multi-marketplace data in several languages. Correctness has to hold on the long tail, not the demo.',
+	},
+	{
+		title: 'Own it in production',
+		text: 'Queues, workers, tracing, alerting, cost ledgers and on-call. Running my own startup taught me that a model is a small part of an AI product, and operating it is most of the work.',
+	},
+];
+
+type Role = {
+	period: string;
+	company: string;
+	role?: string;
+	current?: boolean;
+	summary: string;
+	highlights: { text: string; href?: string; linkLabel?: string }[];
+	stack: string[];
+};
+
+const experience: Role[] = [
+	{
+		period: '2025 – Present',
+		company: 'Innovaccer',
+		role: 'Lead AI Engineer',
+		current: true,
+		summary: 'Leading text-to-SQL for a healthcare data platform: plain-language questions answered with correct, safe SQL over large and complex schemas.',
+		highlights: [
+			{ text: 'Own the text-to-SQL problem end to end: schema and context retrieval, query generation, validation before execution, and evaluation of correctness on real questions.' },
+			{ text: 'Treat accuracy as a measured property, with test sets and regression checks, so model and prompt changes are shipped on evidence.' },
+		],
+		stack: ['LLMs', 'Text-to-SQL', 'LangGraph', 'RAG', 'Langfuse', 'Python', 'SQL'],
+	},
+	{
+		period: '2025 – Present',
+		company: 'MarketLane AI',
+		role: 'Founder · in parallel',
+		current: true,
+		summary: 'Building the context layer for the stock market: an AI-driven market-intelligence platform for technical analysts and swing traders.',
+		highlights: [
+			{
+				text: 'Built the AI stock-selection service and rebuilt it three times, from one cached LLM call to a verified multi-stage pipeline. The production version hits 90% on top setups for about $4.5 per 100-symbol scan.',
+				href: '/projects/marketlane-ai/',
+				linkLabel: 'Case study',
+			},
+			{ text: 'Tried and measured several agentic designs (single agent, analyst plus critic, multi-agent ranking) and shipped the one that balanced accuracy, cost and latency, not the most complex one.' },
+			{
+				text: 'Built an AI research channel that answers any market question with cited evidence from SEC filings, XBRL facts and market data.',
+				href: '/projects/marketlane-research-rag/',
+				linkLabel: 'Case study',
+			},
+			{ text: 'Built trading journals that turn a trader’s own history into AI insights on patterns, mistakes and discipline.' },
+			{ text: 'Owned all of the engineering and ops: queue-driven workers on AWS (SQS, Lambda), Vertex AI and Cloud Run on GCP, PostgreSQL with pgvector, OpenTelemetry and Langfuse tracing, CloudWatch alerting, SLOs, and a spend ledger that ties every model call to a stage and a dollar figure.' },
+		],
+		stack: ['Claude', 'Gemini multimodal', 'FastAPI', 'PostgreSQL + pgvector', 'AWS', 'GCP', 'Langfuse', 'OpenTelemetry', 'Phoenix'],
+	},
+	{
+		period: '2023 – 2025',
+		company: 'Paytm',
+		role: 'Senior Data Scientist',
+		summary: 'ML and LLM systems for travel and payments, on data with millions of transactions and users.',
+		highlights: [
+			{ text: 'Train waitlist confirmation: predicted the probability that a waitlisted ticket confirms, shown to users at booking time.' },
+			{ text: 'Dynamic flight pricing: models that adjust fares to demand and availability.' },
+			{ text: 'Credit and debit card fraud detection on high-volume, real-time transaction streams.' },
+			{ text: 'Multimodal LLM tool for shopkeeper KYC: reads documents and storefront images to verify merchants and cut manual review.' },
+		],
+		stack: ['PyTorch', 'Multimodal LLMs', 'PySpark', 'Airflow', 'Triton', 'Kubernetes', 'AWS'],
+	},
+	{
+		period: '2022 – 2023',
+		company: 'Meesho',
+		role: 'Data Scientist II',
+		summary: 'Trust, safety and search for one of India’s largest e-commerce marketplaces.',
+		highlights: [
+			{ text: 'Built the compliance platform that finds illegal and prohibited listings across the catalog and blocks new ones before they go live.' },
+			{ text: 'Developed a transformer-based search retrieval service that improved how well products match what shoppers search for.' },
+		],
+		stack: ['PySpark', 'Databricks', 'TensorFlow', 'PyTorch', 'Transformers', 'Milvus'],
+	},
+	{
+		period: '2019 – 2022',
+		company: 'Amazon',
+		role: 'Data Scientist · Research Analyst',
+		summary: 'NLP for the product catalog in the US, Italy and Spain marketplaces.',
+		highlights: [
+			{ text: 'Engineered a transformer-based review moderation system over a catalog of 2.5M products. It separates on-topic from off-topic reviews per product so the off-topic ones can be removed.' },
+			{ text: 'Standardized product sizes for 1M products on Amazon Italy and Spain, resolving cases where the description, attributes and images disagree on the size.' },
+		],
+		stack: ['SageMaker', 'PyTorch', 'Hugging Face', 'Python', 'SQL', 'AWS'],
+	},
+];
+
+const toolkit = [
+	{ group: 'AI and GenAI', items: ['LLMs', 'Agentic AI', 'RAG', 'Text-to-SQL', 'NLP', 'Multimodal AI', 'PyTorch', 'TensorFlow', 'Keras'] },
+	{ group: 'Agents and LLMOps', items: ['LangGraph', 'Langfuse', 'Arize Phoenix', 'OpenTelemetry', 'Evaluation design'] },
+	{ group: 'Inference and serving', items: ['vLLM', 'llm-d', 'NVIDIA Dynamo', 'Triton', 'Truefoundry'] },
+	{ group: 'Infra and ops', items: ['AWS', 'GCP', 'Kubernetes', 'Docker', 'Airflow', 'Grafana', 'CloudWatch', 'CI/CD'] },
+	{ group: 'Data', items: ['PySpark', 'Databricks', 'SQL', 'PostgreSQL + pgvector', 'Milvus', 'Distributed ML'] },
+	{ group: 'Languages', items: ['Python', 'C++', 'Go', 'Rust', 'Java'] },
+];
+
+const contactLinks = [
+	{ href: site.github, label: 'GitHub', external: true },
+	site.linkedin && { href: site.linkedin, label: 'LinkedIn', external: true },
+	site.email && { href: `mailto:${site.email}`, label: 'Email', external: false },
+	site.resume && { href: site.resume, label: 'Résumé (PDF)', external: true },
+].filter(Boolean) as { href: string; label: string; external: boolean }[];
 ---
 
 <BaseLayout title="About" description={site.description}>
-	<main id="main" class="listing-page">
-		<PageHeader eyebrow="About" title={site.name}>
-			<p>{site.role} · {site.yearsExperience} years building production AI systems.</p>
-		</PageHeader>
-		<div class="prose">
-			<h2>Profile</h2>
-			<p>Biography, experience timeline, and contact details will be added here.</p>
-			<p><a href={site.github} target="_blank" rel="noopener noreferrer">GitHub<span aria-hidden="true"> ↗</span></a></p>
-		</div>
+	<main id="main" class="about">
+		<section class="about-hero" aria-labelledby="about-title">
+			<div>
+				<p class="eyebrow">About · {site.role}</p>
+				<h1 id="about-title" class="display-1">{site.name}</h1>
+				<p class="lede">
+					I build AI systems end to end: agents, retrieval and the inference stack underneath them. {site.yearsExperience} years of shipping ML and LLM products at Amazon, Meesho, Paytm and Innovaccer, and a founder’s view of
+					running one in production at MarketLane AI.
+				</p>
+				<div class="btn-row">
+					<a class="btn btn-primary" href="#experience">Experience</a>
+					<a class="btn" href="/projects/">Case studies</a>
+					<a class="btn" href={site.github} rel="me noopener noreferrer" target="_blank">GitHub<span aria-hidden="true"> ↗</span></a>
+				</div>
+			</div>
+			<aside class="now-card" aria-label="Right now">
+				<p class="now-label">Right now</p>
+				<dl>
+					<div>
+						<dt>Lead AI Engineer</dt>
+						<dd>Innovaccer · text-to-SQL</dd>
+					</div>
+					<div>
+						<dt>Founder</dt>
+						<dd><a href="/projects/marketlane-ai/">MarketLane AI</a> · market intelligence</dd>
+					</div>
+					<div>
+						<dt>Contributor</dt>
+						<dd><a href="/open-source/">vLLM, llm-d, NVIDIA Dynamo</a></dd>
+					</div>
+				</dl>
+			</aside>
+		</section>
+
+		<StatStrip items={stats} />
+
+		<section class="section-block bio" aria-labelledby="bio-title">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">01 / Story</p>
+					<h2 id="bio-title" class="display-2">How I got here</h2>
+				</div>
+			</div>
+			<div class="bio-grid">
+				<div class="bio-text">
+					<p>
+						I started at Amazon in 2019, working on NLP for the product catalog in three marketplaces. That is where I learned
+						what scale does to a model: a 2.5M-product catalog in several languages has a long tail that no demo set captures.
+					</p>
+					<p>
+						At Meesho I built trust-and-safety and search systems on Spark and Databricks. At Paytm I worked across travel and
+						payments, from train waitlist prediction and flight pricing to card fraud detection, and a multimodal LLM tool for
+						merchant KYC.
+					</p>
+					<p>
+						Today I lead text-to-SQL work at Innovaccer and, in parallel, build MarketLane AI, a market-intelligence platform
+						for traders. Running a product alone meant owning everything around the model too: queues and workers, two clouds,
+						tracing, alerting and the cloud bill.
+					</p>
+					<p>
+						That pulled me down the stack. I now contribute to vLLM, llm-d and NVIDIA Dynamo on request routing, scheduling and
+						inference correctness. I like hard problems that need both research rigour and solid engineering, and I like
+						fixing them at the root.
+					</p>
+				</div>
+				<ul class="principles">
+					{principles.map((p) => (
+						<li>
+							<h3>{p.title}</h3>
+							<p>{p.text}</p>
+						</li>
+					))}
+				</ul>
+			</div>
+		</section>
+
+		<section id="experience" class="section-block" aria-labelledby="experience-title">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">02 / Experience</p>
+					<h2 id="experience-title" class="display-2">Where I’ve built</h2>
+				</div>
+			</div>
+			<ol class="timeline">
+				{experience.map((job) => (
+					<li class:list={['job', { 'job-current': job.current }]}>
+						<p class="job-period">{job.period}</p>
+						<div class="job-body">
+							<h3 class="job-title">
+								{job.company}
+								{job.role && <span class="job-role">{job.role}</span>}
+							</h3>
+							<p class="job-summary">{job.summary}</p>
+							<ul class="job-highlights">
+								{job.highlights.map((h) => (
+									<li>
+										{h.text}
+										{h.href && (
+											<>
+												{' '}
+												<a class="job-link" href={h.href}>{h.linkLabel} →</a>
+											</>
+										)}
+									</li>
+								))}
+							</ul>
+							<ul class="chip-list" aria-label={`${job.company} stack`}>
+								{job.stack.map((s) => <li class="chip">{s}</li>)}
+							</ul>
+						</div>
+					</li>
+				))}
+			</ol>
+		</section>
+
+		<section class="section-block" aria-labelledby="oss-title">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">03 / Open source</p>
+					<h2 id="oss-title" class="display-2">Working upstream</h2>
+				</div>
+				<a class="section-link" href="/open-source/">All {contributions.length} contributions →</a>
+			</div>
+			<div class="oss-grid">
+				<p class="oss-text">
+					I contribute to the open-source LLM serving stack, on the problems that only show up under real traffic: request
+					routing and flow control, prefill/decode disaggregation, session affinity, prefix-cache management and memory-safety
+					bugs. {merged} of my {contributions.length} pull requests across {repositories} repositories are merged so far. Each one
+					has a write-up with the root cause and the test that reproduces it.
+				</p>
+				<ul class="oss-repos">
+					<li><span class="repo-name">vLLM</span><span class="repo-what">Inference engine, prefix cache, router</span></li>
+					<li><span class="repo-name">llm-d</span><span class="repo-what">Kubernetes-native routing and scheduling</span></li>
+					<li><span class="repo-name">NVIDIA Dynamo</span><span class="repo-what">Distributed serving, NIXL transfer</span></li>
+				</ul>
+			</div>
+		</section>
+
+		<section class="section-block" aria-labelledby="toolkit-title">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">04 / Toolkit</p>
+					<h2 id="toolkit-title" class="display-2">What I work with</h2>
+				</div>
+			</div>
+			<div class="toolkit">
+				{toolkit.map((t) => (
+					<div class="toolkit-group">
+						<h3>{t.group}</h3>
+						<ul class="chip-list">
+							{t.items.map((item) => <li class="chip">{item}</li>)}
+						</ul>
+					</div>
+				))}
+			</div>
+		</section>
+
+		<section class="section-block" aria-labelledby="education-title">
+			<div class="section-heading">
+				<div>
+					<p class="eyebrow">05 / Education</p>
+					<h2 id="education-title" class="display-2">Education</h2>
+				</div>
+			</div>
+			<div class="job edu">
+				<p class="job-period">2015 – 2019</p>
+				<div class="job-body">
+					<h3 class="job-title">International Institute of Information Technology, Bhubaneswar</h3>
+					<p class="job-summary">Bachelor of Technology in Computer Science and Engineering</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="contact" aria-labelledby="contact-title">
+			<p class="eyebrow">Get in touch</p>
+			<h2 id="contact-title" class="display-2">Hiring for a senior or staff AI engineer, or building something hard?</h2>
+			<p class="lede">
+				I’m happy to talk with teams working on agents, retrieval, or LLM inference at scale, and with founders who need someone
+				who can take an AI product from prototype to production.
+			</p>
+			<div class="btn-row">
+				{contactLinks.map((link, i) => (
+					<a
+						class:list={['btn', { 'btn-primary': i === 0 }]}
+						href={link.href}
+						{...(link.external ? { target: '_blank', rel: 'me noopener noreferrer' } : {})}
+					>
+						{link.label}{link.external && <span aria-hidden="true"> ↗</span>}
+					</a>
+				))}
+			</div>
+		</section>
 	</main>
 </BaseLayout>
+
+<style>
+	.about { padding-bottom: 120px; }
+
+	.about-hero {
+		display: grid;
+		grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+		gap: 48px 72px;
+		align-items: end;
+		padding: clamp(48px, 7vw, 88px) 0 clamp(40px, 5vw, 56px);
+	}
+	.about-hero .lede { max-width: 600px; }
+
+	.now-card {
+		padding: 24px;
+		border: 1px solid var(--line);
+		border-radius: 14px;
+		background: var(--paper-2);
+	}
+	.now-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0 0 16px;
+		color: var(--muted);
+		font: 500 11px/1.5 var(--font-mono);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.now-label::before {
+		content: '';
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--accent-deep);
+		box-shadow: 0 0 0 4px var(--accent);
+	}
+	.now-card dl { display: grid; gap: 14px; margin: 0; }
+	.now-card dl > div + div { padding-top: 14px; border-top: 1px solid var(--line); }
+	.now-card dt { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+	.now-card dd { margin: 2px 0 0; color: var(--ink-soft); font-size: 14px; }
+	.now-card a { color: var(--ink); }
+
+	.bio-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+		gap: 48px 72px;
+		align-items: start;
+	}
+	.bio-text p { margin: 0 0 20px; color: var(--ink-soft); font-size: 17px; line-height: 1.7; text-wrap: pretty; }
+	.bio-text p:first-child { color: var(--ink); font-size: 19px; line-height: 1.6; }
+	.principles { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+	.principles li { padding: 20px 0 22px; border-bottom: 1px solid var(--line); }
+	.principles h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
+	.principles h3::before { content: '→ '; color: var(--accent-deep); }
+	.principles p { margin: 0; color: var(--ink-soft); font-size: 15px; line-height: 1.6; }
+
+	.timeline { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+	.job {
+		position: relative;
+		display: grid;
+		grid-template-columns: 180px minmax(0, 1fr);
+		gap: 8px 48px;
+		padding: 32px 0 36px;
+		border-bottom: 1px solid var(--line);
+	}
+	.job-period {
+		margin: 4px 0 0;
+		color: var(--muted);
+		font: 500 12px/1.5 var(--font-mono);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+	.job-current .job-period { color: var(--ink); }
+	.job-current .job-period::after {
+		content: 'Current';
+		display: inline-block;
+		margin-left: 8px;
+		padding: 1px 7px;
+		border-radius: 999px;
+		background: var(--accent);
+		color: var(--ink);
+		font-size: 10px;
+		vertical-align: 1px;
+	}
+	.job-body { max-width: 760px; }
+	.job-title {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 14px;
+		margin: 0 0 8px;
+		font-size: clamp(22px, 2.4vw, 28px);
+		font-weight: 700;
+		line-height: 1.15;
+		letter-spacing: -0.025em;
+	}
+	.job-role { color: var(--muted); font: 500 13px/1.4 var(--font-mono); letter-spacing: 0.02em; }
+	.job-summary { margin: 0 0 16px; color: var(--ink); font-size: 17px; line-height: 1.6; }
+	.job-highlights { display: grid; gap: 10px; margin: 0 0 20px; padding: 0; list-style: none; }
+	.job-highlights li {
+		position: relative;
+		padding-left: 20px;
+		color: var(--ink-soft);
+		font-size: 15px;
+		line-height: 1.6;
+	}
+	.job-highlights li::before {
+		content: '';
+		position: absolute;
+		left: 2px;
+		top: 0.7em;
+		width: 7px;
+		height: 7px;
+		border-radius: 2px;
+		background: var(--accent);
+		outline: 1px solid var(--accent-deep);
+	}
+	.job-link { color: var(--ink); font: 500 12px var(--font-mono); white-space: nowrap; }
+	.edu { border-top: 1px solid var(--line); }
+	.edu .job-summary { margin: 0; color: var(--ink-soft); }
+
+	.oss-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+		gap: 32px 72px;
+		align-items: start;
+	}
+	.oss-text { margin: 0; color: var(--ink-soft); font-size: 17px; line-height: 1.7; }
+	.oss-repos { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+	.oss-repos li {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 4px 16px;
+		padding: 16px 0;
+		border-bottom: 1px solid var(--line);
+	}
+	.repo-name { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
+	.repo-what { color: var(--muted); font: 500 12px/1.8 var(--font-mono); }
+
+	.toolkit {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: 0 48px;
+		border-top: 1px solid var(--line);
+	}
+	.toolkit-group { padding: 22px 0 24px; border-bottom: 1px solid var(--line); }
+	.toolkit-group h3 {
+		margin: 0 0 12px;
+		color: var(--muted);
+		font: 500 11px/1.5 var(--font-mono);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.toolkit .chip { padding: 6px 11px; color: var(--ink); font-size: 12px; }
+
+	.contact {
+		margin-top: 16px;
+		padding: clamp(32px, 5vw, 56px);
+		border-radius: 20px;
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.contact .eyebrow { color: var(--accent); }
+	.contact .display-2 { max-width: 760px; margin-bottom: 20px; }
+	.contact .lede { color: #c9d1cd; }
+	.contact .btn { border-color: var(--paper); color: var(--paper); }
+	.contact .btn:hover { background: var(--paper); color: var(--ink); }
+	.contact .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+	.contact .btn-primary:hover { background: var(--paper); border-color: var(--paper); }
+	.contact :focus-visible { outline-color: var(--accent); }
+
+	@media (max-width: 900px) {
+		.about-hero, .bio-grid, .oss-grid { grid-template-columns: 1fr; }
+		.about-hero { align-items: start; }
+	}
+	@media (max-width: 640px) {
+		.about { padding-bottom: 80px; }
+		.job { grid-template-columns: 1fr; padding: 24px 0 28px; }
+		.toolkit { grid-template-columns: 1fr; }
+		.bio-text p:first-child { font-size: 17px; }
+	}
+</style>
