@@ -1,0 +1,1341 @@
+---
+title: "MarketLane Research"
+headline: "The full experiment record: every run, every number, every decision"
+description: "The complete record behind the MarketLane Research case study, status 3 November 2026: the as-built system, the legacy benchmark lineage, thirty ledger rows from E0 to the S3 archive, the judge certifications, the migration plan, claims discipline, lessons, trade-offs and roadmap."
+lede: "Everything behind the case study, in one place. The as-built system and its operations, the methodology, every experiment from the abandoned legacy benchmarks through the two adopted pipeline changes, the production benchmark that kept production unchanged, the judge rebuild, the GCP to AWS archive, a thirty-row results ledger, what may and may not be claimed, and the handover notes. Every number cites a run, a report, a freeze commit or an archive manifest."
+year: 2026
+updated: "2026-11-03"
+order: 8
+kind: "Infrastructure"
+listed: false
+stack:
+  - "Python 3.12"
+  - "FastAPI"
+  - "PostgreSQL 18 + pgvector"
+  - "Next.js"
+  - "Vertex AI (Gemini)"
+  - "Cloud Run + GCS"
+  - "OpenTelemetry + Phoenix"
+  - "SEC EDGAR + XBRL"
+  - "AWS S3 (archive)"
+outcome: "Thirty recorded runs from the legacy audit to the verified archive: two adopted changes (E5A selector, p = 0.002; XBRL numeric route, p = 0.039), eleven rejected techniques, a judge certified at κ 0.95 / 0.68, about $40 of model spend, and a zero-error test restore before the GCP project was deleted."
+links:
+  - label: "Case study (short version)"
+    href: "https://pyextreme.github.io/projects/marketlane-research-rag/"
+  - label: "Design document"
+    href: "https://pyextreme.github.io/projects/marketlane-research-architecture/"
+---
+
+import MarketLaneRetrievalLedger from '../../components/explainers/MarketLaneRetrievalLedger.astro';
+
+**Evidence-grounded financial RAG over SEC filings, the measurement system that decides what ships, and the platform it runs on.**
+
+**Status date: 3 November 2026.** This record supersedes the 19 October master case study. It consolidates every
+per-experiment case study, the programme ledger, the harness reports, the architecture, operations and observability
+documentation, the migration plan, and the GCP to AWS archive record of 24 October 2026. It adds what the 19 October
+master did not cover: the production pipeline benchmark of 9 October, the E3 routing design that was blocked
+in review, the E5-lite and E5B selectors, the legacy benchmark lineage that preceded the programme, the Gemini 3.1 Pro
+generator upgrade, the full infrastructure and operations architecture, the observability programme, and the
+decommissioning of the GCP project with its verified archive to S3.
+
+Every number cites a run, a report, a freeze commit or an archive manifest. Nothing in this document is a result unless
+it says where it was recorded. Earlier illustrative drafts with no measured number are not used here.
+
+---
+
+## How to use this document
+
+| You want to | Read |
+|---|---|
+| Understand the whole project in ten minutes | Part 0 |
+| Understand what was built and how it runs | Part 1 (system, infrastructure, operations, observability) |
+| Give a knowledge transfer to a new engineer | Parts 1 to 13, then Part 20 |
+| Read the short version first | The [case study](/projects/marketlane-research-rag/), built from Part 0 and Part 17 |
+| Prepare for a system-design deep dive | Parts 1, 3, 15, 16 and 18 |
+| Look up a specific experiment | Part 14 (ledger), then the part it points to |
+| Check what may and may not be claimed | Part 15 |
+| Find the next piece of work | Part 19 |
+
+Ground rules for every number on this page: only measured numbers; name things precisely (the first lexical
+branch was PostgreSQL full-text search ranked by `ts_rank_cd`, not BM25); report denominators and uncertainty; negative
+results stay in. Every judged answer-correctness number carries the disclosure that the judge's calibration labels were produced
+blind inside the project and confirmed on review, not by independent annotators (amendment A1).
+
+---
+
+## Part 0. The project in one page
+
+**What MarketLane Research is.** A production-style AI equity-research system for US public companies. It ingests SEC
+10-K and 10-Q filings, parses and chunks them with heading and table structure, embeds them into PostgreSQL with
+pgvector, serves retrieval, grounded-answer and filing-comparison endpoints from a FastAPI service behind a private
+Next.js workspace, and keeps SEC CompanyFacts (XBRL) as the authority for reported numbers. Hard requirements: every
+claim cited, every number traceable, say "insufficient evidence" instead of guessing, and ingestion that is idempotent
+and safe under partial failure.
+
+**Scale at archive time (24 October 2026).** One PostgreSQL 18.6 database of 1,058,558 rows: 110 companies, 3,783
+filings (960 10-K, 2,823 10-Q), 61,778 sections, 522,539 tables, 283,982 chunks each with a 768-dimensional
+`gemini-embedding-001` vector, 167,493 XBRL facts, 18,872 ingestion-stage records; 33.2 GB on disk; 15.2 GB of
+content-addressed raw and normalized filing artifacts (7,564 objects). Served from Cloud Run with a global HTTPS load
+balancer until the project was archived to S3 and deleted on 24 October 2026.
+
+**What the work was actually about.** The question that organised the experimental programme (7 to 19 October 2026)
+was not "which RAG technique is best" but "how do I know whether a change helped". The project's first obvious upgrade,
+hybrid dense plus full-text retrieval with reciprocal rank fusion, made answers worse (judged correctness 0.610 to
+0.531) because the lexical branch was issuer-blind: 82% of its top-20 chunks came from the wrong company. From that
+point the programme was built around a measurement system that could tell a real gain from noise, label error, judge
+error or planner luck: a frozen corpus, a source-audited benchmark, hash-pinned manifests, a retrieval-state contract,
+pre-registered decision rules, paired statistics, a certified LLM judge, and a reserve set that has never been run.
+
+**What was found.** On this corpus, which is 63% financial tables where the same table recurs in every filing of an
+issuer with different numbers, every retrieval technique that rewards passages that *look* relevant lost to exact dense
+retrieval plus a cheap issuer-aware selector. Hybrid FTS, BM25 fusion, SPLADE fusion, a cross-encoder reranker, MMR,
+three deterministic selectors and a bounded agentic decomposition were all tested under pre-registered rules and
+rejected. The bottleneck was located precisely: at dense depth 80, 41 of 149 development questions have complete
+evidence in the candidate pool and lose it at final selection, and in 39 of those 41 the missing passage is a sibling
+chunk of a filing the selector had already chosen. The remaining lever on retrieval is representation (chunks that know
+which statement they belong to), not ranking.
+
+**What was adopted.** Two changes, both cheap and deterministic, each cleared a pre-registered bar:
+
+| Change | Evidence | Where recorded |
+|---|---|---|
+| E5A issuer-aware context selection over exact dense top-80 | Complete evidence@8 68/149 to 78/149, 10 gains / 0 regressions, exact McNemar p = 0.002; later judged 8/14 vs 5/14 on the paired rows | Experiment A (`A-20261010T062531Z-13111d4f`), J1 |
+| Numeric route v3 (SEC XBRL facts, deterministic arithmetic, abstention guards) in front of the generator | Judged answer correctness on the 17 routed rows 16/17 vs 9/17, 8 gains / 1 loss, p = 0.039; about +4.7 points on the 149 eligible development rows by construction | Experiment K2 (`k2_numeric_route_pipeline_v1.json`, freeze `4366a00`) |
+
+The selected pipeline configuration is `marketlane-pipeline-v2-dense-e5a-numeric-route` (hash `edb0f62c…`), with the
+previous version's hash recorded inside it and a parity check reproducing the evaluation contexts 160 of 160. A separate
+benchmark of the *served* production route (ticker-filtered hybrid plus hosted reranker) on 9 October found no clear
+difference against E5A, because the UI's company selection already removes off-issuer passages; production was left
+unchanged pending the G4 wiring step.
+
+**What the judge work found.** The LLM judge failed its conformance suite on 10 October (6 of 13 cases). It was rebuilt
+so the model reports findings and code makes verdicts, with the evidence call never seeing the answer. Version 5.4
+passes a 19-case live suite 19/19 and reaches κ 0.95 on answers and 0.68 on evidence against owner-confirmed labels. The
+honest residual: twelve evidence false accepts remain because the model fills in the period and value the obligation
+asks for even when the passage does not contain them. A self-reported field is a claim, not a verification.
+
+**Where the platform is now.** On 20 October the decision was taken to move infrastructure from GCP to AWS and LLM
+inference from Vertex Gemini to the Claude API. On 24 October everything needed to rebuild was archived to private S3
+storage (about 44 GB, Glacier Instant Retrieval, about 0.25 USD per month; eval backups under Object Lock legal hold), every copy verified against its GCP original, the database dump test-restored with zero errors, and the GCP
+project deleted. The AWS rebuild is a written plan with phases and gates; none of it has been executed.
+
+**Cost of knowing.** Total model spend across the programme is about 40 USD. Every live run had a hard call and dollar
+cap enforced from returned token counts. Six of the thirteen dev160 experiments cost 0 USD in model calls. The archive
+cost about 1.35 USD one-off; the GCP project's standing burn before deletion was about 36 USD per month.
+
+---
+
+## Part 1. The system: product, architecture, infrastructure, operations
+
+### 1.1 The product
+
+MarketLane Research answers an individual researcher's questions about US public companies from primary sources.
+Sources are SEC 10-K and 10-Q filing text for narrative and SEC CompanyFacts (XBRL) for reported numbers. Current user
+workflows: search filing passages, generate a grounded answer with validated citations,
+compare the latest and previous 10-K or 10-Q by topic, and use internal services for structured fact lookup and
+deterministic calculations. Non-goals: trading advice, news or social feeds, earnings-call transcripts, live market
+data, GraphRAG, a multi-agent runtime, distributed ingestion queues, a public fact-lookup endpoint.
+
+### 1.2 As-built architecture
+
+```text
+                      Browser (Next.js workspace, private sign-in, same-origin /api proxy)
+                                               │
+                              global HTTPS LB (managed cert, static IP)
+                       default → web service          /api/* → API service (prefix stripped)
+                                               │
+                               FastAPI API (Cloud Run, 1 vCPU / 512 MiB, scale to zero)
+          /health   /v1/retrieve   /v1/research   /v1/compare-filings   /metrics (internal)
+                 │                        │                     │
+   ┌─────────────┴──────────┐   ┌─────────┴──────────┐   ┌──────┴───────────┐
+   │ Retrieval               │   │ Answer              │   │ Comparison        │
+   │ dense (pgvector HNSW)   │   │ citation validator  │   │ latest vs previous│
+   │ + PostgreSQL FTS        │   │ Vertex Gemini       │   │ filing by topic   │
+   │ → RRF → Google ranker   │   │ grounded answer     │   │ (no LLM)          │
+   └─────────────┬──────────┘   └─────────┬──────────┘   └──────┬───────────┘
+                 │                        │                     │
+        PostgreSQL 18 + pgvector 0.8 (companies, documents, sections, tables, chunks + 768-d vectors,
+        financial_facts, ingestion_jobs; HNSW cosine index; GIN English FTS index)
+                 ▲
+   Ingestion job on Cloud Run (2 vCPU / 4 GiB, one task, ≤ 2 workers)
+   SEC EDGAR discovery → content-addressed raw artifacts (GCS, SHA-256 keys, create-only)
+   → normalize → parse (docling, BeautifulSoup) → heading-aware chunks (+ parent context, tables)
+   → embed (Vertex gemini-embedding-001 @768) → atomic publish under a per-document advisory lock
+   CompanyFacts CLI task → financial_facts
+```
+
+![As-built architecture: Next.js workspace, HTTPS load balancer, FastAPI on Cloud Run with retrieve, research and compare-filings endpoints, one PostgreSQL plus pgvector database, Vertex AI, and an ingestion job from SEC EDGAR through content-addressed raw artifacts, parsing, chunking, embedding and atomic publish](/images/marketlane-research-rag/architecture.svg)
+
+| Component | Responsibility |
+|---|---|
+| Web app | Next.js workspace; private sign-in (username, password, signed session cookie); calls same-origin `/api` through the Next.js proxy; the API verifies the session cookie before any usage-based work |
+| API | FastAPI health, retrieval, grounded answer, filing comparison; request middleware with trace IDs; `/metrics` |
+| Retrieval | Dense (pgvector), lexical (PostgreSQL FTS `websearch_to_tsquery` / `ts_rank_cd`), reciprocal-rank fusion k = 60, Discovery Engine semantic reranker with a dense anchor; filters by ticker, form, filing date, reporting period, document, section, metadata JSON |
+| Answering | Citation-ID validation against caller-supplied evidence; Vertex Gemini generation with bounded excerpts; deterministic fallbacks; `insufficient_evidence` |
+| Comparison | Latest vs previous filing per ticker and form, topic-by-topic cited change summaries, no LLM |
+| Financial facts | CompanyFacts ingestion; deterministic `percentage_change`, `margin`, `cagr`, `difference`; internal service |
+| Research orchestrator | Deterministic tool-routing orchestrator (facts, calculator, filing search, synthesis); not wired to a public route |
+| Query analysis | Ticker, metric and period extraction from question text |
+| Ingestion | Universe sync, discovery, artifacts, parse/chunk/embed, atomic publish, claims, retry, stats |
+| Evaluation | Legacy runner; architecture harness; `aeval200` (loader with reserve isolation, retrieval contract, BM25, selectors, numeric route, structure sidecar, conformance); judge v5.4; `pipeline_config.py` |
+| Schema | Initial schema, chunk FTS index, backfill checkpoints, normalized facts, heading-aware search, universe fields, publish stage |
+| Observability | OpenTelemetry traces, OTel metrics with a Prometheus reader, JSON logs with trace correlation, Grafana dashboards, Phoenix, Cloud Monitoring definitions |
+
+### 1.3 Data model and durability
+
+A migration tool owns the schema. Company identity is CIK; filing identity is `(company_id, accession_number)`. Chunks carry
+filing metadata, section and heading path, source text, a content hash, optional parent context, and a 768-dimensional
+vector with model and version provenance. Documents track `pending`, `complete` or `failed`; retrieval joins only
+complete documents, so a refresh that fails leaves the last published representation searchable.
+
+Raw production filings are immutable SHA-256-addressed GCS objects keyed by company, accession and content hash, written
+create-only; normalized JSON, keyed additionally by parser version, is a rebuildable cache. Publication prepares everything outside the transaction, then commits sections, tables, chunks,
+embeddings and metadata together. Per-document PostgreSQL advisory claims prevent two workers publishing the same
+accession. Hashes and parser, chunker and embedding versions let reruns skip unchanged work and reuse compatible vectors.
+
+### 1.4 The two retrieval paths
+
+| | Served path (`/v1/retrieve`) | Evaluated path (pipeline config v2) |
+|---|---|---|
+| Scoping | SQL ticker filter from the UI's company selection, query expansion, latest-filing pin | Issuer resolved from the question text and a metadata catalog (E5A) |
+| Candidates | Dense (HNSW) + PostgreSQL FTS, pool 100, RRF k = 60 | Exact-eligibility dense to depth 80 (eligibility before ranking; chunk-UUID tie-break) |
+| Ranking | Google `semantic-ranker-default-004`, top-10, dense anchor kept | E5A deterministic selection to 8 passages (about 2 ms) |
+| Numbers | Generator reads them from passages | Numeric route v3 answers single-metric, change, ratio and CAGR questions from XBRL before generation, or abstains |
+| Generation | `gemini-3.1-pro-preview` (global endpoint, temperature 1.0, thinking HIGH, 16k output) since 9 October | Evaluated with `gemini-2.5-flash` (temperature 0, thinking budget 0) so replays stay faithful |
+
+Closing the gap between these two paths is the open G4 step (Part 13). The 9 October production benchmark (Part 5
+§5.9) explains why the served path was not changed immediately: its ticker filter already removes off-issuer passages.
+
+### 1.5 Deployment and operations on GCP (as archived)
+
+| Item | As archived on 24 October 2026 |
+|---|---|
+| Compute | Two Cloud Run services (API and web), each 1 vCPU / 512 MiB, scale to zero; two Cloud Run jobs (SEC ingestion at 2 vCPU / 4 GiB, and schema migration); no Cloud Scheduler trigger existed |
+| Build and deploy | A deploy script that refuses to run on a dirty tree, then source deploys through Cloud Build into Artifact Registry for API and web, secrets injected from Secret Manager; API image: Python 3.12 slim, locked dependency install, non-root user, Uvicorn one worker, JSON logs |
+| Ingress | Global HTTPS load balancer, URL map `/api/*` → API with the prefix rewritten to `/`, default → web, managed certificate, static IP; the API's direct Cloud Run URL is internal-and-LB ingress only |
+| Secrets | Database, auth and SEC-client credentials in Secret Manager, injected at deploy time, never in the repo or the image |
+| Database | Cloud SQL PostgreSQL 18.6, pgvector 0.8.5; stopped between evaluation runs under the cost policy; evaluation scripts connected through the Cloud SQL proxy on a local port |
+| Storage | A raw-artifact bucket (7,564 objects, 15.2 GB), a staging artifacts bucket, and an evaluation-backup bucket (80 objects under temporary holds) |
+| Configuration | Typed settings via pydantic-settings; the artifact bucket is required in staging and production; worker count capped at 2 and must leave a pooled connection free; per-document raw, normalized and chunk ceilings; SEC rate limit 8 requests/s shared across the process |
+| Ingestion operations | A rollout runbook: migrate → sync universe → dry run → one real ticker → identical rerun → `--retry-failed` → `--force` → `--limit 5 / 20 / 100` → `--history --since`; measurement at every gate (failure rate, SEC 429s and retries, parse and embedding seconds, publication seconds, pool peak, index growth). Fake-scale 5/20/100 pass offline; the real 1 → 5 → 20 → 100 issuer gates were never executed |
+| Failure modes | A failure-mode table maps SEC 429s, fetch and artifact failures, parse or embed failures, publication rollback, lost claims, duplicate claims, missing bucket configuration and provider outages to the durable boundary and the operator action |
+| CI | None; one `make check` target runs ruff, strict mypy and pytest locally (66 test files) |
+
+### 1.6 Observability
+
+Implemented in ten phases, all behind a repository-owned observability facade so that a missing collector can never
+fail a request:
+
+| Phase | What exists |
+|---|---|
+| 1 Foundation | OpenTelemetry SDK, W3C `traceparent` extraction with legacy `x-cloud-trace-context` fallback, one server span per HTTP operation, `x-trace-id` response header, trace and span IDs on every JSON log, batch OTLP export that swallows its own failures |
+| 2 LLM | `llm.generate` spans with GenAI semantic attributes (provider, model, input, output and cache-read tokens, finish reason), fallback outcome, no prompt or completion capture |
+| 3 Retrieval | `retrieval.request` → `retrieval.hybrid` → dense, lexical, fusion, rerank spans; up to 20 candidate events per stage with chunk IDs, ranks and scores; no chunk text or query text |
+| 4 Orchestrator | `research.run`, plan, tool and synthesis spans; comparison spans |
+| 5 Metrics | OTel instruments with a Prometheus reader at `/metrics`: HTTP, LLM tokens and estimated cost (only when rates are configured), retrieval stages, agent tools, DB pool and statement duration, ingestion jobs; no high-cardinality labels |
+| 6 Dashboards | Compose `observability` profile: Prometheus, five provisioned Grafana dashboards (AI overview, research orchestration, retrieval, LLM, system health) |
+| 7 Phoenix | OTel Collector with tail sampling (keep errors, traces over 2 s, LLM calls over 0.10 USD, 5% of the rest) → Phoenix |
+| 8 Evaluation | `evaluation.run` and `evaluation.case` spans; trace IDs written into immutable result artifacts |
+| 9 RCA | Deterministic ordered rules assign one root-cause category per failed evaluation case; evaluator exceptions become infrastructure failures without losing the run |
+| 10 SLOs | Prometheus recording and warning rules; provisional objectives (99.5% non-5xx, p95 under 2 s, 95% LLM success, DB pool under 90%) stated as hypotheses until seven days of production traffic exist |
+
+Cloud Monitoring log-based metric definitions and a dashboard exist as code, but the archive inventory records that no log-based metrics or dashboards were ever deployed to the project. The production evidence
+that does exist is the structured JSON log stream and the evaluation artifacts.
+
+### 1.7 The corpora
+
+| Corpus | Companies | Filings | Chunks | Use |
+|---|---:|---:|---:|---|
+| Production inventory (archived 24 October) | 110 | 3,783 (960 10-K, 2,823 10-Q) | 283,982 | Serving |
+| Frozen evaluation snapshot | 28 | 930 (235 10-K, 695 10-Q), late 2017 to mid-2026 | 28,452 | Every experiment |
+
+The frozen corpus is pinned by SHA-256 `19c35c2158a6ccfc13e6f885b7e6f83d6b13ca0bc7ca86ea9eb3996126f371bf`; the
+compressed chunk artifact by `6f8c96ab…`. No claim in this document extends beyond this subset. Two corpus properties
+drive almost every result: it is mostly tables (63% of chunks), and the frozen chunks lost much of their structure (36 of
+the 41 hardest-to-select gold chunks carry no section heading).
+
+### 1.8 Why financial retrieval is not ordinary retrieval
+
+A question such as *"Calculate the percentage change in operating income from FY2018 to FY2020"* needs the right
+company, consolidated operating income for both fiscal years, consistent accounting basis, correct units, and a valid
+calculation. A dense retriever can return eight passages about operating income and miss the requested year, or rank
+another company's statement highly because the table vocabulary is identical. The programme therefore separates
+candidate availability, ranking and selection, complete evidence, answer correctness, and, as a first-class engineering
+object, evaluator correctness.
+
+---
+
+## Part 2. Timeline
+
+| Date (2026) | Milestone |
+|---|---|
+| 18 Sep to 27 Sep | Schema, ingestion pipeline, atomic publish, advisory claims, API, web workspace, Cloud Run deployment, architecture and operations docs (`as-built 2026-09-27`) |
+| Sep to early Oct | Legacy benchmark lineage v0.1 to v0.6 (FinanceBench, silver, adversarial; 216 cases audited); observability phases 1 to 10; Experimental-50 v1 and Dev-24 cohorts |
+| 4 to 6 Oct | Architecture harness (`architecture-run-v2/v3`), early E0 runs with 8 operational failures and their RCA, Experimental-50 v3 freeze review |
+| 7 Oct | Experimental-50 v3 (61 cases); E0 dense baseline (answer 0.610); E1 hybrid FTS+RRF regression (0.531); candidate-depth diagnostic; case-study workspace created |
+| 7 to 8 Oct | Measurement fixes: 43/50 to 50/50 scored; HNSW planner-dependence found; `FrozenExactDenseRetriever` and E0_v2; retrieval-state contract; E2 / E2b reranker truncation study; E3 routing design v1 → v2 → final review BLOCK; E5-lite MMR; E5A and E5B selectors with independent audit; paired generation 6/14 → 8/14 |
+| 8 Oct | Benchmark expansion: 182-question obligation-complete candidate, 61-row immutable seed, handoff for independent audit |
+| 9 Oct | Production pipeline benchmark: E5A no clear difference vs production, production beats E0_v2, production unchanged; generator upgraded to Gemini 3.1 Pro in production; audit and remediation to 131 + 61 = 192 rows; `dev_baseline_v1` frozen (22/22 integrity checks); 32-row reserve allocated; eval backup to GCS with holds |
+| 10 Oct | Live judge conformance FAILS 6/13; judged experiment stopped; retrieval-only amendment; Experiments A, B, C, D, E on dev160 in one day |
+| 13 Oct | Experiment F (SPLADE) rejected |
+| 18 Oct | G1, G1′, G2, G2 v2, H1, E8 run and rejected; judge v5 → v5.2 (13/13) → v5.4 (19/19, certified); J1 and J1 v2 re-scores (baseline 24/50); G4 pipeline config v1 and parity 160/160; K1 rejected with its four losses pre-named |
+| 19 Oct | K2 route v3 ADOPT (16/17 vs 9/17, p 0.039); pipeline config v2 `edb0f62c…`; parity 160/160; first master case study |
+| 20 Oct | Decision: GCP → AWS, Vertex Gemini → Claude API; migration plan written (proposal, nothing executed); `gemini-2.5-flash` retired by the provider |
+| 24 Oct | Full archive to S3 (about 44 GB, verified, dump test-restored); GCP project deleted with a 30-day undelete window |
+| 3 Nov | This document |
+
+---
+
+## Part 3. Methodology: the experimental discipline
+
+### 3.1 Freeze before you look
+
+- Frozen inputs, pinned by hash: corpus, dataset release (`dev_baseline_v1`, release `b7610317…`), dense candidate pool
+  (`dense_exact_e2_depth120`, manifest `fd2ae76a…`), selector code (E5A freeze `26ccd243…`), issuer catalog and metric
+  vocabulary, judge rubric, CompanyFacts store (`bdfe8d37…`). The runner refuses to start if any pin drifts.
+- Pre-registration before the first output exists: a written pre-registration (hypothesis, arms, endpoints, decision
+  rule, statistics, what counts as invalid) and a config whose SHA-256 is bound in an approval record with the
+  pre-registration's, the runner's and the pinned modules' hashes. Nothing is tuned after a result is seen.
+- Feasibility probes are allowed and disclosed: a probe over runtime rows that reads no gold and scores nothing may
+  precede the freeze; any constant changed after a probe is named.
+- Reports are created exclusively, never overwritten. Invalid and interrupted runs are kept beside valid ones.
+
+### 3.2 One change, same everything else
+
+One capability per experiment, the parent run recorded, the same logical retrieval state, the eight-passage budget
+fixed. The reference arm must reproduce Experiment A's E0_v2 and E5A contexts on 160/160 rows and the E5A replay
+receipt must read FAITHFUL, or the run is invalid.
+
+### 3.3 Gold never reaches the runtime
+
+Retrieval, selection, routing and generation receive only `{query_id, question}`. Reference answers, obligations, hop
+plans, chunk hints, issuer labels and fact periods are evaluator-side only.
+
+### 3.4 Statistics that respect the sample
+
+Exact McNemar on discordant rows plus a 10,000-resample cluster bootstrap over leakage groups (seed 20261009), Holm
+correction across families. Gains and regressions reported by row ID, question type and cohort. Decision rules name
+minimum gains, maximum regressions, a p threshold and "do not fall" clauses (typical: gains ≥ 5, regressions ≤ 1,
+Holm p < 0.05, macro recall not lower, native complete@8 not lower). An n = 14 result with p = 0.25 is reported as a
+direction, not an effect size.
+
+### 3.5 Labels are proxies, and the proxy is named
+
+Retrieval-only results carry the label *development, deterministic chunk-hint evidence proxy*. Judged results carry
+the amendment A1 disclosure. Every number is tagged development; the 32 reserved rows have never been loaded.
+
+### 3.6 The evaluator is tested like code
+
+Offline conformance with an oracle provider (must pass) and an adversarial accept-all provider (must fail in the
+expected way) before any live call. Live suites with repeats; any infrastructure failure invalidates the whole suite,
+which is rerun whole. A judge version is certified only when the suite passes and κ clears 0.6 under a rule fixed
+before the run; the runner compares the certification record's decision field literally. A judge-independent check
+(the deterministic numeric scorer) is kept beside the judge.
+
+### 3.7 Money and failure policy
+
+Every live run has a call cap and a USD cap enforced from returned token counts (`MeteredProvider`). Unscored rows stay
+unscored; no per-row retry after a live call. Cloud SQL was started only when a run needed it and stopped after.
+
+### 3.8 Implementation and review
+
+Implementation was separated from independent artifact review: every pre-registration, benchmark release, judge
+certification and result report was reviewed by someone other than its author before it counted, and the decisions
+that define the benchmark (semantics, reporting basis, taxonomy, exposure exceptions, release approval, label
+confirmation) were taken by one accountable person and recorded.
+
+---
+
+## Part 4. Pre-history: the legacy benchmark lineage and why it was abandoned
+
+Before the programme, evaluation grew through six benchmark versions on `eval-corpus-v0.1` (corpus hash `c7e4040a…`):
+
+| Version | Content | What it taught |
+|---|---|---|
+| v0.1 | Snapshot builder; silver suite with 0 validated cases, no XBRL mappings | Provenance rules written before data existed |
+| v0.2 | FinanceBench-native 46 cases; marketlane silver 15,936 generated cases; XBRL company-facts and evidence mappings | Scale from templates is cheap and mostly untrustworthy |
+| v0.3 | Adversarial additions, immutable sources, audit v0.3 | Benchmark edits need an audit trail |
+| v0.5 screened | 59-case evidence-screened cohort | A screened cohort is not an adjudicated benchmark |
+| v0.5 audited | 216 cases; 33 annotation modifications; 4 ambiguous; dense/lexical/hybrid/reranker baselines | Reported answerable recall@10 49.1%, gold-chunk recall@10 39.9%, complete evidence@10 37.5%, multi-hop 4.7%, answer correctness 61.2%, latency p50/p95 10.32 s / 20.96 s |
+| v0.6 evidence | Evidence re-adjudication; reranker complete evidence@20 70.75% (150/212) after label correction, with no system change | Label changes move scores as much as system changes |
+
+Investigating failures on this lineage found that an exact-period filter had removed 69 gold items, that truncating an
+RRF top-100 to 20 for reranking lost 60 relevant items, that an audit of 18 apparent reranking failures found 17
+annotation problems and one genuine rank drop, and that a reconstruction of 61 failure cases could restore only 189 of
+1,039 unique top-20 passages, 682 of 4,604 pool passages and 13 of 61 reranker orderings. Legacy XBRL-silver questions
+labelled "fiscal year" often held Q4 three-month values; 10-Q operating cash flow questions held year-to-date values.
+**Decision:** stop treating the lineage as ground truth; keep historical assets as candidate material; rebuild
+source-verifiable questions against a frozen corpus; refuse to extrapolate from a partially restorable run. The v1
+development benchmark (an immutable copy of the audited v0.5 cohort) and the Benchmarks page registry in the web app
+preserve the history without rewriting it.
+
+Two cohorts bridged the lineage to the programme: Experimental-50 v1 (50 cases with semantic obligations) and the
+frozen Dev-24 release (24 native-scored cases across 23 issuers, 13 overlapping). Their union after de-duplication is
+Experimental-50 v3: 61 queries, 50 answer-eligible and 11 native exact-gold, bound to the frozen 28-company corpus.
+
+---
+
+## Part 5. Phase 0: making the measurement trustworthy, and the first results (Experimental-50 v3)
+
+### 5.1 Challenge A: the benchmark can be wrong when the code is right
+
+Historical annotations pointed to particular chunks when equivalent evidence existed elsewhere; some fact dates were
+copied from the filing date; original and restated values differed. The fix separated the period of the requested fact
+from the reporting period of the source document, kept chunk references as non-mandatory hints, and allowed directly
+stated, deterministically derived and carefully supported inferred evidence. Labels were not rewritten in response to
+scores.
+
+### 5.2 Challenge B: seven technical failures distorted the baseline
+
+The first dense run scored only 43 of 50 answer cases; the failures were citation-format and judge-schema problems
+(grouped citations like `[1, 3]`, a terminal-punctuation gate, an unenforced judge schema). The adapter was hardened
+(69 focused tests), retrieval-state hardening passed 92. The canonical rerun scored 50/50 with zero operational failures
+and identical rankings; the mean moved 0.615 on 43 to 0.610 on 50, a measurement-reliability change.
+
+### 5.3 Challenge C: "same inputs" did not give the same retrieval
+
+A request for 20 candidates returned 16. The database held about 284,000 rows but the evaluation was restricted to
+28,452 frozen chunks. On fresh connections PostgreSQL used an approximate HNSW path (`hnsw.ef_search = 40`, iterative
+scan off) that found a small set over the whole table *before* the frozen-corpus filter removed out-of-scope rows; from
+the sixth execution of the prepared statement the generic plan returned full, differently ordered results.
+
+```text
+Before (planner-dependent):  ANN over ~284k rows → small set → frozen filter → sometimes < 20 results
+After (explicit semantics):  all 28,452 eligible vectors → exact cosine → ordered top-k, chunk-UUID tie-break
+```
+
+An evaluation-only `FrozenExactDenseRetriever` (production retrieval untouched) applies eligibility before ranking,
+checks the full vector count, uses exact cosine distance and breaks float64 ties by chunk UUID. Verification repeated
+representative queries 21 times each across fresh connections, executions, orders and plan modes. The new E0_v2
+baseline (`arch-20261007T180013128330Z-638888b8`) returned 20 candidates for every query; the depth-120 diagnostic
+reproduced its top-20 prefix 61/61. Retrieval p50 rose from about 1.41 s to 1.64 s. 58 of 61 lists were identical; the
+three changes were recorded as infrastructure corrections. A dense execution policy (v2, then v3 with configurable
+depth and `DensePolicyGuardV3`) pins model, semantics and session settings.
+
+### 5.4 Challenge D: reproducibility needs an execution contract
+
+The original transaction snapshot could not be reopened. It was replaced by a versioned retrieval-state contract:
+corpus and vector fingerprints, embedding identity, index and session settings, candidate ordering, configuration and
+code provenance, mandatory preflight and postflight verification, a guarded read-only repeatable-read phase, and a
+read-only heartbeat after an early run lost its transaction to an idle Cloud SQL proxy. Runs persist candidates,
+scores, contexts, generation outputs, failures, per-query metrics and latency.
+
+### 5.5 E0 baseline (n = 50, run `arch-20261007T044658848864Z-3bd5283f`)
+
+| Metric | E0 dense |
+|---|---:|
+| Answer correctness | 0.610 |
+| Citation correctness / precision | 0.634 / 0.668 |
+| Candidate evidence recall@20 | 0.740 |
+| Complete evidence @1 / @5 / @8 | 0.540 / 0.660 / 0.700 |
+| Native nDCG@20 / MRR@20 (n = 11) | 0.406 / 0.281 |
+| Weakest categories | numerical 0.50, period comparison 0.50, multi-evidence 0.53 |
+
+The E0 rerun noise floor (0.012) was recorded and used as the minimum a change had to clear.
+
+### 5.6 E1: PostgreSQL FTS + equal-weight RRF (regression)
+
+| Measure | E0 dense | E1 dense + FTS + RRF |
+|---|---:|---:|
+| Judged answer correctness | 0.610 (n = 50) | 0.531 (n = 48) |
+| Citation precision | 0.668 | 0.554 |
+| Complete evidence @1 / @8 | 0.540 / 0.700 | 0.265 / 0.592 |
+| Exact-gold nDCG@20 / MRR@20 (n = 11) | 0.406 / 0.281 | 0.334 / 0.172 |
+| Retrieval p50 | about 1.4 s | about 18.9 s |
+
+![Before: dense and full-text branches fused with equal weight, 82% of the lexical top-20 from the wrong company, half of every context wrong. After: exact dense to depth 80 then an issuer-aware selector, wrong-issuer passages 76 to 17 of 400](/images/marketlane-research-rag/issuer-blind.svg)
+
+Mechanism: 82.3% of FTS top-20 chunk occurrences came from the wrong issuer (dense 19.2%); in 39 of 61 queries the
+branches shared no chunk, so equal-weight RRF interleaved them and wrong-company chunks took about half of every context;
+fused ranks 1 and 2 tied exactly in 40/61 queries and a chunk-ID string tie-break decided rank 1. Independent review
+verified the formula and overturned three apparent lexical wins. **REJECT.** Unscoped lexical retrieval fused at equal
+weight is wrong for a multi-issuer corpus where company names are weak lexical signals.
+
+### 5.7 Candidate depth, E2 and E2b, MMR
+
+Exact top-120 lists reproduced E0_v2's first 20 on 61/61. For the 11 exact-gold cases complete evidence was available
+for 9 at depth 20, 10 at 40 and 11 at 80 (missing cases at ranks 22 and 71): headroom, not a gain.
+
+| Exact-gold metric (n = 11) | E0_v2 | E2 BGE / 512 | E2b BGE / 1024 |
+|---|---:|---:|---:|
+| nDCG@20 | 0.406 | 0.171 | 0.440 |
+| MRR@20 | 0.281 | 0.090 | 0.328 |
+| Complete evidence@8 | 8/11 | 3/11 | 7/11 |
+| Complete evidence@20 | 9/11 | 5/11 | 9/11 |
+
+E2 (`bge-reranker-v2-m3` over dense@80) truncated 92% of its inputs at 512 tokens, including gold passages whose
+figures sit late in long table chunks. E2b tested one pre-specified correction: truncation fell to 33%, four of six
+harmed cases recovered, the rank-71 evidence reached rank 1, but the rank-22 case fell to 40, complete evidence at the
+generation budget did not improve, and reranking cost about 115 s per query on a CPU-constrained machine. **REJECT;
+retain exact dense.**
+
+E5-lite, deterministic MMR (λ = 0.7, fixed a priori) over dense top-80: near-duplicate pairs per context 6.2 → 1.3,
+exact-gold completeness 8/11 unchanged (2 up, 2 down), MRR@8 0.272 → 0.221. **NEUTRAL, rejected.** Two quarterly
+tables can be near-identical semantically and hold different fiscal-period values.
+
+### 5.8 E3: issuer-level document routing, designed and blocked
+
+E3 proposed hard issuer-level eligibility before dense ranking. Design v1 inspected all 61 question texts (disclosed
+as benchmark exposure); an independent review raised ten findings including a benchmark-label readiness gate rated
+Critical; design v2 answered them with synthetic-only readiness, exact
+full-subset ranking verification, collision-prone ticker rules and shadow-only fiscal-period diagnostics. The final
+independent verification (8 October) returned **BLOCK** on four remaining findings (lexical confidence relied on a single
+word list, a required ambiguity fixture could not pass its own rules, unknown comparison participants could route
+unsafely, phase-input contracts contradicted each other). E3 was never implemented; its purpose was served by E5A's
+conservative issuer resolver, and the rule it produced (readiness is synthetic plus metadata only; gold metrics are
+computed post-run after a pre-registered freeze) became a standing rule of the programme.
+
+### 5.9 E5A and E5B: issuer-aware and metric/period-aware selection (`e5final-20261008T193621180661Z-e4a22bf1`, freeze `26ccd243…`)
+
+Every earlier failure exposed one dominant problem: wrong-company evidence occupying context slots. E5A is a
+deterministic selector over dense top-80: a conservative issuer resolver from question text and a metadata-derived
+issuer catalog, preference for the resolved issuer's highest-ranked passages, conservative fallback for ambiguous names
+and short tickers, multi-issuer floors. E5B added metric and period slots on top.
+
+| Offline metric | E0_v2 | E5-lite MMR | E5A | E5B |
+|---|---:|---:|---:|---:|
+| Exact-gold complete@8 (n = 11) | 8 | 8 | 8 | 7 |
+| Cases with all required hints in context (n = 50) | 27 | 29 | 34 | 35 |
+| Wrong-issuer passages in context (of 400) | 76 | | 17 (−77.6%) | |
+| Selection overhead | | | 0.921 ms mean, zero model calls (offline replay) | |
+
+Verdict under the pre-registered rule: E5A IMPROVED, E5B REGRESSED (one exact-gold loss: Boeing, where E5B promoted an
+annual segment table over the Q1 10-Q chunk that held the quarterly pair), MMR NEUTRAL. An independent agent-based
+evidence audit found complete evidence 8 → 10 on a 15-case sample and 7 → 10 on the 16 changed contexts, no confirmed
+loss. Two errata were recorded (ERR-001: E5A did change two exact-cohort context lists without changing scores, and the
+Boeing gold chunk does contain the quarterly statement; ERR-002: the 0.92 ms figure is an offline replay, not a
+production latency).
+
+A paired generation on the 14 questions whose contexts changed (identical prompts, 28 generations without failure):
+both correct 6, E0 wrong / E5A right 2, E0 right / E5A wrong 0, both wrong 6; **6/14 → 8/14**. Persisting errors named
+the next bottleneck: the generator used pre-tax income when operating income was supplied, opened with "revenue
+decreased" after computing growth, and produced unsupported equity figures. **Provisional adoption**, confirmed on
+dev160 (Part 7) and under a certified judge (Part 10).
+
+### 5.10 The production pipeline benchmark (9 October, `prodbench-20261009T045053455569Z-de0746d4`)
+
+Before changing the served route, the unchanged `/v1/retrieve` function was run read-only on the frozen corpus with what
+the UI sends (`{query, ticker, top_k: 10}`), inside the guarded transaction, for the 50 answer cases, and all four arms
+were generated and judged in interleaved order with the same `gemini-2.5-flash` generator and frozen judge.
+
+| | E0_v2 | E5A | PROD_FROZEN | PROD_LIVE |
+|---|---:|---:|---:|---:|
+| Judge correct (n = 50) | 23 (49 scored) | 28 | 28 | 30 |
+| Deterministic CORRECT | 21 | 27 | 27 | 27 |
+| Off-issuer passages in context | 76/400 | 17/400 | 0/500 | 0/500 |
+| Generation input tokens p50 | 7,376 | 7,136 | 10,005 | 9,641 |
+| Production retrieval p50 (laptop → Cloud SQL) | | | 5.4 s | 4.7 s |
+
+E5A vs production: 5 gains (4 after one checker false positive) and 5 losses, **NO_CLEAR_DIFFERENCE**; E0_v2 vs
+production: 1 gain, 7 losses, **PROD_BEATS_E0_v2**. The two systems fail on different cases: E5A abstained where its
+dense top-80 lacked the period and production's ticker-filtered hybrid search found it; production gave wrong tax rates,
+a zero change and the wrong cash-flow activity where E5A was right. The frozen deployment rule allowed a change only if
+a challenger beat production. **Production stays unchanged.** E5A's value, removing other issuers' passages, is already
+delivered in production by the UI's company selection, which filters chunks by ticker in SQL. Disclosures: production
+received the benchmark's company label as its ticker; the deployed revision was assumed to equal repository HEAD.
+
+### 5.11 Generator upgrade to Gemini 3.1 Pro (9 October, `cd1292d`)
+
+Production moved the answer model from `gemini-2.5-flash` to `gemini-3.1-pro-preview` (global endpoint, temperature
+1.0, thinking level HIGH, 16,384 output tokens, thinking tokens billed as output). The evaluated generator stayed pinned
+to Flash for experiments so replays remain faithful; the harness's authorization check fails closed on any code path
+that carries the production generator. Every K-series control therefore ran on Flash.
+
+---
+
+## Part 6. Phase 1: building a benchmark that can be trusted (architecture_eval_200_v1)
+
+### 6.1 Isolation and supply
+
+A separate branch and artifact directory. The expansion was architecture-blind: no historical scores, retrieval runs, model answers, reranker outputs or protected
+holdout data could influence which questions were authored, accepted or repaired.
+
+| Source | What happened |
+|---|---|
+| Historical questions | 47 files, 18,992 rows, about 16,868 distinct, 2,774 retained candidates, 1,934 preliminarily usable; 1,874 factual lookups, 1,671 from the v0.2 silver source; at least 840 XBRL candidates with untrustworthy fiscal-period labels excluded (an AMD "FY2020 revenue" candidate carried the Q4 figure $3,244 million) |
+| Corpus-grounded authoring | Six parallel authoring agents, 357 drafts → 350 after repair, emphasising computations, multi-period comparisons, explanations, multi-evidence and dependent multi-hop |
+| Strict multi-hop supplement | 45 drafts → 44 → 11 PASS / 10 FIXABLE / 17 relabel / 5 REJECT / 1 HUMAN_REVIEW → 21 verified strict; 40 strict candidates in all |
+
+### 6.2 The strict multi-hop rule
+
+H1 must produce an intermediate result that materially determines which distinct H2 evidence target is needed, and H2
+must require a genuinely separate evidence or reasoning unit. Another row of the same table, another bullet, or extra
+arithmetic is not a hop. Authors first labelled 79 questions multi-hop; adversarial review found 11 clearly strict.
+
+### 6.3 Tiers, selection and the audit funnel
+
+3,162 inputs → 991 exclusions → master pool 2,171 (Tier A 428 → 445, Tier B 1,517, Tier C 209). The
+150-question ceiling was removed. The architecture-blind selector proposed 190 (185 Tier A, 5 Tier B) across 28 issuers, 21
+reasoning archetypes, 155 template families, 30 strict multi-hop.
+
+| Stage | Expansion count | Main outcome |
+|---|---:|---|
+| Architecture-blind proposal | 190 | Initial diverse selection |
+| Financial source validation (eight issuer-disjoint reviewer batches) | 186 | Three same-fact duplicates removed; one Chubb equity question held (adjusted $51,268M vs reported $51,667M unspecified) |
+| Evidence-obligation construction | 182 | Two Boeing BDS cases excluded (table identity by totals and ordering only), an American Express write-off table excluded (unheaded), an American Tower quarter-driver question held |
+| Comprehensive audit | 182 | 80 blocking findings affecting 58 questions |
+| Remediation v2 / v3 / v4 | 147 / 141 / 134 | Source identities, units, obligations corrected; unsupported sources excluded |
+| Final development snapshot | **131** | Three high-risk questions quarantined |
+
+Strict multi-hop fell 40 → 30 → 28 → 26 → **8**. Three recurring problems defined the standard: source identity (a
+number matching a labelled figure elsewhere does not establish which entity an unheaded table describes), unit scale
+(the corpus lost many "in thousands / in millions" captions; dimensionless ratios survive, dollar amounts need explicit
+scale evidence), and accounting period (reporting period is not fact period; YTD vs standalone quarter; as-filed vs
+restated).
+
+### 6.4 Answer obligations versus evidence obligations
+
+At the 182-row stage: 524 answer-required and 825 evidence-required obligations (direct / derived / inference
+635 / 189 / 1), 1,490 verified source quotes, 152 alternative evidence groups across 75 questions, 79 deterministic
+derivations recalculated with zero mismatches. A ratio needs one reported number in the answer but authoritative
+evidence for numerator, denominator, time basis and formula. Semantically equivalent evidence satisfies an obligation;
+historical chunk IDs are provenance hints.
+
+### 6.5 The evaluator became an engineering problem
+
+An obligation written so two dates' values could be chosen independently let an invalid cross-measure pair score full
+credit; the contract was rewritten atomically. The runtime scorer's Boolean format did not prove the restriction was
+enforced, so the question was quarantined. Mutation tests found validators that accepted a `SUPPORTED` record without a
+valid source binding. Three follow-ups: FU-1 (loader isolation and scorer conformance), FU-2 (financial identity and
+unit validation), FU-3 (structure-aware parsing as a separately versioned corpus).
+
+### 6.6 The frozen release, the reserve and the backup
+
+The frozen release `dev_baseline_v1`, labelled `SOURCE_AUDITED_DEVELOPMENT_BASELINE`: 192 questions (131 expansion, 61 seed), 8
+strict multi-hop, 126 provisionally fresh, 22/22 integrity checks. Not a certified holdout. The reserve allocation
+(approved 9 October) withholds 32 provisionally fresh rows; the loader drops them before adaptation and every run folder
+is scanned for reserved IDs, question text or hashes. The 160 development rows contain 149 semantic rows and 11 native
+exact-scored rows. The snapshot, allocation and frozen corpus were backed up to a GCS bucket under temporary holds (23 files,
+SHA256SUMS verified, restored and re-validated 20/20), and on 24 October copied to an S3 Object Lock bucket under legal
+hold (Part 12).
+
+---
+
+## Part 7. Phase 2: retrieval architecture on dev160 (Experiments A to F)
+
+Primary endpoint: complete evidence@8 on the 149 semantic rows, the chunk-hint proxy. Eight-passage budget, shared R2
+dense pool, frozen E5A, identity-checked reference arms. All on 10 October except F (13 October); 0 USD in model calls.
+
+### 7.1 FU-1: the judge failed, and the plan changed
+
+The live conformance suite ran the v4 judge (`gemini-2.5-flash`) on 13 synthetic cases with 10 repeats (130 calls,
+0.14 USD). Six cases failed deterministically: a GMDB liability accepted as a GLB liability; a passage "in thousands"
+accepted for a USD-millions fact; level values credited from a percentage change; the answer contaminating evidence
+grading; a partial-credit threshold mismatch. Pre-registration v2 §3 stopped the judged experiment. A versioned
+amendment let retrieval-only experiments proceed on the deterministic proxy. No answer-correctness number was reported
+again until Part 10.
+
+### 7.2 Experiment A: E0_v2 versus E5A (`A-20261010T062531Z-13111d4f`)
+
+| Metric | E0_v2 dense top-8 | E5A over dense top-80 |
+|---|---:|---:|
+| Complete evidence@8 | 68/149 (45.6%) | **78/149 (52.3%)** |
+| Complete evidence@5 | 54 | 59 |
+| Macro required-evidence recall@8 | 0.569 | 0.639 |
+| Native exact-scored (n = 11) | 8/11 | 8/11 |
+
+10 gains, 0 regressions, exact McNemar p = 0.002, 95% CI +2.7 to +11.3 points; E5A changed only 25 of 160 contexts.
+**ADOPT E5A as the reference architecture.**
+
+### 7.3 Experiment B: candidate depth (`B-20261010T070054596586Z-27e8f1e0`)
+
+| Depth | Complete in pool | Complete in final 8 (E5A) |
+|---:|---:|---:|
+| 20 | 97/149 | 75/149 |
+| 40 | 111/149 | 77/149 |
+| 80 | 119/149 | 78/149 |
+| 120 | 124/149 | 78/149 |
+
+No significant depth effect. Candidate text loaded rose from about 72,000 to 421,000 characters; selection p50 1.0 →
+3.5 ms; dense retrieval about 2.8 s p50 / 4.4 s p95 on Cloud SQL. **The funnel at depth 80 became the programme's
+central fact: 78 complete, 41 complete in the pool but lost at selection (22 within the top 20), 30 never complete.**
+
+### 7.4 Experiment C: dense versus BM25 versus hybrid RRF (`C-20261010T070015126529Z-3bdbe422`)
+
+A genuine Okapi BM25 (k1 = 1.2, b = 0.75; built in 4.6 s, 15.7 MB, 67 ms p50 per query), RRF constant 60 fixed before
+results.
+
+| Architecture | Complete@8 | Pool complete@80 |
+|---|---:|---:|
+| Dense | 68/149 | 119 |
+| BM25 only | 27/149 | 60 |
+| Dense + BM25 RRF | 60/149 | 115 |
+
+Hybrid vs dense: 14 gains, 22 regressions, Holm p = 0.24. BM25 fully recovered 7 questions dense top-8 missed and 8 of
+the 14 hybrid gains combined partial evidence from both lists, so lexical retrieval carries complementary information;
+equal-weight fusion lets a weak ranking displace a strong one. **REJECT**; the untested design named was lexical as a
+candidate-union source (later G1b).
+
+### 7.5 Experiment D: coverage-aware selector D1 (`D-20261010T071813Z-2612b0f7`)
+
+D1 scored requested metrics, fiscal periods, diversity and redundancy over the same dense top-80: 77/149 vs 78, 2 gains
+/ 3 regressions, p = 1.0, selection p50 213 ms vs 3.6 ms. Regressions: Apple (FY2025 balance sheet dropped for cover
+pages mentioning the years), Broadcom (three-year income statement displaced by a recency heuristic), Airbnb (required
+2026 six-month table replaced by a 2024 one). **REJECT.** The selector rewarded passages that looked relevant rather than
+passages carrying the requested fact.
+
+### 7.6 Experiment E: BGE reranker before E5A (`E-20261010T110043Z-e41ac885`)
+
+`bge-reranker-v2-m3` (568M parameters, FP32 on an M1 CPU, 1,024-token input) over dense top-80, then E5A: 56/149 vs 78,
+8 gains / 30 regressions, p = 0.0005, selection-loss rows 63 vs 41, macro recall 0.472 vs 0.639. Truncation was not the
+cause (evidence chunks in the regression rows were truncated 18% of the time vs 35% overall). The model pushed 114
+required obligations out of the top 8 and pulled 51 in. Cost: p50 106 s per query, about 5 hours, 2.24 GB peak RSS.
+**REJECT.** A GPU would fix the latency, not the quality.
+
+### 7.7 Experiment F: SPLADE learned sparse retrieval (`F-20261013T173143Z-23d50af6`)
+
+`opensearch-neural-sparse-encoding-v2-distill` (67M, Apache-2.0), revision and weights pinned, model-card example
+reproduced to four digits; chunks encoded as consecutive 510-token windows with max-pooled term weights (median chunk
+742 WordPiece tokens; 70% over one window), first-window-only kept as a truncation diagnostic.
+
+| Arm | Complete@8 | Macro recall@8 | Pool complete@80 / @120 |
+|---|---:|---:|---:|
+| DENSE8 | 68 | 0.569 | 119 / 124 |
+| SPLADE8 | 20 | 0.195 | 52 / 55 |
+| HYB8 (RRF SPLADE 120 + dense 120) | 38 | 0.348 | 112 / 118 |
+| E5A over dense | 78 | 0.639 | |
+| E5A over fusion | 44 | 0.390 | |
+| SPLADE truncated (diagnostic) | 12 | 0.141 | 43 / 48 |
+
+HYB8 vs DENSE8: 3 gains / 33 regressions, Holm p = 2.3e-7; E5A over fusion vs E5A: 3 / 37, p = 3.9e-8; native 8 → 3.
+Diagnosis: the encoder works and issuer targeting is adequate (issuer share of top 8: dense 0.92, SPLADE 0.75, BM25
+0.54), but 54% of the 1,085 required gold chunks fall outside SPLADE's top 120 (dense 13%). A bag of weighted subwords
+cannot tell the FY2023 instance of a table from the FY2021 one; WordPiece splits "FY2023" into `f`, `##20`, `##23`.
+Cost 0 USD; 88 minutes of local encoding on an 8 GB laptop after an in-place masking fix cut peak RSS from swap
+exhaustion to 0.84 GB, verified bitwise against stored shards and disclosed. **REJECT.**
+
+### 7.8 Where Phase 2 left the map
+
+| Experiment | Architecture | Complete@8 | Gains / regressions | Verdict |
+|---|---|---:|---|---|
+| A | Exact dense top-8 | 68/149 | reference | historical control |
+| A | Dense top-80 → E5A | **78/149** | +10 / −0, p 0.002 | **ADOPT** |
+| B | E5A at depth 20 / 40 / 120 | 75 / 77 / 78 | n.s. | depth 80 kept |
+| C | BM25 only / dense + BM25 RRF | 27 / 60 | 14 / 22 | REJECT |
+| D | Coverage-aware D1 | 77 | 2 / 3 | REJECT |
+| E | BGE reranker + E5A | 56 | 8 / 30 | REJECT |
+| F | SPLADE / fusion / E5A over fusion | 20 / 38 / 44 | 3 / 33; 3 / 37 | REJECT |
+
+---
+
+## Part 8. Phase 3a: the selection and structure line (G1, G1′, H1, E8)
+
+All on 18 October, same proxy, same rule (gains ≥ 5, regressions ≤ 1, Holm p < 0.05, macro recall not lower, native
+not lower), 0 USD in model calls.
+
+### 8.1 G1: period-structural selection and issuer-scoped lexical union (`G1-20261018T083259Z-099ca750`, freeze `54ee605`)
+
+After E5A picks eight, for each requested period no chosen passage carries (filing covers it by metadata and the text
+shows the year), promote the issuer candidate that carries it (at most four swaps); G1b appended up to 20 issuer-scoped
+BM25 candidates after rank 80 with no fusion. G1a 78/149 (1 / 1, p 1.0), G1b 78 (0 / 0), G1ab 78 (1 / 1); native 8 → 7;
+union pool 121 vs 119, neither extra row reached a context. **REJECT.**
+
+The post hoc that mattered: in 39 of the 41 selection-loss rows the missing gold chunk belongs to a document already in
+E5A's context (best dense rank 9–20 in 24 rows, 21–40 in 12, 41–80 in 5); 36 of those chunks carry no section heading.
+Every one of G1's 34 swaps came from a different filing. Both regressions came from the textbook-correct rule that a
+10-Q never carries a fiscal year, which is benchmark-wrong: the fact period for a year-labelled ask is often a quarter.
+
+### 8.2 G1′: within-filing sibling selection (`G1P-20261018T090159Z-14de5081`, freeze `64874ab`)
+
+Keep E5A's filing set; swap a chosen chunk with no detectable sign of the named metric (regex row label or sentence plus
+figure) for a same-filing sibling in the top 80 whose table row has it. 77/149 vs 78 (2 / 3, p 1.0), native 8 → 9.
+**REJECT.** 19 of the 41 loss rows never reached the rule because E5's metric extraction gated them as ambiguous (63 of
+160 rows overall); where a metric was extracted the missing gold chunk had a detectable row in 13 of 24; all three
+regressions removed gold passages the detector could not recognise and swapped in footers, cover pages and subsidiary
+lists. **The deterministic selection line (D, G1, G1′) was closed:** the instrument that recognises evidence, not the
+selection logic, is the limit.
+
+### 8.3 H1: structure sidecar and statement-typed selection (`H1-20261018T104731Z-89b27c89`, freeze `fe626c7`)
+
+A corpus-only sidecar built from the frozen chunk text in 12 seconds: statement type from row-label vocabulary (13,404
+of 21,707 table chunks typed confidently; 3,483 mixed), captions (1,414 own, 5,660 inherited), units (13,795 own, 10,241
+inherited), header years (18,433), boilerplate (686); thresholds from corpus counts, not gold. The selector maps named
+metrics to the statement they live on and swaps a boilerplate or wrong-typed pick for a same-filing sibling of the
+wanted type. **79/149 vs 78**, 2 gains / 1 regression, macro recall 0.649, no exact-gold loss, 42 swaps in 26 rows,
+2 ms. **REJECT** under the rule (gains < 5), the first selector since E5A with a net gain and no exact-gold loss. The
+one regression is a sidecar misclassification (a restructuring rollforward typed as equity because rows begin "Balance
+at"). **Keep the sidecar**; H2 is pre-named.
+
+### 8.4 E8: obligation-planned retrieval, the bounded agent (`E8pool-20261018T105708Z-3c444c28`, `E8-20261018T110945Z-9b2703b1`, freeze `6f61e14`)
+
+Decompose the question into (metric × period) obligations with the existing extractors (at most six sub-queries),
+retrieve once per sub-query through the same exact dense path inside one guarded read-only session, allocate four of
+eight slots round-robin to sub-query hits. 101 rows planned, 221 sub-queries, twelve minutes, 0 USD.
+
+| Question | Result |
+|---|---|
+| Does per-obligation retrieval add evidence to the pool? | Union of dense 80 and the 221 top-20 lists: complete rows 119 → 120; obligations hit 497 → 498 of 580; of 399 placed passages 215 were already at dense ranks 9–20, 143 at 21–80, 41 new |
+| Does allocating budget raise completeness at 8? | 78 → **65**, 4 gains / 17 regressions, p = 0.007 against, native 8 → 6 |
+
+The cap did the damage: each incoming passage was a sub-query's most topical table (a quarterly revenue table for
+"Booking operating income fiscal 2024"); the displaced passages were E5A's positions 5–8, where 13 of the 17 lost rows
+had their comparison-period statement. **REJECT; the agentic-lite retrieval line is closed**, because the pool did not
+change and no cap or allocation inside the planner's scope can add evidence the retrieval did not find.
+
+---
+
+## Part 9. Phase 3b: numbers without a judge (G2, G2 v2)
+
+### 9.1 Design (`G2-20261018T091450Z-4da0deff`, freeze `540ff5c`)
+
+| Component | Rule |
+|---|---|
+| Issuer, metric, periods | E5's own extractors, catalog and vocabulary |
+| Concepts | eight canonical CompanyFacts concepts: revenue, net income, operating income, total assets, total liabilities, cash, operating cash flow, stockholders' equity |
+| Shapes | LEVEL, CHANGE (difference and percent), RATIO, CAGR |
+| Fact choice | 10-K annual fact whose end labels the fiscal year; 10-Q three-month fact for a quarter with YTD subtraction for cash flows; earliest filed unless the question says restated; abstain if as-filed and restated disagree |
+| Abstain | unresolved issuer, ambiguous or qualified metric, concept outside the eight, no explicit period, unsupported shape, no fact |
+| Scoring | reference primary quantity by rule; 0.5 pp for percents, 1% relative with matching sign for dollars; written strict against the route |
+
+The 28 issuers' CompanyFacts payloads were fetched once (28 public API reads) into a hashed store; every row routed
+twice for determinism; the text arm is the frozen E0_v2 baseline's saved answers.
+
+### 9.2 Results
+
+Paired (n = 9): route correct / text incorrect 7, text correct / route incorrect 1. Standalone on 59 scorable rows: 8
+correct, 11 incorrect, 40 abstained. Every wrong route answer was a parsing failure it could have refused: 7
+wrong-period ("three months ended June 29, 2019" read as the year), 3 wrong-shape, 1 concept mismatch. On the 16 rows
+with a text answer, the deterministic scorer and the v4 judge agreed on 14; the judge had passed Booking's sign error
+("decreased by $1,300 million" for a $1,270 million increase). **REJECT for adoption** (n = 9 < 10, p = 0.07,
+wrong-period condition failed); the route's precision reported as development evidence, the first answer-level result
+not depending on a judge.
+
+### 9.3 G2 v2 (`G2-20261018T104728Z-20476f47`, freeze `876724d`)
+
+Exactly the two named changes: dated sub-annual periods read as spans and instants, and a qualifier guard. Precision 42%
+→ 71%; standalone 12 / 5 / 42; paired on the same nine rows **8 gains / 0 regressions, p = 0.008**; no wrong-period
+routes. **REJECT** still, because the floor is ten paired rows and the floor was set before the first run. The
+deterministic scorer was carried into G3's calibration packet as a judge-independent check.
+
+---
+
+## Part 10. Phase 3c: making the judge earn its verdicts (G3, G3c, J1)
+
+### 10.1 Judge v5 design
+
+| Change | Mechanism |
+|---|---|
+| Answer-blind evidence call | Evidence graded in a call that never sees the answer; the answer graded in a second call over the generation context |
+| Structured findings, not verdicts | Per obligation: measure label found, measure match, period match, unit scale found, units match, level value present; per answer: measure, period, units, sign, value, all-facts-present, declined-despite-reference |
+| Deterministic post-rules | Any stated mismatch forces "unsupported"; any failed answer check forces 0; a missing requested fact caps at 0.25 |
+| Scope monotonicity | Support in a smaller evidence view propagates to every containing view |
+| Model | `gemini-2.5-pro`, temperature 0, JSON schema, minimum thinking budget (128), thinking tokens counted for the cap |
+
+### 10.2 The live runs
+
+| Version | Run | Calls / USD | Result |
+|---|---|---:|---|
+| v5 | `g3_conformance_live_v2.json` | 268 / 1.74 | INVALID (one client error); fixed the five measure and contamination cases; exposed two defects in the deterministic rules |
+| v5.1 | `_v3.json` | 269 / 1.75 | 12/13; C09 at 0.6 (answer call accepts the wrong measure 4 of 10) |
+| v5.2 | `_v4.json`, `_v5.json` | | binds the answer score to the evidence call's measure finding; one INVALID run, then **PASS 13/13** |
+| v5.3 (G3c) | `_v6.json` | 389 / 2.83 | **FAIL**: scope rule rejected Citigroup's ICG business-unit figures the question asked for |
+| v5.4 run 1 | `_v7.json` | 402 / 2.89 | INVALID: one Vertex 429 on C10; 189/189 judged repeats agreed; whole-suite rerun |
+| v5.4 run 2 | `_v8.json` | 393 / 2.86 | **PASS 19/19 at 1.0** |
+
+### 10.3 Calibration and amendment A1
+
+A 40-row blind packet from saved outputs (33 baseline, 7 E5A rows, stratified by type and old-judge verdict). The
+labels were produced blind, then reviewed (40 confirmed, 0 overridden) and approved as the calibration reference, with
+the protocol change disclosed wherever a judged number appears.
+
+| Endpoint | v5.4 | v5.2 | v4 |
+|---|---:|---:|---:|
+| Answer κ, 40 rows | **0.95** (39/40) | 0.95 | 0.90 |
+| Evidence κ, 111 obligations | **0.68** (99/111) | 0.62 | 0.65 |
+| Evidence κ, the 4 design rows (16 obligations) | 0.08 | −0.13 | 1.00 |
+| Evidence κ, the other 36 rows (95) | 0.90 | 0.90 | 0.53 |
+| Agreement with the deterministic scorer, 11 rows | 10/11 | 11/11 | 9/11 |
+
+v5.2 was certified; v5.4 met the pre-registered adoption rule and replaced it. The number to lead with is the design-row
+κ: the period, value and scope rules were built from nine false accepts on four rows and fixed one. On Best Buy and
+American Tower the model reported the required year, "consolidated" and a quoted value that is in none of the eight
+passages (American Tower's 2,660.3 and 2,767.2 appear only in the reference answer). **A rule on a self-reported field
+inherits the honesty of the self-report.** The fix is v5.5: verify the quoted value and period string against the cited
+passage text by substring before any rule runs. Spend: the judge line about 23.8 USD over nine live runs.
+
+### 10.4 J1 and J1 v2: re-score, don't re-run
+
+The generator behind the saved results had been retired and generation was not deterministic (9 of 14 paired rows
+byte-identical, 5 differ), so the two saved runs eligible for answer scoring were re-scored under the certified judge.
+The runner refuses to start without an approval record, on a judge version or rubric hash mismatch, on a certification
+record not reading literally CERTIFIED (J1 v2 was refused once over "CERTIFIED (ADOPTED, …)"), or on a source hash
+mismatch.
+
+| Baseline | v5.4 (49 scored) | v5.2 | v4 (saved) |
+|---|---:|---:|---:|
+| Correct | **24** | 24 | 26 |
+| Mean score | 0.49 | 0.49 | 0.59 |
+| Declined despite a reference | 5 | 5 | |
+
+By type under v5.4: explanation 2/7, factual lookup 9/11, multi-evidence 5/13, numerical 4/8, period comparison 4/10.
+Where the judges disagree the saved answer settles it: v4 passed a sign error and a wrong quick ratio and docked a
+correct rounding. Paired (n = 14): E5A **8/14** vs E0_v2 5/14, three gains, no losses, p = 0.25, "consistent". J1 v2
+moved exactly the two verdicts the packet predicted (Abbott, ADP) and no other on 77 scored rows. One row stayed
+unscored after a rate-limit error, per policy. Spend 10.96 USD. **The judged baseline for the text pipeline is 24 of 50
+(48%) under v5.4, with the A1 disclosure.**
+
+---
+
+## Part 11. Phase 4: the first adopted pipeline change since E5A (G4, K1, K2)
+
+### 11.1 G4: one pipeline, one hash
+
+A single pipeline-config module holds the versioned configuration of the selected pipeline and the one selection
+function both the harness and the API call; the hash travels with every run manifest and is meant for every API
+response. v1 `marketlane-pipeline-v1-dense-e5a` (hash `8272702b…`) reproduced Experiment A's E5A contexts 160/160.
+API wiring, the load test (k6 at 1/5/20 users on Cloud Run for both paths), ingestion-scale gates and the reserve run
+were recorded as blocked with the unblocking action for each.
+
+### 11.2 K1: the route in front of the pipeline (`k1_numeric_route_pipeline_v1.json`, freeze `fbdad4a`)
+
+A 10 USD budget was set for one pre-registered experiment that changes the pipeline, is judged by v5.4, and
+clears an adoption bar on answer correctness. Route v2 unchanged on all 160 rows before generation; both arms share the
+same offline E5A context; the control is the evaluated generator (`gemini-2.5-flash`, production generator code);
+judge only the rows where the arms differ. Rule: n ≥ 10, gains ≥ 5, losses ≤ 2, p < 0.05, inspection finds no
+judge-passed wrong issuer or period. Before any model call the 19 eligible route answers were read against their
+questions and four were written into the pre-registration as expected losses (an American Tower revenue tag holding a
+component; "fiscal period ending 2018-03-31" parsed as FY2018; a two-line breakdown answered with the total; a
+three-part question answered with one change). Result: route **12/19** vs control 10/19, 6 gains / 4 losses, p = 0.75,
+2.66 USD. The four losses were the four rows; every single-metric answer was right (12 of 12). **REJECT**, correctly.
+
+### 11.3 K2: fix what was named, nothing else (`k2_numeric_route_pipeline_v1.json`, freeze `4366a00`)
+
+| K1 loss | Route v3 change |
+|---|---|
+| Multi-part question answered partially | two interrogative clauses or two question marks abstain |
+| Breakdown question answered with the total | "from X and from Y", "respectively", "separately", "by product" abstain |
+| ISO date read as a fiscal year | "period ending YYYY-MM-DD" is the quarter for a flow metric, the instant for a stock |
+| Revenue tag that is a component | load every revenue concept; per accession and period keep the largest |
+| CAGR scored 0.25 for omitting yearly values | list every year when the question asks for the series; abstain if one is missing |
+
+| Condition | Required | K1 (route v2) | K2 (route v3) |
+|---|---|---:|---:|
+| Routed rows scored in both arms | ≥ 10 | 19 | 17 |
+| Gains | ≥ 5 | 6 | **8** |
+| Losses | ≤ 2 | 4 | **1** |
+| Exact McNemar p | < 0.05 | 0.75 | **0.039** |
+| Route correct / control correct | | 12 / 10 | **16 / 9** |
+| Spend | | 2.66 USD | 2.37 USD |
+
+The one loss is the known net-income-including-NCI concept the map lacks. The control, regenerated, declined on the
+same three rows whose figures were in XBRL, read a different wrong equity line for American Water, and mis-computed both
+CAGRs from correct inputs: the text pipeline's failures on these rows are generation failures. **ADOPT.** Net +7 rows on
+the 149 eligible development rows, exact by construction.
+
+### 11.4 What landed
+
+The pipeline config is `marketlane-pipeline-v2-dense-e5a-numeric-route`, hash
+`edb0f62c1f51bdd80049a7017ebe0a2886174a816ceecf726987c8ecb6a26fdb`, with the previous version recorded inside. The route
+is a declared component before generation (route v3, composer v2, fact store, catalog and vocabulary pins);
+`numeric_answer()` returns the composed answer with provenance and the config hash, or `None` on abstention. Parity
+re-run 160/160; 22 tests pass. The served API still runs the old path. The reserve has never
+been run; when approved, the architecture to name is version 2.
+
+---
+
+## Part 12. Platform operations after the experiments: migration decision, archive, decommission
+
+### 12.1 The decision (20 October)
+
+The migration plan inventories fifteen GCP dependencies and maps each to a replacement, with a risk and a phase for
+each:
+
+| GCP dependency | Proposed replacement | Risk |
+|---|---|---|
+| Cloud Run services (API, web) and Job (ingestion) | ECS on Fargate behind an ALB; ECS `RunTask` + EventBridge Scheduler | Low |
+| Cloud Build + Artifact Registry | ECR + `docker buildx` | Low |
+| Global HTTPS LB, managed cert, DNS | ALB + ACM certificate + DNS record | Medium (routing config lives outside the repo; now exported to the archive) |
+| Secret Manager (5 secrets) | SSM Parameter Store SecureString (done, as part of the archive) | Low |
+| Cloud SQL PostgreSQL + pgvector | RDS for PostgreSQL + pgvector, logical dump and restore, chunk UUIDs preserved, exact-dense replay must reproduce frozen top-k | **High** (the plan says PostgreSQL 16; the instance was 18.6) |
+| GCS artifact bucket with `gs://` URIs stored in `documents` | S3 with conditional writes (`If-None-Match: *`), URI rewrite in one reviewed transaction | Medium |
+| GCS eval backup with temporary holds | S3 Object Lock bucket with legal holds (done) | Medium |
+| Vertex `gemini-embedding-001` @768 | Bedrock Titan or Cohere, or Voyage, after a pre-registered bake-off on dev160; schema column `embedding_v2` alongside the old one; full re-embed | **High** (changes retrieval; every frozen dense result is from a different model afterwards) |
+| Discovery Engine ranker | Bedrock Rerank, Voyage rerank, or removal (the adopted pipeline does not use a reranker) | Medium |
+| Vertex Gemini generation (`gemini-3.1-pro-preview`) | Claude API `claude-opus-5-5`, `claude-sonnet-5-5` measured as a cheaper arm; effort replaces thinking budgets; no temperature 0 on these models | Medium |
+| Vertex Gemini judge (`gemini-2.5-pro`, v5.4) | Claude judge v6, **re-certified** on the same 19-case suite and 40-row packet | **High** (certification does not transfer; same-family label bias must be disclosed) |
+| Cloud Logging metrics and dashboard | CloudWatch metric filters and dashboard, or the existing OTel path | Low |
+
+The plan's central research-integrity point: the generator, embedding and judge swaps change what the system computes
+and are experiments under the programme's rules, not config edits. The first decision it asks for is whether the
+single reserve run evaluates pipeline v2 on GCP (option A) or a re-frozen v3 on Claude and AWS (option B); the plan
+recommends B. It specifies seven phases with gates (decisions and inventory; provider-neutral code with GCP still live;
+AWS foundation; data migration and conformance; Claude cutover with a pre-registered generator experiment; embeddings
+and reranker; production cutover; reserve run and decommission) and a rollback per phase. Nothing in it has been
+executed beyond the archive.
+
+### 12.2 The archive (24 October)
+
+Everything needed to rebuild is in two private S3 buckets in ap-south-1, Glacier Instant Retrieval, SSE-S3, public
+access blocked, about 44 GB, about 0.25 USD per month:
+
+| Archive component | Contents | Objects | Size |
+|---|---|---:|---:|
+| Production database | Full Cloud SQL export of the production database (PostgreSQL 18.6, pgvector 0.8.5) plus verify manifests; no table had been written since 27 September | 1 + 11 | 20.24 GB |
+| Pre-rollout database | Exports of the older second instance (1,864 chunks) | 3 | 0.014 GB |
+| Raw artifacts | Mirror of the raw and normalized filing artifacts, keys unchanged | 7,564 | 15.21 GB |
+| Staging artifacts | Staging artifacts | 88 | 0.11 GB |
+| Embeddings | Database-independent TSV of every chunk vector (283,982 rows × 768) | 1 + SHA256SUMS | 1.07 GB |
+| Images | Docker tarballs of the three deployed images (API, sec-sync job, web) with SHA-256 and source digests | 4 | 7.03 GB |
+| GCP configuration | Exported Cloud Run, load balancer, Cloud SQL, IAM, enabled-API and bucket settings as YAML; secret references only | 21 | < 0.1 MB |
+| Evaluation backups (Object Lock bucket) | All 80 eval-backup objects (0.57 GB) under legal hold, 80/80 confirmed | 80 | 0.57 GB |
+| Secrets (SSM SecureString) | The secrets, SHA-256 matched to the GCP originals, never written to disk | 5 | |
+
+Verification: raw bucket `rclone check` 7,564 objects, 15,214,325,387 bytes, 0 differences; eval backups 77/77 SHA-256
+match plus one MD5-equal file; secrets 5/5; database dump CRC64NVME matched the GCS original (20,235,624,340 bytes); the
+embeddings file matched and counted 283,982 rows of 768 dimensions. A temporary VM restored the dump into
+`pgvector/pgvector:pg18` with 0 errors; the COPY row counts equal the source for all 8 tables (1,058,558 rows); the seven
+non-chunk tables match on row counts and order-independent content digests; `chunks` was sampled every 95th row (2,990
+rows including vectors) with 2,990/2,990 row MD5s matching; index definitions including the HNSW index, extensions and
+the Alembic version match. Deliberately not archived: about 89 GB of Artifact Registry history, build-upload caches, the
+empty normalized bucket, Cloud SQL automated backups (replaced by the export), Cloud Logging history. One-off cost about
+1.35 USD. Nothing large touched the laptop's disk; data streamed through memory. A restore runbook (database with roles
+and `maintenance_work_mem` for the HNSW rebuild; manifest comparison; artifact URI rewrite; secrets; images; ingress
+routing; vectors) is part of the record.
+
+### 12.3 The decommission
+
+The GCP project (about 36 USD per month standing burn: load-balancer rule, stopped Cloud SQL disk, Artifact Registry
+storage) was deleted on 24 October. It can be restored until about 23 November 2026; after that it is purged. The GCS
+eval-backup holds were not released. The research hostname no longer resolves to a running service. Consequences for the programme: the reserve run on GCP (option A) is no longer possible without a
+restore; any judged number from here on comes from a re-certified judge on a new provider; the evaluated generator
+(`gemini-2.5-flash`) was retired by the provider on 20 October regardless.
+
+---
+
+## Part 13. Consolidated results ledger
+
+Every row cites a recorded run. Label: development; chunk-hint proxy for retrieval rows; judged rows carry the A1
+disclosure. Costs are model-call spend.
+
+| ID | Date | Change under test | Primary endpoint | Gains / regressions | p | Verdict | Cost |
+|---|---|---|---|---|---|---|---:|
+| Legacy v0.5-audited | Sep | Dense / lexical / hybrid / reranker on 216 cases | complete evidence@10 37.5%; reranker CE@20 70.75% after label correction | | | lineage abandoned | |
+| E0 | 7 Oct | Dense top-8 (experimental-50 v3) | answer 0.610 (n = 50); CE@8 0.700 | | | baseline | |
+| E1 | 7 Oct | + PostgreSQL FTS + equal RRF | answer 0.531; CE@8 0.592; p50 1.4 → 18.9 s | | | REJECT | |
+| E0_v2 | 8 Oct | Exact frozen dense (planner fix) | 61/61 stable prefixes; 50/50 scored | | | baseline | |
+| E2 / E2b | 8 Oct | BGE reranker 512 / 1024 tokens | exact-gold nDCG@20 0.171 / 0.440 vs 0.406; CE@8 3 / 7 vs 8 of 11 | | | REJECT | |
+| E3 | 8 Oct | Issuer-level document routing (design only) | independent review: BLOCK | | | not implemented | |
+| E5-lite | 8 Oct | MMR diversity selection | exact-gold CE@8 8/11 unchanged | 2 / 2 | | NEUTRAL, rejected | |
+| E5A / E5B | 8 Oct | Issuer-aware / metric-period-aware selection | wrong-issuer 76 → 17 of 400; exact 8/11 vs 7/11 | 7 / 0; 8 / 0 proxy | | E5A IMPROVED (provisional adopt); E5B REGRESSED | |
+| E5 paired generation | 8 Oct | E5A contexts vs E0_v2 contexts | judged 8/14 vs 6/14 | 2 / 0 | | consistent | |
+| Prod benchmark | 9 Oct | Served hybrid + ranker vs E5A vs E0_v2 | judge correct 28 / 28 / 23 of 50 | E5A 4 / 5; E0_v2 1 / 7 | | production unchanged | |
+| A | 10 Oct | E5A vs E0_v2 on dev160 | CE@8 78/149 vs 68/149 | 10 / 0 | 0.002 | **ADOPT** | 0 |
+| B | 10 Oct | Depth 20/40/80/120 | 75 / 77 / 78 / 78; funnel 78 / 41 / 30 | | n.s. | depth 80 kept | 0 |
+| C | 10 Oct | BM25; dense + BM25 RRF | 27; 60 vs 68 | 14 / 22 | 0.24 | REJECT | 0 |
+| D | 10 Oct | Coverage selector D1 | 77 vs 78; 213 ms vs 3.6 ms | 2 / 3 | 1.0 | REJECT | 0 |
+| E | 10 Oct | BGE reranker + E5A | 56 vs 78 | 8 / 30 | 0.0005 | REJECT | 0 |
+| FU-1 | 10 Oct | Judge v4 live conformance | 6 of 13 FAIL | | | judged runs stopped | 0.14 |
+| F | 13 Oct | SPLADE; SPLADE + dense RRF; E5A over fusion | 20; 38; 44 vs 68 / 78 | 3 / 33; 3 / 37 | 2.3e-7; 3.9e-8 | REJECT | 0 |
+| G1a / G1ab | 18 Oct | Period-structural selection; + scoped BM25 union | 78 vs 78; native 7 vs 8 | 1 / 1 | 1.0 | REJECT; 39/41 losses within-document | 0 |
+| G1′ | 18 Oct | Within-filing sibling by metric row | 77 vs 78; native 9 vs 8 | 2 / 3 | 1.0 | REJECT; selection line closed | 0 |
+| G2 | 18 Oct | XBRL numeric route v1, deterministic scoring | paired 7 / 1 on 9; standalone 8 / 11 / 40 | 7 / 1 | 0.07 | REJECT (n < 10; wrong-period) | 0 |
+| G2 v2 | 18 Oct | + dated periods, qualifier guard | paired 8 / 0 on 9; precision 71% | 8 / 0 | 0.008 | REJECT (n < 10) | 0 |
+| H1 | 18 Oct | Structure sidecar + statement-typed selection | 79 vs 78; recall 0.649 | 2 / 1 | 1.0 | REJECT (gains < 5); sidecar kept | 0 |
+| E8 | 18 Oct | Obligation-planned sub-query retrieval | pool 120 vs 119; CE@8 65 vs 78 | 4 / 17 | 0.007 against | REJECT; agentic-lite closed | 0 |
+| G3 v5 → v5.2 | 18 Oct | Answer-blind judge, structured findings, rules | suite 13/13; κ 0.95 / 0.62 | | | CERTIFIED (A1) | 12.50 |
+| G3c v5.3 → v5.4 | 18 Oct | Value, period, scope rules | suite 19/19; κ 0.95 / 0.68; design rows 0.08 | | | CERTIFIED, replaces v5.2 | 11.35 |
+| J1 / J1 v2 | 18 Oct | Re-score saved outputs (v5.2 / v5.4) | baseline 24/50, 24/49; E5A 8/14 vs 5/14 | 3 / 0 | 0.25 | consistent | 10.96 |
+| G4 parity | 18 Oct | pipeline_config v1 `8272702b…` | contexts 160/160 | | | done; serving blocked | 0 |
+| K1 | 18 Oct | Route v2 in front of generation, judged | 12/19 vs 10/19 | 6 / 4 | 0.75 | REJECT (losses pre-named) | 2.66 |
+| **K2** | 19 Oct | Route v3 in front of generation, judged | **16/17 vs 9/17** | 8 / 1 | **0.039** | **ADOPT**; pipeline v2 `edb0f62c…` | 2.37 |
+| G4 parity v2 | 19 Oct | pipeline_config v2 | contexts 160/160 | | | done | 0 |
+| Archive | 24 Oct | GCP → S3 copy, test restore | 0 differences; restore errors 0; 1,058,558 rows | | | done; GCP deleted | 1.35 |
+
+The dev160 retrieval rows of this ledger, as one figure. Select a row for the mechanism.
+
+<MarketLaneRetrievalLedger />
+
+---
+
+## Part 14. The root-cause map
+
+```text
+                        149 semantic development questions, dense depth 80
+                                            |
+            +-------------------------------+-------------------------------+
+            |                               |                               |
+   78 complete in final 8          41 complete in pool,            30 not complete
+   (E5A, 52.3%)                    lost at selection                in the pool
+            |                               |                               |
+   generation errors:              39/41: missing chunk is a        per-obligation sub-queries
+   wrong line read, wrong          sibling of a chosen filing;      add +1 (E8); lexical union
+   sign, mis-computed CAGR,        36/41 chunks have no heading;    adds +2 to pool, 0 to context
+   declines with figures in        regex detectors miss gold        (G1b); the lever is
+   XBRL → numeric route (K2)       captions and fire on footers     representation (FU-3 proper)
+   fixes 7 net on routed rows      (G1′); statement typing +1 (H1);
+                                   19 rows gated by metric
+                                   extraction before any rule
+```
+
+Why every ranker lost: the corpus is near-duplicate tables that differ by period. Topical relevance (dense similarity,
+cross-encoder score, SPLADE expansion, BM25 terms, sub-query top hits) finds the right company and the right table three
+quarters of the time and cannot tell this year's instance from last year's. The period signal is carried by the
+whole-chunk dense embedding better than by any bag of terms. The selection signal that is missing is *which statement is
+this chunk*, and the frozen corpus dropped it.
+
+Why the served path did not lose to E5A: the UI's ticker filter does in SQL what E5A does from question text, so the
+production route already had zero off-issuer passages; the two paths fail on different rows.
+
+Why the numeric route won: on the rows it touches, the text pipeline's errors were reading and arithmetic errors on
+passages that contained the right figures, plus declines on figures present in XBRL. A parser and a division do not make
+those errors, and they cite the accession.
+
+Why the judge needed rebuilding twice: rules the rubric stated were not applied by the model; moving them into code on
+reliably reported findings (measure, units) fixed them; moving them onto findings the model invents when the passage
+lacks the figure (period, value) did not. The next rule checks the report against the source text.
+
+---
+
+## Part 15. What is established, and what may not be claimed
+
+**Established, as development evidence on the frozen 28-company corpus:**
+
+- Exact dense retrieval plus E5A issuer-aware selection delivers complete evidence@8 of 78/149 against 68/149 for dense
+  top-8, with zero paired regressions, and the same selector wins the judged paired answer comparison 8/14 vs 5/14.
+- Dense retrieval makes complete evidence available for 119 of 149 questions within 80 candidates; 41 lose it at
+  selection; in 39 of those the missing chunk is a sibling of a filing already chosen; 36 of those chunks have no heading.
+- Equal-weight RRF with any lexical arm tested (FTS, BM25, SPLADE), a BGE cross-encoder at 512 or 1024 tokens, MMR,
+  three deterministic selectors and a bounded agentic decomposition all fail their pre-registered rules on this corpus,
+  each with an inspectable mechanism.
+- The served ticker-filtered hybrid route and E5A are not distinguishable on the 50 answer cases; both beat unscoped
+  dense.
+- A deterministic XBRL route answers the numeric questions it parses more correctly than the text pipeline, 16/17 vs
+  9/17 on the rows it touches under a certified judge, and abstains on the rest.
+- The LLM judge v5.4 passes a 19-case live suite and reaches κ 0.95 / 0.68 against owner-confirmed labels; the judged
+  baseline for the text pipeline is 24/50.
+- The evaluation infrastructure: frozen corpus and benchmark with hashes, retrieval-state contract, 61/61 and 160/160
+  identity checks, reserve isolation, pre-registration binding, cost caps, exclusive-create reports.
+- The platform: idempotent content-addressed ingestion with atomic publish and advisory claims; a database of 1.06M rows
+  and 284k vectors that restores from its archive with zero errors and matching digests.
+
+**Not established, and said so wherever the number appears:**
+
+- Any number on the 32-row reserve; it has never been loaded. Development rows were inspected repeatedly; the numeric
+  route was tuned against them across G2, G2 v2, K1 and K2.
+- Generalisation to the 110-company production corpus or to live traffic; production p50/p95 inside Cloud Run, cost per
+  answer, load behaviour, ingestion throughput at 5, 20 or 100 issuers (the retrieval p50 of 4.7 to 5.4 s in the
+  production benchmark was measured from a laptop through the Cloud SQL proxy).
+- That a chunk-hint hit proves period or units; that κ against owner-confirmed agent labels equals κ against
+  independent human labels.
+- The K2 control is the evaluated generator (`gemini-2.5-flash`), not the production pin (`gemini-3.1-pro-preview`).
+- GPU reranking latency; fine-tuned or issuer-filtered sparse models; a learned within-document chooser; contextual
+  re-embedding (FU-3 proper); any Claude or AWS number. None was run.
+- Production monitoring: dashboards and log-based metrics exist as code and were never deployed; SLO targets are
+  hypotheses.
+- Anything from the earlier illustrative drafts (58.7K filings, 89% complete evidence, 612 cases): never measured.
+
+---
+
+## Part 16. Skills demonstrated, mapped to evidence
+
+| Skill | Where it is demonstrated |
+|---|---|
+| Production data pipeline design: content-addressed immutable artifacts, create-only writes, prepare-then-publish atomicity, advisory-lock claims, idempotent reruns by hash and version, bounded workers and a shared rate limiter | Part 1 §1.3, §1.5; the archive restore proving the model holds |
+| Serving architecture: FastAPI with evidence-only retrieval and evidence-constrained generation as separate endpoints, server-side citation validation, private session auth enforced before paid work, same-origin proxy, scale-to-zero containers behind a managed LB | Part 1 §1.2, §1.4, §1.5 |
+| Observability engineering: vendor-neutral OTel facade, GenAI semantic attributes, bounded retrieval diagnostics without payload leakage, Prometheus metrics with low-cardinality labels, tail-sampled traces, evaluation trace linkage, deterministic RCA, provisional SLOs | Part 1 §1.6 |
+| Cloud operations and migration: dependency inventory, phased plan with gates and rollback, verified archive with checksums and a test restore, secrets moved without touching disk, cost accounting, decommission with an undelete window | Part 12 |
+| RAG evaluation design: complete-evidence obligations vs chunk IDs, answer vs evidence requirements, alternative groups, derived and inference modes | Part 6 §6.4 |
+| Benchmark engineering without scaling errors: provenance tiers, architecture-blind selection, strict multi-hop taxonomy, audit funnel 190 → 131, quarantine over backfill | Parts 4, 6 |
+| Financial domain modelling: fact period vs reporting period, YTD vs standalone quarter, as-filed vs restated, unit scale, source identity of unheaded tables | Parts 6, 9, 11 |
+| PostgreSQL and pgvector debugging: HNSW planner-dependent eligibility, prepared-plan switch, exact retriever with eligibility before ranking | Part 5 §5.3 |
+| Reproducibility as a systems artifact: fingerprints, retrieval-state contract, guarded read-only sessions, identity checks 61/61 and 160/160 | Parts 3, 5 |
+| Pre-registration and approval binding; feasibility probes disclosed; losses pre-named | Part 3 §3.1; Part 11 |
+| Paired statistics on small samples: exact McNemar, cluster bootstrap, Holm correction, honest n = 9 and n = 14 reporting | Parts 7 to 11 |
+| Information retrieval breadth: dense, Okapi BM25, PostgreSQL FTS, RRF, cross-encoder reranking, SPLADE with windowed max-pooling, MMR, candidate-depth analysis, nDCG / MRR / recall | Parts 5, 7 |
+| Failure diagnosis with mechanisms: off-issuer rate, truncation rate, gold-rank distribution, within-document loss, detector precision and recall, cap displacement, pool-union coverage | Parts 5, 7, 8 |
+| Deterministic structured-data route with abstention and provenance; deterministic scoring with tolerances | Parts 9, 11 |
+| LLM-as-judge engineering: answer-blind grading, structured findings with deterministic post-rules, oracle and adversarial conformance, whole-suite rerun policy, κ calibration, judge-independent checks, predicted verdict movement | Part 10 |
+| Cost and failure policy: metered providers, cumulative caps, unscored rows stay unscored, invalid runs kept | Part 3 §3.7 |
+| Memory-constrained local inference: 568M reranker on CPU, SPLADE on 8 GB with in-place masking, bitwise verification after a post-freeze change | Part 7 |
+| Production hygiene: one pipeline config with a stable hash for harness and API, parity checks, rejected components recorded, deploy script that refuses a dirty tree | Part 11; Part 1 §1.5 |
+| Separating implementation from independent review, with human gates on every release and certification | Part 3 §3.8 |
+| Engineering judgement: closing lines of work with evidence, enriching before re-parsing, judging only where arms differ, leaving production unchanged when the challenger did not beat it | Parts 5, 8, 11 |
+
+---
+
+## Part 17. Consolidated lessons
+
+**On measurement**
+
+1. Build the measuring instrument before the system it measures. A retrieval failure report had become a label-quality
+   report (17 of 18 "failures" were annotations).
+2. A reproducible benchmark is a systems artifact. A corpus hash is not enough if the planner can change which
+   candidates survive.
+3. Separate the funnel: candidate availability, selection, complete evidence, answer correctness, evaluator correctness.
+4. Read per-query diffs, not means. A mean hid that rank 1 was decided by a string sort.
+5. Small benchmarks are fine if you report their resolution honestly: one exact-gold case is 9.1 points; n = 14 is a
+   direction.
+6. Benchmark the thing you ship before you replace it. The served route had already solved the issuer problem a
+   different way.
+
+**On retrieval in this domain**
+
+7. In a multi-entity corpus, scoping is retrieval; ranking only orders what scoping allows.
+8. A larger candidate pool is an upper bound, not a gain.
+9. Semantic diversity is not evidence completeness.
+10. Equal-weight rank fusion is only as good as its weaker input.
+11. Topical relevance does not carry the fiscal period. Reranker, SPLADE and sub-query top hits all found the right
+    table and the wrong year.
+12. Measure which axis the loss is on before building a selector for it. One query (does the missing chunk share a
+    document with a chosen chunk?) settled a line of three experiments.
+13. Measure the detector before the selector.
+14. Enrich before you re-parse. A twelve-second sidecar kept every paired comparison alive.
+15. Ask the pool question before the budget question. "Agentic" is a hypothesis with a cost, not a tier.
+16. Closing a line is a result.
+
+**On numbers and generation**
+
+17. Numbers belong to structured data; text retrieval should cite them, not compute them.
+18. Abstention is the product. Two of the five K2 fixes were refusals.
+19. Read your component's outputs before you pay to judge them. Four losses were visible for free and became a
+    specification.
+20. Better retrieval reduces evidence failures; it cannot make the generator use the evidence correctly.
+
+**On judges**
+
+21. A rubric is a wish; a rule is a guarantee.
+22. Grade the evidence without the answer.
+23. A reported field is a claim. Verify the finding against the source text.
+24. Conformance suites must be allowed to fail you. Rerun whole, never cherry-pick.
+25. Find a check that is not the judge.
+26. Say what a new judge version should move before it runs.
+27. Carry the disclosure with the number, not in a footnote.
+
+**On platform and process**
+
+28. Design the data model for recovery: content-addressed artifacts and a logical dump restored with zero errors made
+    the decommission a one-day job instead of a risk.
+29. A provider swap is an experiment. Certification, frozen vectors and baselines are properties of model plus rubric
+    plus config, and none of them transfer.
+30. Pre-registration is cheap insurance. When the result arrives there is nothing to tune and nothing to argue about.
+31. Cap the spend before the first call. About 40 USD bought every number in this document.
+32. Make the runner refuse. A literal-string certification check kept a "CERTIFIED (pending)" from ever scoring.
+33. Keep every run, including the invalid ones.
+34. Deliberately not building something ("I measured it and it didn't earn its place") is a stronger answer than
+    adding it.
+
+---
+
+## Part 18. Infrastructure decisions and trade-offs, in one table
+
+| Decision | Choice made | Why | What would change it |
+|---|---|---|---|
+| One database for metadata, text, vectors and facts | PostgreSQL + pgvector + GIN FTS | Co-located filters, joins and atomic publication; no second store to keep consistent | Measured vector-query or index-maintenance load competing with publication at scale |
+| Exact vs approximate dense retrieval | HNSW online; exact-eligibility retriever for evaluation | ANN meets selective filters badly (the planner bug); evaluation must be a pure function of the query | Recall checks and issuer-scoped partitions at two orders of magnitude more chunks |
+| Hybrid + reranker online vs dense + selector evaluated | Served path unchanged pending G4 | Benchmark found no clear difference; the ticker filter already removes off-issuer passages | API wiring, parity through HTTP, a load test of both paths |
+| Retrieval and answer as separate endpoints | Evidence-only `/v1/retrieve`, evidence-constrained `/v1/research` | The UI reviews evidence; server-side citation validation | A composed `/v1/ask` that carries the pipeline config hash |
+| Ingestion coordination | One Cloud Run task, ≤ 2 in-process workers, advisory locks | Prevents duplicate publication without a queue or coordinator | Measured 100-issuer throughput that exceeds one task's window |
+| Scale-to-zero containers | Cloud Run | Research footprint; zero cost when idle | Fargate has no native scale-to-zero; the plan budgets for always-on tasks or a scheduled scale-down |
+| Observability backend | Vendor-neutral OTel behind a facade; Prometheus and Phoenix locally; Cloud Logging in production | Instrumentation survives a cloud move; nothing can fail a request | Choosing a hosted trace backend after cutover |
+| Cost policy | Start the database only for runs; cap every live model run; archive to Glacier Instant Retrieval | A fixed research budget | A provider spend limit agreed before Phase 4 |
+
+---
+
+## Part 19. Open work and the roadmap
+
+Ordered by what the evidence points at. None is started unless marked.
+
+| Item | What | Why | Gate |
+|---|---|---|---|
+| Migration Phase 0 decisions | Reserve option A (restore GCP, run v2) or B (re-freeze on Claude and AWS); embedding vendor shortlist; reranker keep, replace or remove; region; always-on vs scheduled; secret store | Everything downstream depends on them | Decision |
+| AWS foundation and data migration (Phases 2 to 3) | VPC, ECR, ECS, ALB, RDS PostgreSQL 18 + pgvector, S3, SSM, IAM, CloudWatch as code; restore the dump; copy artifacts; rewrite URIs; exact-dense replay must reproduce frozen top-k | No running system exists today | Phase 0 |
+| Provider-neutral code (Phase 1) | `ClaudeAnswerProvider`, `ClaudeJudgeProvider`, `S3ArtifactStore`, embedding and rerank providers behind settings; keep Vertex classes for replay | Make the swap a flag, not a rewrite | None |
+| Judge v6 on Claude | Same 19-case suite and 40-row packet; pre-registered thresholds; disclose the calibration-label protocol and the loss of temperature 0 | Certification does not transfer | Budget; Phase 4 |
+| Generator and embedding experiments | Pre-registered paired dev160 comparisons against frozen v2 numbers, generator first, embeddings second | They change what the system computes | Judge v6 |
+| Reserve run (G4 step 5) | Run the selected pipeline once on the 32 reserved rows; report dev vs reserve on every metric | The only number that counts for generalisation | Written approval naming the pipeline version |
+| API wiring and parity (G4 steps 1 to 2) | `/v1/research` and `/v1/ask` run the configured pipeline with `numeric_answer()` before generation; config hash in the response header; legacy path behind a flag | The evaluated pipeline must be the shipped pipeline | A running database and a deploy |
+| Load test (G4 step 3) | 1 / 5 / 20 users, both paths: p50/p95/p99, stage latency, error rate, pool saturation, tokens and USD per answer | No production latency or cost number exists | Deploy |
+| Judge v5.5 rules (carried into v6) | Substring-verify `value_quoted` and the period string against the cited passage; tolerance on the answer call's value check; gate the binding rule on a declared source | 12 evidence false accepts; one false reject; the CAT cap in K1 | Pre-registration |
+| Numeric route v4 | Widen the concept map: ProfitLoss for NCI, gross profit, free cash flow, capex, goodwill, inventory, interest expense | The one K2 loss and the G2 abstention causes | Pre-registration |
+| H2 | Relax the ambiguous-metric gate when the question names a statement-typed line item; type note, MD&A and segment tables in the sidecar | 19 of 41 loss rows never reach the statement rule | Pre-registration; 0 USD |
+| FU-3 proper | New corpus version with captions, statement names, inherited units and heading paths prepended before embedding | The only remaining lever on the 30 pool misses and the 41 selection losses | A new contract; coincides naturally with the re-embed |
+| Ingestion scale | Execute the 1 → 5 → 20 → 100 issuer gates on AWS; record filings, chunks, wall time, SEC 429s, embedding cost, publish-to-searchable latency | Honest scale numbers | A running stack |
+| Deploy the monitoring | CloudWatch metric filters and dashboard, log retention, alert delivery | Definitions exist; nothing was ever deployed | Phase 2 |
+
+---
+
+## Part 20. Handover
+
+Reading order for a new engineer: Parts 0 to 3 and Part 12 of this record; the architecture, decisions, failure-mode
+and ingestion rollout documents; the observability architecture, tracing, metrics and runbook documents; the experiment
+pre-registrations and their result reports, with Experiments D, F and K2 as templates; the judge conformance analysis
+and certification records; the production benchmark report and errata; the migration plan and the archive record.
+
+Operating rules to hand over verbatim: branch per experiment; restore the evaluated generator on the experiment branch
+only; pre-register and bind an approval before the first output; never load the reserve; gold never reaches the
+runtime; one change per experiment; exact McNemar plus cluster bootstrap; label every number; keep every run; a
+provider swap is an experiment; do not release the eval-backup holds without written approval.
+
+Costs to budget by: a judge conformance suite about 2.9 USD; a 40-row packet re-score about 2.7 USD; a 78-row judged
+re-score about 5.5 USD; a K-style paired judged experiment on about 20 rows about 2.5 USD; retrieval-only experiments
+0 USD; a full archive restore about 0.75 USD of Glacier retrieval.
+
+The recruiter-facing version is the [case study](/projects/marketlane-research-rag/).
+
+## Appendix A. Glossary
+
+| Term | Meaning |
+|---|---|
+| Complete evidence@k | A question passes when every required evidence group is represented among the top-k passages (chunk-hint proxy on dev160; exact gold on the 11 native rows) |
+| E0 / E0_v2 | Dense top-8 baseline on experimental-50; E0_v2 is the exact, planner-independent version |
+| E5A / E5B / E5-lite | Issuer-aware selector (adopted); metric/period-aware selector (regressed); MMR (neutral) |
+| dev160 / reserve32 | The 160 development rows and 32 reserved rows of `dev_baseline_v1` |
+| Semantic rows / native rows | 149 rows scored by the obligation proxy; 11 rows with exact gold chunk sets |
+| Selection loss / pool miss | Complete in the candidate pool but not in the final 8; not complete anywhere in the pool |
+| Obligation | ANSWER_REQUIRED or EVIDENCE_REQUIRED fact a question needs; modes DIRECT, DERIVED, INFERENCE |
+| Strict multi-hop | H1's result materially determines H2's distinct evidence target |
+| Amendment A1 (retrieval) | Allowed retrieval-only experiments on the proxy after the judge failed |
+| Amendment A1 (G3) | Blind in-project labels, confirmed on review, as the judge calibration reference, disclosed |
+| Pre-registration / approval record | The frozen design and the hash-binding the runner checks |
+| Identity check | Reference arm must equal Experiment A's contexts 160/160 |
+| MeteredProvider | Wrapper enforcing call and USD caps from returned token counts |
+| Numeric route | Deterministic question → issuer/metric/periods → XBRL facts → arithmetic → composed answer, or abstain |
+| Sidecar | Corpus-only derived structure per chunk (statement type, captions, units, years, boilerplate) |
+| Judge v5.4 | `semantic-obligation-judge-v5.4`, `gemini-2.5-pro`, answer-blind evidence call, deterministic post-rules |
+| Atomic publish | Prepare outside the transaction; commit sections, tables, chunks, vectors and metadata together |
+| Advisory claim | Per-document PostgreSQL advisory lock held by the publishing worker |
+| Retrieval-state contract | Fingerprints, settings, provenance and preflight/postflight checks that make a run replayable |
+
+## Appendix B. Key identifiers
+
+| Artifact | Identifier |
+|---|---|
+| Frozen corpus | `19c35c2158a6ccfc13e6f885b7e6f83d6b13ca0bc7ca86ea9eb3996126f371bf` |
+| Dataset release `dev_baseline_v1` | `b7610317…` |
+| Shared dense pool `dense_exact_e2_depth120` | `fd2ae76a…` |
+| E5A selection freeze | `26ccd24326bbb29c9ce777ef13a56c2ae1250ecbc78c9d2664a376703a0be77b` |
+| CompanyFacts store manifest | `bdfe8d37…` (28 tickers) |
+| Pipeline config v1 / v2 | `8272702b19014ab8ca9785961229d2b5fa12024f501586046190ecf42d1df298` / `edb0f62c1f51bdd80049a7017ebe0a2886174a816ceecf726987c8ecb6a26fdb` |
+| Judge v5.4 rubric | `5be76562…`; v5.2 rubric `1dedbdd0…` |
+| Experimental-50 runs | E0 `arch-20261007T044658848864Z-3bd5283f`; E0_v2 `arch-20261007T180013128330Z-638888b8`; E1 `arch-20261007T163128141696Z-7064aa0a`; depth `diag-20261007T172951503463Z-7fcd79ee`; E5-lite `e5lite-20261008T161642164718Z-ceebaab5`; E5 final `e5final-20261008T193621180661Z-e4a22bf1`; production benchmark `prodbench-20261009T045053455569Z-de0746d4` / `prodbench-gen-20261009T050053772539Z-3a8c21c6` |
+| Experiment A / B / C / D / E / F | `A-20261010T062531Z-13111d4f` / `B-20261010T070054596586Z-27e8f1e0` / `C-20261010T070015126529Z-3bdbe422` / `D-20261010T071813Z-2612b0f7` / `E-20261010T110043Z-e41ac885` / `F-20261013T173143Z-23d50af6` |
+| G1 / G1′ / G2 / G2 v2 / H1 / E8 | `G1-20261018T083259Z-099ca750` (`54ee605`) / `G1P-20261018T090159Z-14de5081` (`64874ab`) / `G2-20261018T091450Z-4da0deff` (`540ff5c`) / `G2-20261018T104728Z-20476f47` (`876724d`) / `H1-20261018T104731Z-89b27c89` (`fe626c7`) / `E8pool-20261018T105708Z-3c444c28`, `E8-20261018T110945Z-9b2703b1` (`6f61e14`) |
+| G3 suites and certifications | `g3_conformance_live_v2.json` … `_v8.json`; `g3_certification_v5_2_v1.json`, `g3_certification_v5_4_v1.json` |
+| J1 / J1 v2 / K1 / K2 | `j1_judged_rescore_v1.json` (`461a697`) / `_v2.json` (`a4e3959`) / `k1_numeric_route_pipeline_v1.json` (`fbdad4a`) / `k2_numeric_route_pipeline_v1.json` (`4366a00`, results `c2bbe3a`) |
+| Production database dump | SHA-256 `418d2dce…b201d2`, 20,235,624,340 bytes |
+| Embeddings export | `chunk_embeddings_gemini-embedding-001_768.tsv.gz`, SHA-256 `56c89f8a…82b5af` |
+| Generator upgrade | Gemini 3.1 Pro, 9 October |
+
+## Appendix C. Spend ledger
+
+| Line | Calls | USD |
+|---|---|---:|
+| FU-1 v4 conformance | 130 | 0.14 |
+| G3 v5, v5.1, v5.2 suites and packet scorings | 1,163 | 9.76 |
+| G3 v5.2 packet re-score (certification) | 80 | 2.74 |
+| G3c v5.3, v5.4 suites and v5.4 packet re-score | 1,264 | 11.35 |
+| J1 (v5.2) / J1 v2 (v5.4) | 161 / 167 | 5.51 / 5.45 |
+| K1 / K2 | | 2.66 / 2.37 |
+| Retrieval experiments A–F, G1, G1′, G2, G2 v2, H1, E8 | 0 model calls (221 query embeddings for E8; 28 SEC API reads for G2) | 0 |
+| **Model-call total** | | **about 40** |
+| GCP → S3 archive (one-off) | | about 1.35 |
+| S3 archive (ongoing) | | about 0.25 per month |
+| GCP standing burn before deletion | | about 36 per month |
+
+---
+
+## Companion pages
+
+- [Case study](/projects/marketlane-research-rag/): the ten-minute version for recruiters and founders.
+- [Design document](/projects/marketlane-research-architecture/): the architecture this record measures, including components specified but not yet wired to a public route.
+
