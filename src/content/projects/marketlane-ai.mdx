@@ -15,7 +15,7 @@ stack:
   - "Gemini multimodal"
   - "Claude Sonnet 5.5 / Haiku 5.5"
   - "AWS + Vertex AI"
-  - "Langfuse"
+  - "Langfuse + OpenTelemetry"
 outcome: "v1 in production at 90% top-setup hit rate for about $4.5 per 100-symbol scan; v2 multi-agent ranking in shadow evaluation."
 links:
   - label: "Live product"
@@ -185,9 +185,74 @@ The application runs on AWS. Model inference runs behind a thin gateway against 
 * **Atomic publication.** A ranking is written in full and then a single pointer flips. A failed publish leaves the previous one untouched.
 * **Duplicate delivery is expected.** Idempotency keys, a transactional outbox and conservative accounting for calls that may have run.
 
-### Observability
+## Observability: Langfuse, OpenTelemetry and CloudWatch
 
-Every stage reports request count, tokens, latency percentiles, error and retry rates, structured-output failures and cost, so a cost regression points at a stage. Alongside the system metrics, the scan reports business telemetry: survival rate at the screen, analyst acceptance, critic disagreement, validation contradiction rate and the final-state distribution. Drift in those distributions is how prompt or model changes get caught before users notice.
+A nightly scan is a few hundred model calls spread across queue-driven workers, two cloud providers and three model vendors. When a scan is slow, expensive or wrong, the question is always "which stage, which symbol, which call?". The telemetry is built so that question has a single answer, reachable from any of three entry points.
+
+```text
+                     scan worker / API (Lambda)
+                                │
+        ┌───────────────────────┼────────────────────────┐
+        │                       │                        │
+  OpenTelemetry           Langfuse SDK              EMF metrics + logs
+  TracerProvider +        (built on OTel, shares    (stdout, no extra
+  MeterProvider           the same trace tree)       IAM permissions)
+        │                       │                        │
+   OTLP/HTTP → collector    Langfuse Cloud          CloudWatch metrics,
+   (Grafana, X-Ray,         sessions · traces ·     dashboard, alarms,
+    Honeycomb, …)           generations · scores    Logs Insights
+        │                       │                        │
+        └─── same trace id ─────┘        run_id / stage attempt records
+```
+
+### One trace tree
+
+The application registers one global OpenTelemetry tracer and meter provider. The Langfuse SDK is itself built on OpenTelemetry and attaches its span processor to whatever provider is registered, so a Langfuse generation and the OTel spans around it are the same trace with the same trace id. Nothing is instrumented twice.
+
+The span hierarchy follows the pipeline:
+
+| Span | What it wraps | Key attributes |
+| --- | --- | --- |
+| Worker invocation | One queue message, including continuations after a Lambda soft deadline | run id, continuation flag, worker result |
+| Scan stage | One stage attempt for one symbol: screen, analyst, validator, critic, resolver | stage, symbol, attempt, status, artifact reference |
+| Model request | One structured call to a provider | `gen_ai.system`, requested and served model, finish reason, token usage, cache read and write tokens, thinking and effort settings, fallback used, error type |
+
+Model spans use the OpenTelemetry GenAI semantic conventions where they exist, with MarketLane-specific attributes namespaced separately. The served model is recorded from the provider response, never from configuration, which is how a silent provider-side model swap gets noticed.
+
+### Metrics with the right dimensions
+
+Counters and histograms are emitted from the same instrumentation: model calls, input tokens, output tokens, estimated USD, and a stage-latency histogram. Every one is dimensioned by stage, model, status and environment. That is the difference between "cost went up 30%" and "the critic's cache-read ratio dropped after Tuesday's prompt change". Symbols, run ids and user ids are deliberately kept out of metric dimensions and live in structured logs and traces instead, so cardinality stays bounded.
+
+### Langfuse as the AI-specific lens
+
+Langfuse carries what a generic tracing backend does not model well: prompt versions, structured-output schemas, per-generation token and cache accounting, and scores.
+
+* **Sessions keyed by run id.** Each daily scan creates one root trace, and every model generation in that scan records the same session id. Opening a session shows the scan-level funnel beside its per-symbol generations.
+* **Scores make operations filterable.** Alerts written, AI calls, cache hits, fallbacks, error count and estimated cost are attached to the root trace as numeric scores, so a week of scans can be sorted by cost or fallback rate without leaving Langfuse.
+* **Stage events for shadow experiments.** Frozen-snapshot experiment runs log one event per stage attempt with outcome, elapsed time, served model and tokens, and carry the OTel trace id so the same attempt can be opened in the OTLP backend.
+* **Redaction by default.** Prompts, chart images and parsed model outputs are replaced by a hash and an approximate byte size before leaving the process. Full capture is a separate explicit flag, off in every deployed environment, because scan prompts contain user-supplied notes and pasted fundamentals.
+
+### CloudWatch as the paging source
+
+Langfuse and the OTLP backend are for diagnosis. Paging comes from CloudWatch, where the signals are cheapest and closest to the infrastructure.
+
+* **Native metrics** for API Gateway 5xx, Lambda errors, throttles and near-timeout durations, queue age and dead-letter depth, and database storage and connections.
+* **Embedded Metric Format** from stdout for application metrics: API latency and errors, model calls, tokens, estimated cost and fallbacks, market-data failures, scan outcomes and the count of stale active scans. Emitting through logs means the functions need no extra metrics permission.
+* **A scan watchdog** on a five-minute schedule reads the database and emits a stuck-scan metric for runs that have been queued or running past a threshold. It never starts or cancels scans.
+* **Alarms are opt-in** and only notify through an SNS topic that already has an on-call subscription. The stack never creates an unowned alert route.
+
+Initial SLOs are operational targets rather than customer commitments: API availability and p95 latency, scans finalized within a window of starting, queue age, model fallback rate and market-data failure rate, each reviewed against two weeks of staging baseline before thresholds are tightened.
+
+### Cost accounting that matches the bill
+
+Every priced provider call made under a stage checkpoint is written to a spend ledger with model, uncached, cache-read, cache-write and output tokens, and USD at published rates, including the TTL multiplier for prompt-cache writes. A budget policy enforces a hard programme cap and a per-experiment cap: launch is refused when the per-symbol estimate exceeds the remainder, and every call re-checks the ledger. Exhaustion is a terminal, recorded run status, not an exception in a log. The provider console remains the billing authority; the ledger exists so that the cost figures on this page can be attributed to stages and models.
+
+### Rules the telemetry follows
+
+* **Fail open.** A Langfuse or OTLP outage never changes a stage checkpoint, retry or scan outcome. With the flags off, the no-op tracer is used and spans cost nothing.
+* **Flush before freeze.** Workers flush batched spans and metrics before returning, so a Lambda freeze does not drop the tail of a scan.
+* **Secrets stay out of config.** Langfuse credentials are loaded at runtime from a secrets manager entry whose ARN is the only thing in infrastructure state. Roles get read access to that one entry.
+* **Cross-link everything.** Stage-attempt records in the database carry the trace id. From a bad row in the UI you can reach the Langfuse generation, the OTel span and the CloudWatch log line.
 
 ## Evaluation
 
