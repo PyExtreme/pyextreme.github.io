@@ -1,0 +1,330 @@
+---
+// Interactive comparison of the three MarketLane scan-pipeline generations (v0, v1, v2).
+// Each version is a `data-version` state on the figure; CSS swaps the pipeline, the script only toggles state.
+type Kind = 'code' | 'cheap' | 'multi' | 'reason';
+type Stage = { label: string; kind: Kind; note?: string };
+type Version = {
+	id: string;
+	name: string;
+	status: string;
+	statusKind: 'retired' | 'prod' | 'shadow';
+	summary: string;
+	calls: string;
+	stages: (Stage | Stage[])[];
+};
+
+const versions: Version[] = [
+	{
+		id: 'v0',
+		name: 'v0 · Prefilter + single shot',
+		status: 'Retired',
+		statusKind: 'retired',
+		summary: 'One structured LLM call per symbol over a feature packet built in code. Heavy caching kept it cheap, but one model had to discover, judge and explain in a single pass.',
+		calls: '1 model call per symbol',
+		stages: [
+			{ label: 'Deterministic prefilter', kind: 'code', note: 'universe → ~100' },
+			{ label: 'Feature packet', kind: 'code', note: 'trend · volume · levels' },
+			{ label: 'Single-shot analyst', kind: 'reason', note: 'one structured call' },
+			{ label: 'Cache + persist', kind: 'code', note: 'snapshot-keyed' },
+			{ label: 'UI', kind: 'code', note: 'structured verdict' },
+		],
+	},
+	{
+		id: 'v1',
+		name: 'v1 · Discover, analyze, validate, criticize',
+		status: 'In production',
+		statusKind: 'prod',
+		summary: 'A high-recall screen, a multimodal analyst reading daily and weekly charts, a deterministic validator over every measurable claim, and an adversarial critic. Code resolves the final state.',
+		calls: '3 to 4 model calls per surviving symbol',
+		stages: [
+			{ label: 'Deterministic prefilter', kind: 'code', note: 'universe → ~100' },
+			{ label: 'High-recall screen', kind: 'cheap', note: 'batched · KEEP / BORDERLINE' },
+			{ label: 'Chart generation', kind: 'code', note: 'daily + weekly' },
+			{ label: 'Multimodal analyst', kind: 'multi', note: 'reads the charts' },
+			{ label: 'Validator', kind: 'code', note: 'recomputes claims' },
+			{ label: 'Adversarial critic', kind: 'cheap', note: 'hunts weaknesses' },
+			{ label: 'State resolver', kind: 'code', note: 'code decides' },
+		],
+	},
+	{
+		id: 'v2',
+		name: 'v2 · Multi-agent analysis and ranking',
+		status: 'Shadow evaluation',
+		statusKind: 'shadow',
+		summary: 'Independent technical and fundamental analysts, a risk manager backed by a deterministic risk engine, a critic, a verifier, one bounded correction cycle, then deterministic universe-level ranking.',
+		calls: '5 model calls per symbol, up to 10 with correction',
+		stages: [
+			{ label: 'Freeze evidence', kind: 'code', note: 'as-of cutoff · hashes' },
+			[
+				{ label: 'Technical agent', kind: 'reason' },
+				{ label: 'Fundamental agent', kind: 'reason' },
+			],
+			{ label: 'Risk engine + manager', kind: 'code', note: 'code sizes, model advises' },
+			{ label: 'Critic', kind: 'cheap', note: 'challenges all three reports' },
+			{ label: 'Verifier', kind: 'code', note: 'facts in code, semantics in model' },
+			{ label: 'Resolver + ranking', kind: 'code', note: 'never an LLM' },
+		],
+	},
+];
+
+// Measured on the same ~100-symbol NSE universe. Ranges are shown as text; bars use the midpoint.
+type Metric = { key: string; label: string; unit: string; better: 'higher' | 'lower'; max: number; values: Record<string, { v: number; text: string; opt?: string }> };
+const metrics: Metric[] = [
+	{
+		key: 'hit',
+		label: 'Top-setup hit rate',
+		unit: 'star-weighted, % of the day\'s top setups found',
+		better: 'higher',
+		max: 100,
+		values: {
+			v0: { v: 83, text: '81 to 85%' },
+			v1: { v: 90, text: '90%' },
+			v2: { v: 87.5, text: '87 to 88%' },
+		},
+	},
+	{
+		key: 'cost',
+		label: 'Cost per 100-symbol scan',
+		unit: 'USD, model spend',
+		better: 'lower',
+		max: 9,
+		values: {
+			v0: { v: 1.4, text: '$1.4' },
+			v1: { v: 4.5, text: '$4.5', opt: '$2.0 with web search off' },
+			v2: { v: 8, text: '$7 to 9' },
+		},
+	},
+	{
+		key: 'wall',
+		label: 'Wall clock, 100 symbols',
+		unit: 'minutes, two workers in parallel',
+		better: 'lower',
+		max: 60,
+		values: {
+			v0: { v: 8, text: '8 min' },
+			v1: { v: 17, text: '17 min', opt: '9 min with setup gate + small-model critic' },
+			v2: { v: 55, text: '55 min', opt: '20 to 25 min with gate, fundamentals after technical pass' },
+		},
+	},
+];
+const kinds: { kind: Kind; label: string }[] = [
+	{ kind: 'code', label: 'Deterministic code' },
+	{ kind: 'cheap', label: 'Small model' },
+	{ kind: 'multi', label: 'Multimodal model' },
+	{ kind: 'reason', label: 'Reasoning model' },
+];
+---
+
+<figure class="ml" data-ml data-version="v1">
+	<figcaption class="ml-head">
+		<span class="ml-eyebrow">Interactive · three pipeline generations · same NSE universe</span>
+		<div class="ml-seg" role="group" aria-label="Pipeline version">
+			{versions.map((v) => (
+				<button type="button" data-version={v.id} aria-pressed={v.id === 'v1' ? 'true' : 'false'}>
+					<i class={`ml-dot ${v.id}`} aria-hidden="true"></i>{v.id}
+				</button>
+			))}
+		</div>
+	</figcaption>
+
+	{versions.map((v) => (
+		<div class="ml-panel" data-panel={v.id}>
+			<div class="ml-title">
+				<h4>{v.name}</h4>
+				<span class={`ml-status ${v.statusKind}`}>{v.status}</span>
+			</div>
+			<p class="ml-summary">{v.summary}</p>
+			<div class="ml-pipe" role="list" aria-label={`${v.id} pipeline stages`}>
+				{v.stages.map((s, i) => (
+					<>
+						{i > 0 && <span class="ml-arrow" aria-hidden="true"></span>}
+						{Array.isArray(s) ? (
+							<div class="ml-par" role="listitem" aria-label="in parallel">
+								{s.map((p) => (
+									<div class={`ml-stage ${p.kind}`}>
+										<span class="ml-stage-label">{p.label}</span>
+										{p.note && <span class="ml-stage-note">{p.note}</span>}
+									</div>
+								))}
+								<span class="ml-par-tag">parallel</span>
+							</div>
+						) : (
+							<div class={`ml-stage ${s.kind}`} role="listitem">
+								<span class="ml-stage-label">{s.label}</span>
+								{s.note && <span class="ml-stage-note">{s.note}</span>}
+							</div>
+						)}
+					</>
+				))}
+			</div>
+			<p class="ml-calls">{v.calls}</p>
+		</div>
+	))}
+
+	<div class="ml-legend" aria-label="Stage types">
+		{kinds.map((k) => (
+			<span><i class={`ml-sw ${k.kind}`}></i>{k.label}</span>
+		))}
+	</div>
+
+	<div class="ml-metrics">
+		<div class="ml-metrics-head">
+			<span class="ml-eyebrow">Measured trade-offs</span>
+			<span class="ml-vlegend" aria-label="Versions">
+				{versions.map((v) => (
+					<span><i class={`ml-dot ${v.id}`}></i>{v.id}</span>
+				))}
+			</span>
+		</div>
+		{metrics.map((m) => (
+			<div class="ml-metric">
+				<div class="ml-metric-label">
+					<span class="ml-metric-name">{m.label}</span>
+					<span class="ml-metric-unit">{m.unit} · {m.better} is better</span>
+				</div>
+				<div class="ml-bars">
+					{versions.map((v) => {
+						const val = m.values[v.id];
+						return (
+							<div class="ml-bar-row" data-for={v.id}>
+								<span class="ml-bar-id">{v.id}</span>
+								<span class="ml-bar-track"><span class={`ml-bar ${v.id}`} style={`width:${(val.v / m.max) * 100}%`}></span></span>
+								<span class="ml-bar-val">{val.text}{val.opt && <em> · {val.opt}</em>}</span>
+							</div>
+						);
+					})}
+				</div>
+			</div>
+		))}
+	</div>
+
+	<table class="ml-table">
+		<caption>Same data as a table</caption>
+		<thead>
+			<tr><th>Version</th>{metrics.map((m) => <th>{m.label}</th>)}</tr>
+		</thead>
+		<tbody>
+			{versions.map((v) => (
+				<tr><th>{v.id}</th>{metrics.map((m) => <td>{m.values[v.id].text}{m.values[v.id].opt && ` (${m.values[v.id].opt})`}</td>)}</tr>
+			))}
+		</tbody>
+	</table>
+</figure>
+
+<style is:global>
+	.ml {
+		--ml-v0: #8a4fbf;
+		--ml-v1: #6c8b12;
+		--ml-v2: #2150c2;
+		--ml-code: var(--ink);
+		--ml-cheap: #a55e00;
+		--ml-multi: #2150c2;
+		--ml-reason: #8a4fbf;
+		margin: 2.4em 0;
+		padding: 20px 20px 16px;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: #fff;
+		color: var(--ink);
+		font-size: 15px;
+		line-height: 1.5;
+	}
+	.ml-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-bottom: 18px; }
+	.ml-eyebrow { font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+	.ml-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+	.ml-seg button { display: inline-flex; align-items: center; gap: 7px; font: 500 12px/1.2 var(--font-mono); border: 0; border-right: 1px solid var(--line-strong); background: transparent; color: var(--ink-soft); padding: 8px 14px; cursor: pointer; }
+	.ml-seg button:last-child { border-right: 0; }
+	.ml-seg button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+	.ml-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+	.ml-dot.v0 { background: var(--ml-v0); }
+	.ml-dot.v1 { background: var(--ml-v1); }
+	.ml-dot.v2 { background: var(--ml-v2); }
+
+	.ml-panel { display: none; }
+	.ml[data-version='v0'] .ml-panel[data-panel='v0'],
+	.ml[data-version='v1'] .ml-panel[data-panel='v1'],
+	.ml[data-version='v2'] .ml-panel[data-panel='v2'] { display: block; }
+	.ml[data-animate] .ml-panel { animation: ml-in 0.35s ease; }
+	@keyframes ml-in { from { opacity: 0; transform: translateY(4px); } }
+	.ml-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
+	.ml-title h4 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.015em; color: var(--ink); }
+	.ml-status { padding: 3px 9px; border-radius: 999px; font: 600 10.5px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+	.ml-status.retired { background: var(--paper-2); color: var(--muted); }
+	.ml-status.prod { background: color-mix(in srgb, var(--ml-v1) 16%, transparent); color: #4e6509; }
+	.ml-status.shadow { background: color-mix(in srgb, var(--ml-v2) 12%, transparent); color: var(--ml-v2); }
+	.ml-summary { margin: 0 0 16px; color: var(--ink-soft); font-size: 14.5px; max-width: 68ch; }
+
+	.ml-pipe { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+	.ml-stage { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 8px 11px; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 7px; background: #fff; }
+	.ml-stage.code { border-left-color: var(--ml-code); }
+	.ml-stage.cheap { border-left-color: var(--ml-cheap); background: color-mix(in srgb, var(--ml-cheap) 7%, #fff); }
+	.ml-stage.multi { border-left-color: var(--ml-multi); background: color-mix(in srgb, var(--ml-multi) 7%, #fff); }
+	.ml-stage.reason { border-left-color: var(--ml-reason); background: color-mix(in srgb, var(--ml-reason) 7%, #fff); }
+	.ml-stage-label { font: 600 12.5px/1.3 var(--font-sans); color: var(--ink); }
+	.ml-stage-note { font: 400 11px/1.3 var(--font-mono); color: var(--muted); }
+	.ml-arrow { align-self: center; width: 14px; height: 2px; background: var(--line-strong); position: relative; flex: 0 0 auto; }
+	.ml-arrow::after { content: ''; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left: 5px solid var(--line-strong); }
+	.ml-par { position: relative; display: grid; gap: 6px; padding: 8px; border: 1px dashed var(--line-strong); border-radius: 9px; }
+	.ml-par-tag { position: absolute; top: -8px; left: 10px; padding: 0 5px; background: #fff; font: 500 10px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+	.ml-calls { margin: 12px 0 0; font: 500 11.5px/1.4 var(--font-mono); color: var(--muted); }
+
+	.ml-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); }
+	.ml-legend span { display: inline-flex; align-items: center; gap: 6px; }
+	.ml-sw { display: inline-block; width: 14px; height: 10px; border: 1.5px solid var(--line); border-left-width: 4px; border-radius: 3px; }
+	.ml-sw.code { border-left-color: var(--ml-code); }
+	.ml-sw.cheap { border-left-color: var(--ml-cheap); background: color-mix(in srgb, var(--ml-cheap) 10%, #fff); }
+	.ml-sw.multi { border-left-color: var(--ml-multi); background: color-mix(in srgb, var(--ml-multi) 10%, #fff); }
+	.ml-sw.reason { border-left-color: var(--ml-reason); background: color-mix(in srgb, var(--ml-reason) 10%, #fff); }
+
+	.ml-metrics { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); display: grid; gap: 16px; }
+	.ml-metrics-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; }
+	.ml-vlegend { display: inline-flex; gap: 12px; font: 500 12px/1 var(--font-mono); color: var(--ink-soft); }
+	.ml-vlegend span { display: inline-flex; align-items: center; gap: 5px; }
+	.ml-metric { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); gap: 8px 20px; align-items: start; }
+	.ml-metric-label { display: grid; gap: 2px; }
+	.ml-metric-name { font-size: 14px; font-weight: 700; color: var(--ink); }
+	.ml-metric-unit { font: 400 11px/1.4 var(--font-mono); color: var(--muted); }
+	.ml-bars { display: grid; gap: 5px; }
+	.ml-bar-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1.4fr); align-items: center; gap: 10px; transition: opacity 0.25s; }
+	.ml[data-version='v0'] .ml-bar-row:not([data-for='v0']),
+	.ml[data-version='v1'] .ml-bar-row:not([data-for='v1']),
+	.ml[data-version='v2'] .ml-bar-row:not([data-for='v2']) { opacity: 0.55; }
+	.ml-bar-id { font: 500 11.5px/1 var(--font-mono); color: var(--ink-soft); }
+	.ml-bar-track { display: block; height: 14px; background: var(--paper-2); border-radius: 0 4px 4px 0; overflow: hidden; }
+	.ml-bar { display: block; height: 100%; border-radius: 0 4px 4px 0; transition: width 0.6s cubic-bezier(0.2, 0.7, 0.2, 1); }
+	.ml-bar.v0 { background: var(--ml-v0); }
+	.ml-bar.v1 { background: var(--ml-v1); }
+	.ml-bar.v2 { background: var(--ml-v2); }
+	.ml-bar-val { font: 600 12.5px/1.3 var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+	.ml-bar-val em { font-style: normal; font-weight: 400; color: var(--muted); }
+
+	.ml-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+	@media (max-width: 720px) {
+		.ml-metric { grid-template-columns: 1fr; gap: 6px; }
+		.ml-bar-row { grid-template-columns: 24px minmax(0, 1fr); }
+		.ml-bar-val { grid-column: 2; }
+	}
+	@media (max-width: 640px) {
+		.ml { padding: 14px 12px 12px; }
+		.ml-pipe { flex-direction: column; align-items: stretch; }
+		.ml-arrow { width: 2px; height: 12px; margin-left: 16px; }
+		.ml-arrow::after { right: -3px; top: auto; bottom: -1px; border: 4px solid transparent; border-top: 5px solid var(--line-strong); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.ml-panel, .ml-bar, .ml-bar-row { animation: none; transition: none; }
+	}
+</style>
+
+<script>
+	for (const fig of document.querySelectorAll<HTMLElement>('[data-ml]')) {
+		const buttons = fig.querySelectorAll<HTMLButtonElement>('.ml-seg button');
+		for (const b of buttons) {
+			b.addEventListener('click', () => {
+				fig.dataset.version = b.dataset.version;
+				fig.dataset.animate = '';
+				for (const o of buttons) o.setAttribute('aria-pressed', o === b ? 'true' : 'false');
+			});
+		}
+	}
+</script>
