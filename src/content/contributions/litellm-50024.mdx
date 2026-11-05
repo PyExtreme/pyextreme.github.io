@@ -1,0 +1,124 @@
+---
+title: "Keeping Azure reasoning intact on LiteLLM's /v1/messages route"
+description: "A routing fix so Azure deployments that already speak the Responses API are sent straight to the Responses adapter from /v1/messages, which keeps encrypted reasoning across tool-call turns."
+lede: "Azure Responses deployments reached through /v1/messages lost the model's encrypted reasoning on every follow-up turn, because the request detoured through chat completions on the way. The obvious fix, adding Azure to the direct-route list, would also have moved every plain Azure chat deployment, so the work was finding the narrower condition."
+project: "LiteLLM"
+repository: "BerriAI/litellm"
+repositoryUrl: "https://github.com/BerriAI/litellm"
+issueNumber: "#50024"
+contributionType: "Bug fix"
+technicalArea: "LLM gateway / provider routing"
+status: "PR Open"
+prMerged: false
+date: "2026-11-04"
+complexity: "Medium"
+issueUrl: "https://github.com/BerriAI/litellm/issues/50024"
+prUrl: "https://github.com/BerriAI/litellm/pull/50068"
+stack:
+  - "Python"
+  - "pytest"
+  - "respx"
+  - "Azure OpenAI"
+  - "OpenAI Responses API"
+shortSummary: "Added a two-line Azure branch to _should_route_to_responses_api so a deployment that already resolves to Responses mode goes direct to the Responses adapter and replays encrypted reasoning. Plain Azure chat deployments stay on chat. Verified at the wire with respx; no live Azure run was possible, and that is stated in the PR."
+concepts:
+  - "Routing predicates"
+  - "Scoping a fix to the failing path"
+  - "Asserting on the wire body"
+  - "Reading history before reverting"
+  - "Stating what was not verified"
+---
+
+## Context: two ways a Messages request can reach a Responses model
+
+[LiteLLM](https://github.com/BerriAI/litellm) exposes an Anthropic-format `/v1/messages` endpoint in front of many providers. For a model served over OpenAI's Responses API there are two routes inside `litellm/llms/anthropic/messages/native/handler.py`. The direct route sends the request to a Responses adapter. The other converts Messages to Chat Completions and calls `litellm.completion`, which may itself bridge back to Responses for models that need it.
+
+`_should_route_to_responses_api` picks between them. A provider in `_RESPONSES_API_PROVIDERS`, which is just `{"openai"}`, always goes direct. Other providers go direct only when stripping the provider prefix would lose the Responses mode.
+
+Reasoning models return an encrypted reasoning blob that the client must send back on the next turn after a tool call. LiteLLM carries it inside the thinking block's `signature`. [Issue #50024](https://github.com/BerriAI/litellm/issues/50024) reported that for Azure it was being dropped.
+
+## Symptom: turn two arrives at Azure with no reasoning
+
+With an Azure deployment like `azure/responses/<deployment>`, or any Azure deployment pinned to `model_info.mode: responses`, a two-turn tool call sends the second turn to `/openai/v1/responses` with zero reasoning items and no `include: ["reasoning.encrypted_content"]`. The model has to rebuild its reasoning from nothing.
+
+I ran the issue's script, with its import path updated to the module's new location, on main:
+
+```
+azure/responses/gpt-5.6-terra default
+   .../openai/v1/responses?api-version=v1 reasoning items: 0 include: None
+azure/responses/gpt-5.6-terra with azure in set
+   .../openai/v1/responses?api-version=v1 reasoning items: 1 include: ['reasoning.encrypted_content']
+azure/gpt-5.6-terra default
+   .../openai/v1/chat/completions reasoning items: 0 include: None
+azure/gpt-5.6-terra with azure in set
+   .../openai/v1/responses?api-version=v1 reasoning items: 1 include: ['reasoning.encrypted_content']
+```
+
+![Before: an Azure Responses deployment goes from the Messages request through the chat adapter, which strips the thinking block, and the chat-to-Responses bridge, so Azure receives zero reasoning items. After: it goes through the direct Responses route and Azure receives the original reasoning item plus the include flag. Plain Azure chat deployments stay on chat](/images/litellm-50024/azure-routing.svg)
+
+Both URLs for the first row end at `/responses`, which matters later: the URL is the same before and after the fix, so a test that only checks the path cannot see the bug.
+
+## Root cause: the detour strips the signature and never asks for it back
+
+For `azure/responses/gpt-5.6-terra` the resolved model is `responses/gpt-5.6-terra`, which still resolves to Responses mode, so the prefix-strip check returns false and the request takes the chat detour. On the way, the Messages-to-Chat adapter drops bridge-tagged thinking blocks on purpose, and the chat-to-Responses bridge it ends in never sets `include: reasoning.encrypted_content`. The direct adapter does both correctly for any provider whose Responses config supports `include`, and Azure's does.
+
+## Constraints: the suggested fix moves too much
+
+The issue suggests adding `"azure"` to `_RESPONSES_API_PROVIDERS`. The last row of the output above shows why that is not safe: a plain `azure/gpt-5.6-terra` chat deployment also moves from `/chat/completions` to `/responses`. Many Azure deployments are chat-only, older API versions among them.
+
+The history agrees. Azure was in that set when it was introduced and was removed again in commit `99c62ca40e`, with no reason stated in the commit, and the test for `azure/o1` was updated in the follow-up to expect `litellm.completion`. Whatever the reason, the existing tests pin the current behavior, and putting Azure back would fail three of them.
+
+## Design: go direct only when the deployment already resolves to Responses
+
+I compared four options before writing code, in a design review that approved the plan with changes to the tests:
+
+- **Add `"azure"` to the provider set.** Rejected: moves every Azure chat deployment and reverts a deliberate change.
+- **Early return for Azure that reuses the existing bridge check.** Chosen. `_bridges_to_responses_api` is the same `responses_api_bridge_check` that `litellm.completion` runs, so only requests that were already going to end up at `/responses` move, and they skip the lossy detour.
+- **The same for every provider.** Deferred. It would change routing for around eight providers (ChatGPT, GitHub Copilot, Bedrock Mantle, xAI and others), which is a product decision, not a bug fix.
+- **Stop stripping thinking blocks in the Messages-to-Chat adapter.** Rejected: the adapter cannot know whether `completion` will bridge, and stripping protects Gemini and Bedrock.
+
+I put the check inside `_should_route_to_responses_api` rather than in the Azure call site, so the dispatcher's route lookup and the proxy's token counting make the same choice as inference does. I used an early return for Azure instead of an extra clause, because for Azure the prefix-strip check can never disagree with the bridge check (the reviewer checked all 319 Azure rows in the cost map), and the early return avoids a second model-info lookup. The opt-out flag, `stop_sequences` and compaction exclusions above it still apply first.
+
+## The fix: two lines
+
+```python
+    if custom_llm_provider is None or requested_model is None or resolved_model is None:
+        return False
+    if custom_llm_provider == LlmProviders.AZURE.value:
+        return _bridges_to_responses_api(resolved_model, custom_llm_provider, deployment_model_info)
+    return _responses_mode_is_lost_by_prefix_strip(
+        requested_model, resolved_model, custom_llm_provider, deployment_model_info
+    )
+```
+
+A deployment with the `responses/` prefix, a `model_info.mode: responses` pin, or a cost-map row with `mode: responses` now goes direct. A `mode: chat` pin and a plain deployment stay on chat.
+
+## Verification: assert on the body, because the URL does not change
+
+The review pointed out that at base the request already reaches `/responses`, so the test has to assert on the body. I wrote `test_azure_responses_deployments_replay_encrypted_reasoning` first, cutting the connection at the wire with `respx` so nothing leaves the process. Each case runs streaming and non-streaming, and checks the URL path, the exact `encrypted_content` of the replayed reasoning item, and the `include` list.
+
+| Deployment | Expected route | Reasoning replayed |
+| --- | --- | --- |
+| `azure/responses/qa-deployment` | `/responses` | Yes |
+| `azure/qa-deployment` pinned `mode: responses` | `/responses` | Yes |
+| `azure/qa-responses-row`, a synthetic cost-map row | `/responses` | Yes |
+| The same row pinned `mode: chat` | `/chat/completions` | No |
+| Plain `azure/qa-deployment` | `/chat/completions` | No |
+
+At base the six responses-mode cases fail on the body assertion (`{()} == {('qa-opaque-reasoning',)}`) and the four chat cases pass, so the chat cases guard against the rejected option. With the fix the new test gives 10 passed and the whole file 112 passed. A broader run over the Anthropic, Rust bridge, token counter and Responses test directories passed about 7,500 tests, and the failures that remained are a subset of the failures on main, which are the existing ones. Three mutations were caught: checking `requested_model` instead of `resolved_model` fails the prefix case, dropping the deployment `model_info` fails the pin cases, and sending every Azure deployment direct fails both chat cases.
+
+What this does not show: I have no Azure credentials, so I did not run a two-turn tool call against a real Azure Responses deployment. The tests prove what LiteLLM sends, not that Azure accepts it, and the PR says so and asks for a maintainer with a deployment to confirm. The CI run on the PR is still pending.
+
+## Risks left on the table
+
+- **A gap this does not close.** A plain Azure deployment of a newer model with function tools and reasoning is still routed to chat and bridged dynamically inside `completion`, with zero reasoning items. Pinning `model_info.mode: responses` on that deployment works around it.
+- **A new exposure.** Azure-issued encrypted reasoning is now replayed, so a group spread over several Azure resources should turn on `encrypted_content_affinity`, the same exposure multi-organization OpenAI groups already have.
+- **Request shape.** Moved requests now get the direct path's body, for example tool `strict` becoming `false` and tool output sent as a string.
+
+## Core concepts this exercised
+
+- **Scope the fix to the failing path.** The suggested one-line change fixed the repro and also moved traffic that was never broken. Reusing the check `completion` already runs kept the change to requests that were already headed for Responses.
+- **Read history before reverting it.** Azure had been in the set and was taken out on purpose. Finding that, and the tests that pin it, ruled out the simplest fix.
+- **Assert on what goes over the wire.** When the URL is identical before and after, only the request body shows the difference. The tests assert on the exact encrypted payload and the `include` list.
+- **Put the decision where every caller sees it.** Fixing `_should_route_to_responses_api` keeps dispatch and token counting consistent with inference.
+- **Say what was not verified.** Without Azure credentials the proof is wire-level, and the PR text names that gap and what a maintainer would need to run.

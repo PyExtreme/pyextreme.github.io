@@ -1,0 +1,145 @@
+---
+title: "Stop caching empty streamed replies in LiteLLM's /v1/messages"
+description: "A fix to LiteLLM's response cache so an empty streamed /v1/messages reply from a non-Anthropic model is no longer stored and replayed to every identical request."
+lede: "One empty reply from Gemini through /v1/messages got cached, and every identical request after it replayed the empty answer without reaching the provider again. The cache decided a stream had output if any content block was opened, so the fix had to read what was inside the block without starting to reject real streams that look empty."
+project: "LiteLLM"
+repository: "BerriAI/litellm"
+repositoryUrl: "https://github.com/BerriAI/litellm"
+issueNumber: "#49931"
+contributionType: "Bug fix"
+technicalArea: "LLM gateway / response caching"
+status: "PR Open"
+prMerged: false
+date: "2026-11-04"
+complexity: "Medium"
+issueUrl: "https://github.com/BerriAI/litellm/issues/49931"
+prUrl: "https://github.com/BerriAI/litellm/pull/50057"
+stack:
+  - "Python"
+  - "pytest"
+  - "Redis"
+  - "Server-sent events"
+  - "Pydantic"
+shortSummary: "Replaced the Anthropic Messages stream 'has output' check in the LiteLLM response cache with one that reads each content block's payload, so an empty text block is no longer cached or replayed. Stored empty entries now count as misses too. Checked with unit tests, an 8-mutant run, and a live two-worker proxy against a scripted Gemini upstream."
+concepts:
+  - "Cache admission policy"
+  - "Streaming protocol parsing"
+  - "Over-tightening guards"
+  - "Mutation testing"
+  - "Read-side and write-side invariants"
+---
+
+## Context: a gateway that speaks Anthropic to every provider
+
+[LiteLLM](https://github.com/BerriAI/litellm) is a gateway that exposes one API in front of many model providers. Its `/v1/messages` endpoint speaks Anthropic's Messages format, and for a provider like Gemini an adapter translates the Gemini stream into Messages server-sent events: `message_start`, `content_block_start`, `content_block_delta`, `content_block_stop`, `message_delta`, `message_stop`.
+
+The proxy can sit a response cache (Redis, in my runs) in front of that. A streamed reply is stored as the list of SSE frames it was sent as, under `CACHED_STREAM_EVENTS_KEY`, and replayed on an identical request. Before storing and before serving, `is_response_without_output` in `litellm/caching/caching_handler.py` decides whether the payload is worth keeping, so a reply with nothing in it is not remembered.
+
+[Issue #49931](https://github.com/BerriAI/litellm/issues/49931) reported that for a Gemini model that check was letting an empty reply through.
+
+## Symptom: one empty answer, then the provider is never asked again
+
+When Gemini returns a single empty text part, the adapter still emits a text block with `"text": ""`, opens it and closes it. The client sees an empty answer, which is bad enough. With the cache on it gets worse: the second identical request comes back with the same empty stream and an `x-litellm-cache-key` header, and the provider is not called at all.
+
+I reproduced it with the issue's script against a small mock Gemini server that counts requests:
+
+```
+$ uv run python .oss/49931/repro.py empty
+call 1 events: ['message_start', 'content_block_start', 'content_block_stop', 'message_delta', 'message_stop']
+call 2 events: ['message_start', 'content_block_start', 'content_block_stop', 'message_delta', 'message_stop']
+requests to the server: 1        <- should be 2
+
+$ uv run python .oss/49931/repro.py text      (control, reply "hello")
+requests to the server: 1        <- correct, real answers are cached
+```
+
+![A provider returns an empty text block. The old cache check sees a content block start and stores it, so every repeat is replayed with no provider call. The new check reads the block payload, finds it empty and skips it, so the retry reaches the provider](/images/litellm-49931/empty-stream-cache.svg)
+
+Two comparison paths mattered for scoping. `litellm.acompletion(stream=True)` with the same empty reply was already not cached (2 server hits), and a non-streaming `acompletion()` with an empty choice is cached on purpose, pinned by `test_chat_answers_with_a_choice_but_no_text_are_still_cached`. So the gap was specifically the Messages stream.
+
+## Root cause: a block was opened, so it counted as output
+
+In `caching_handler.py`, `_starts_content_block` returned true for any frame containing the line `event: content_block_start`, and `is_response_without_output` said a Messages stream has output if any frame did. The adapter's empty text block is a `content_block_start` followed by a `content_block_stop`, so it passed.
+
+That check runs on both sides. `AnthropicMessagesStreamCacheWriter._persist` in `llms/anthropic/messages/native/response_cache.py` calls it before storing, and the sync and async read paths treat a stored no-output payload as a miss. The chat-stream rule next to it was stricter: a choice carries output only if a field other than `role` holds a non-empty value. The Messages check was simply coarser than the bar chat already used.
+
+## Constraints: tightening the check without breaking real streams
+
+The tempting fix is "skip a stream if its text is empty". Several real streams look empty to that rule:
+
+- **Tool calls.** A `tool_use` block starts with `"input": {}` and an `input_json_delta` with `"partial_json": ""`. There is no text anywhere, and it is a real answer that must stay cached.
+- **Line endings.** A stream cached as one chunk with CRLF line endings has to keep working, which rules out anything that assumes one frame per event.
+- **Unicode.** `str.splitlines` also splits on U+2028, so text containing that character gets cut in the middle of a JSON line.
+- **Non-JSON data lines.** A `data: [DONE]` line is valid SSE and has to be skipped, not crash the check.
+
+Two scoping limits as well. Another contributor's open PR (#48343) stops the adapter from synthesizing the empty block in the first place. That is a different fix and it would not clear entries already stored, so I left the adapter alone. And a fix on the write side only would leave stored empty entries replaying until their TTL, so it had to cover reads too.
+
+## Design: one predicate in the cache module
+
+Three approaches went through a design review before code:
+
+- **A payload-aware predicate in `caching_handler.py`.** Replace `_starts_content_block` with a check that parses each `data:` line, looks at the `content_block` of a `content_block_start` or the `delta` of a `content_block_delta`, and counts it as output only if some key other than `type` has a value that is not `""`, `[]` or `None`. It is one file, and fixing `is_response_without_output` fixes the write side and both read paths together.
+- **The same predicate inside the Anthropic module.** It needs two files and an import round trip, and the helpers there decode strictly and misread CRLF.
+- **Assemble the stream and reuse the chat rule.** It prints the provider-list banner, rebuilds the whole response on every cache hit, and misjudges CRLF.
+
+I took the first, with three changes the review asked for. The JSON `TypeAdapter` is built once at module level rather than per call, because building it per call was about 50 times slower. The branch is on the parsed JSON `type` with a `match`, not on the text of the `event:` line. And the CRLF single-chunk stream is pinned by a test, so a later change can't quietly stop caching it.
+
+## The fix: read the payload, not the block marker
+
+```python
+_SSE_EVENT_DATA: Final = TypeAdapter(Mapping[str, object])
+
+def _content_block_payload(event: Mapping[str, object]) -> object:
+    match event.get("type"):
+        case "content_block_start":
+            return event.get("content_block")
+        case "content_block_delta":
+            return event.get("delta")
+        case _:
+            return None
+
+def _sse_line_carries_output(line: str) -> bool:
+    event: Final = _sse_event_data(line)
+    payload: Final = as_str_mapping(_content_block_payload(event)) if event is not None else None
+    return payload is not None and any(
+        key != "type" and value not in ("", [], None) for key, value in payload.items()
+    )
+```
+
+Lines come from the existing `split_sse_lines` helper rather than `str.splitlines`, and a line that is not valid JSON returns no event instead of raising. `is_response_without_output` now asks whether any frame has a line that carries output. I changed the writer's debug message from "no content blocks" to "no output", since that is now what it checks.
+
+## Verification: break it on purpose, then run it for real
+
+I wrote the failing cases first. The new cases join the existing empty-response tests in `test_caching_handler.py`, which feed both the "do not store" and "treat a stored one as a miss" tests: an empty text block, a block with `citations: None` and a blank `text_delta`, and a block with `citations: []`. The writer test in `test_response_cache.py` became a parametrized `test_stream_without_output_is_not_cached`, renamed because what it claims changed. A parametrized replay test covers the cases that must still be cached:
+
+| Stream | Must be |
+| --- | --- |
+| Plain text | Cached |
+| `tool_use` with `input: {}` and empty `partial_json` | Cached |
+| Whole stream as one CRLF chunk | Cached |
+| Text containing U+2028 | Cached |
+| A `data: [DONE]` line in the stream | Cached |
+| Only an empty text block | Not cached |
+| No content blocks at all | Not cached |
+
+With the old `caching_handler.py` and the new tests, 7 fail and 117 pass. With the fix, the two test files give 125 passed. A script that mutates the new check then confirmed the tests can tell. All 8 mutants were killed: treating `None` as output, treating `[]` as output, counting the `type` key, splitting with `str.splitlines`, ignoring delta payloads, ignoring start payloads, only reading the first line of a frame, and dropping the `ValidationError` catch. An independent code review in two rounds found a stray whitespace change and two surviving mutants in the first, and nothing blocking in the second.
+
+The unit tests feed hand-written SSE through the native handler, so they do not exercise the Gemini adapter. For that I ran a live proxy with two workers and a Redis response cache, pointed a `gemini/gemini-2.5-flash` model at a local server that always returns one empty text part and counts requests, and sent the same streamed `/v1/messages` call three times:
+
+| Run | Provider hits across the 3 calls | Cache header on calls 2 and 3 |
+| --- | --- | --- |
+| Before (main) | 1, 1, 1 | Present, stored entry in Redis |
+| After, stale entry still in Redis | 1, 2, 3 | Absent |
+| After, upstream replies "hello" | 1, then 1 | Present, real answers still cached |
+
+The after-run log shows three "treating it as a miss" lines for the stored empty entry and three "not caching a stream with no output" lines. The upstream is a script, not real Gemini, because there is no way to make the real API return an empty answer on demand.
+
+What ran where: the unit tests, mutation script and live proxy ran on my Mac, with Python 3.10 in the local venv. The repository's test-quality gate reports an increase on 27 untouched files that use 3.12 syntax under 3.10, and passes under 3.12. The full CI suite and the remaining review checks on the PR are still pending.
+
+## Core concepts this exercised
+
+- **Admission policy needs the same bar on both sides.** The write path decided what to store and the read path decided what to serve. Fixing the shared predicate fixed both, including entries already stored.
+- **Match on payload, not on markers.** An opened block says nothing about whether it holds anything. The fix reads the content, using the same "any field other than the type tag" rule chat streams already use.
+- **Guard against over-tightening.** Tool calls, CRLF streams, U+2028 and `[DONE]` lines are all shapes where a tighter check could start dropping real answers. Each has a test that passes before and after.
+- **Mutation testing as a test audit.** A mutation script showed two survivors and one equivalent mutant after my first version, which is how I found a branch no realistic stream could reach.
+- **Reproduce at the layer where it lives.** Unit tests skip the adapter that creates the empty block. The live proxy run is the one that shows the whole path, and I say which parts are scripted.
