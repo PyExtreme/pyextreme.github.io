@@ -2,7 +2,7 @@ import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
-const link = z.object({ label: z.string(), href: z.string().url() });
+const link = z.object({ label: z.string(), href: z.union([z.string().url(), z.string().startsWith('/')]) });
 
 const projects = defineCollection({
 	loader: glob({ pattern: '**/*.mdx', base: './src/content/projects' }),
