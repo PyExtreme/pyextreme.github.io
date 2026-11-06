@@ -38,7 +38,7 @@ const contributions = defineCollection({
 		issueNumber: z.string(),
 		contributionType: z.string(),
 		technicalArea: z.string(),
-		status: z.enum(['Investigating', 'Reproduced', 'Implementation', 'PR Open', 'Merged', 'Closed']),
+		status: z.enum(['Investigating', 'Reproduced', 'Implementation', 'PR Open', 'Upstream Recognised', 'Merged', 'Closed']),
 		/** Overrides `status` to Merged everywhere it is displayed. */
 		prMerged: z.boolean().default(false),
 		date: isoDate,
