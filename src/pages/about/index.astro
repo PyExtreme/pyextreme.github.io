@@ -46,14 +46,24 @@ type Role = {
 
 const experience: Role[] = [
 	{
-		period: '2025 – Present',
+		period: '2026 – Present',
+		company: 'PhysicsWallah (PW)',
+		role: 'Staff AI Engineer',
+		current: true,
+		summary: 'Building production AI systems at one of India’s largest education platforms.',
+		highlights: [
+			{ text: 'Staff-level ownership of AI engineering: system design, model and serving choices, and evaluation that decides what ships.' },
+		],
+		stack: ['LLMs', 'Agentic AI', 'RAG', 'Python'],
+	},
+	{
+		period: '2025 – 2026',
 		company: 'Innovaccer',
 		role: 'Lead AI Engineer',
-		current: true,
-		summary: 'Leading text-to-SQL for a healthcare data platform: plain-language questions answered with correct, safe SQL over large and complex schemas.',
+		summary: 'Led text-to-SQL for a healthcare data platform: plain-language questions answered with correct, safe SQL over large and complex schemas.',
 		highlights: [
-			{ text: 'Own the text-to-SQL problem end to end: schema and context retrieval, query generation, validation before execution, and evaluation of correctness on real questions.' },
-			{ text: 'Treat accuracy as a measured property, with test sets and regression checks, so model and prompt changes are shipped on evidence.' },
+			{ text: 'Owned the text-to-SQL problem end to end: schema and context retrieval, query generation, validation before execution, and evaluation of correctness on real questions.' },
+			{ text: 'Treated accuracy as a measured property, with test sets and regression checks, so model and prompt changes are shipped on evidence.' },
 		],
 		stack: ['LLMs', 'Text-to-SQL', 'LangGraph', 'RAG', 'Langfuse', 'Python', 'SQL'],
 	},
@@ -141,7 +151,7 @@ const contactLinks = [
 				<p class="eyebrow">About · {site.role}</p>
 				<h1 id="about-title" class="display-1">{site.name}</h1>
 				<p class="lede">
-					I build AI systems end to end: agents, retrieval and the inference stack underneath them. {site.yearsExperience} years of shipping ML and LLM products at Amazon, Meesho, Paytm and Innovaccer, and a founder’s view of
+					I build AI systems end to end: agents, retrieval and the inference stack underneath them. {site.yearsExperience} years of shipping ML and LLM products at Amazon, Meesho, Paytm, Innovaccer and PhysicsWallah, and a founder’s view of
 					running one in production at MarketLane AI.
 				</p>
 				<div class="btn-row">
@@ -154,8 +164,8 @@ const contactLinks = [
 				<p class="now-label">Right now</p>
 				<dl>
 					<div>
-						<dt>Lead AI Engineer</dt>
-						<dd>Innovaccer · text-to-SQL</dd>
+						<dt>Staff AI Engineer</dt>
+						<dd>PhysicsWallah (PW)</dd>
 					</div>
 					<div>
 						<dt>Founder</dt>
@@ -190,7 +200,7 @@ const contactLinks = [
 						waitlist prediction and flight pricing to card fraud detection, and a multimodal LLM tool for merchant KYC.
 					</p>
 					<p>
-						Today I lead text-to-SQL work at Innovaccer and, in parallel, build MarketLane AI, a market-intelligence platform
+						Today I am a Staff AI Engineer at PhysicsWallah. Before that I led text-to-SQL work at Innovaccer. In parallel I build MarketLane AI, a market-intelligence platform
 						for traders. Running a product alone meant owning everything around the model too: queues and workers, two clouds,
 						tracing, alerting and the cloud bill.
 					</p>

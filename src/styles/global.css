@@ -137,3 +137,5 @@ main { min-height: 60vh; }
 	.listing-page { padding: 56px 0 96px; }
 	.display-1 { margin-bottom: 20px; }
 }
+
+.status-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

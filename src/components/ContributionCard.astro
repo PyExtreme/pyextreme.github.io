@@ -7,12 +7,12 @@ interface Props {
 }
 const { contribution } = Astro.props;
 const d = contribution.data;
-const status = d.prMerged ? 'Merged' : d.status;
+const statuses = d.prMerged ? ['Merged', 'Upstream Recognised'] : [d.status];
 const href = `/open-source/${contribution.id}/`;
 const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 ---
 
-<article class="contribution" data-date={d.date} data-complexity={d.complexity} data-status={status}>
+<article class="contribution" data-date={d.date} data-complexity={d.complexity} data-status={statuses.join('|')}>
 	<div class="contribution-main">
 		<p class="contribution-repo">
 			<a href={d.repositoryUrl} target="_blank" rel="noopener noreferrer">{d.repository}</a>
@@ -25,7 +25,7 @@ const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 
 		</ul>
 	</div>
 	<div class="contribution-side">
-		<StatusPill status={status} />
+		<span class="status-pills">{statuses.map((status) => <StatusPill status={status} />)}</span>
 		<p class="contribution-meta">{d.complexity} · {d.technicalArea}</p>
 		<p class="contribution-links">
 			<a href={href}>Write-up</a>

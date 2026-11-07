@@ -34,6 +34,7 @@ const stats = [
 						<select id="status-filter">
 							<option value="All" selected>All</option>
 							<option value="Merged">Merged</option>
+							<option value="Upstream Recognised">Upstream recognised</option>
 							<option value="PR Open">PR open</option>
 							<option value="Implementation">In progress</option>
 						</select>
@@ -102,7 +103,7 @@ const stats = [
 				.forEach((card) => {
 					const show =
 						(complexity === 'All' || card.dataset.complexity === complexity) &&
-						(status === 'All' || card.dataset.status === status);
+						(status === 'All' || (card.dataset.status ?? '').split('|').includes(status));
 					card.hidden = !show;
 					if (show) visible += 1;
 					list.append(card);
