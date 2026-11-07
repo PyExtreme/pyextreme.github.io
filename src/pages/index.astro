@@ -11,7 +11,7 @@ const contributions = (await getCollection('contributions', ({ data }) => !data.
 	if (a.data.prMerged !== b.data.prMerged) return a.data.prMerged ? -1 : 1;
 	return b.data.date.localeCompare(a.data.date);
 });
-const merged = contributions.filter((c) => c.data.prMerged).length;
+const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const repositories = new Set(contributions.map((c) => c.data.repository)).size;
 const stats = [
 	{ value: `${site.yearsExperience}+`, label: 'Years in production AI' },

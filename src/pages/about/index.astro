@@ -5,7 +5,7 @@ import StatStrip from '../../components/StatStrip.astro';
 import { site } from '../../data/site';
 
 const contributions = await getCollection('contributions', ({ data }) => !data.draft);
-const merged = contributions.filter((c) => c.data.prMerged).length;
+const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const repositories = new Set(contributions.map((c) => c.data.repository)).size;
 
 const stats = [
@@ -272,7 +272,7 @@ const contactLinks = [
 				<p class="oss-text">
 					I contribute to the open-source LLM serving stack, on the problems that only show up under real traffic: request
 					routing and flow control, prefill/decode disaggregation, session affinity, prefix-cache management and memory-safety
-					bugs. {merged} of my {contributions.length} pull requests across {repositories} repositories are merged so far. Each one
+					bugs. {merged} of my {contributions.length} pull requests across {repositories} repositories are merged upstream so far. Each one
 					has a write-up with the root cause and the test that reproduces it.
 				</p>
 				<ul class="oss-repos">

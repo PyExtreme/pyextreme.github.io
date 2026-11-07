@@ -8,7 +8,7 @@ import ContributionCard from '../../components/ContributionCard.astro';
 const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort((a, b) =>
 	b.data.date.localeCompare(a.data.date),
 );
-const merged = contributions.filter((c) => c.data.prMerged).length;
+const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const open = contributions.filter((c) => !c.data.prMerged && c.data.status === 'PR Open').length;
 const repositories = new Set(contributions.map((c) => c.data.repository)).size;
 const stats = [
@@ -34,7 +34,6 @@ const stats = [
 						<select id="status-filter">
 							<option value="All" selected>All</option>
 							<option value="Merged">Merged</option>
-							<option value="Upstream Recognised">Upstream recognised</option>
 							<option value="PR Open">PR open</option>
 							<option value="Implementation">In progress</option>
 						</select>
@@ -103,7 +102,7 @@ const stats = [
 				.forEach((card) => {
 					const show =
 						(complexity === 'All' || card.dataset.complexity === complexity) &&
-						(status === 'All' || (card.dataset.status ?? '').split('|').includes(status));
+						(status === 'All' || (status === 'Merged' ? card.dataset.status !== undefined && /Merged|Upstream Recognised/.test(card.dataset.status) : card.dataset.status === status));
 					card.hidden = !show;
 					if (show) visible += 1;
 					list.append(card);
