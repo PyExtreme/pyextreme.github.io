@@ -1,7 +1,7 @@
 ---
-title: "Stop caching empty streamed replies in LiteLLM's /v1/messages"
-description: "A fix to LiteLLM's response cache so an empty streamed /v1/messages reply from a non-Anthropic model is no longer stored and replayed to every identical request."
-lede: "One empty reply from Gemini through /v1/messages got cached, and every identical request after it replayed the empty answer without reaching the provider again. The cache decided a stream had output if any content block was opened, so the fix had to read what was inside the block without starting to reject real streams that look empty."
+title: "Stop caching empty replies in LiteLLM's response cache"
+description: "A fix to LiteLLM's response cache so a reply with no output, streamed or not, on /v1/messages or /v1/chat/completions, is no longer stored and replayed to every identical request."
+lede: "One empty reply from Gemini through /v1/messages got cached, and every identical request after it replayed the empty answer without reaching the provider again. The cache decided a stream had output if any content block was opened, so the fix had to read what was inside the block without starting to reject real replies that look empty. The same gap turned out to exist for non-streamed replies, the chat route, and Gemini replies that carry only a hidden thought signature."
 project: "LiteLLM"
 repository: "BerriAI/litellm"
 repositoryUrl: "https://github.com/BerriAI/litellm"
@@ -20,7 +20,7 @@ stack:
   - "Redis"
   - "Server-sent events"
   - "Pydantic"
-shortSummary: "Replaced the Anthropic Messages stream 'has output' check in the LiteLLM response cache with one that reads each content block's payload, so an empty text block is no longer cached or replayed. Stored empty entries now count as misses too. Checked with unit tests, an 8-mutant run, and a live two-worker proxy against a scripted Gemini upstream."
+shortSummary: "Replaced the response cache's 'has output' check with one that reads what each content block or chat message actually holds, so an empty reply is no longer cached or replayed on /v1/messages or /v1/chat/completions, streamed or not. A reply holding only Gemini's thought signature counts as empty, stored empty entries count as misses, and whitespace replies and code-completion fills stay cached. Checked with unit tests, an 8-mutant run, and two-worker proxies against real Gemini."
 concepts:
   - "Cache admission policy"
   - "Streaming protocol parsing"
@@ -55,7 +55,7 @@ requests to the server: 1        <- correct, real answers are cached
 
 ![A provider returns an empty text block. The old cache check sees a content block start and stores it, so every repeat is replayed with no provider call. The new check reads the block payload, finds it empty and skips it, so the retry reaches the provider](/images/litellm-49931/empty-stream-cache.svg)
 
-Two comparison paths mattered for scoping. `litellm.acompletion(stream=True)` with the same empty reply was already not cached (2 server hits), and a non-streaming `acompletion()` with an empty choice is cached on purpose, pinned by `test_chat_answers_with_a_choice_but_no_text_are_still_cached`. So the gap was specifically the Messages stream.
+The streamed Messages path was the one reported, but it was not the only one. A non-streamed Messages reply with an empty text block, and a chat completion whose only choice has an empty message, both passed the same "has output" check, because that check only asked whether a block or choice existed. Gemini adds one more shape: a reply that stops early can hold nothing but its hidden thought signature, which the client never sees.
 
 ## Root cause: a block was opened, so it counted as output
 
@@ -108,6 +108,34 @@ def _sse_line_carries_output(line: str) -> bool:
 
 Lines come from the existing `split_sse_lines` helper rather than `str.splitlines`, and a line that is not valid JSON returns no event instead of raising. `is_response_without_output` now asks whether any frame has a line that carries output. I changed the writer's debug message from "no content blocks" to "no output", since that is now what it checks.
 
+## Widening it: one bar for every reply shape
+
+The same rule now applies to every shape the cache stores:
+
+- **Non-streamed Messages.** A stored `type: message` payload has output only if one of its content blocks does, using the same block check as the stream.
+- **Chat completions, streamed or not.** A choice has output only if a message field other than `role` holds something. An assembled stream goes through the same check, so the empty choice the stream wrapper adds at the end no longer counts.
+- **Replay metadata is not output.** Inside `provider_specific_fields`, `thought_signatures` and `continuation_token` are ignored, so a reply holding only Gemini's thought signature counts as empty.
+- **Fills stay cached.** A text completion choice counts as output whenever its text is not `""`, so code-completion fills that are only indentation or a newline, and whitespace replies in general, are still cached.
+
+```python
+_REPLAY_METADATA_FIELDS: Final = frozenset({"thought_signatures", "continuation_token"})
+
+def _message_field_carries_output(key: str, value: object) -> bool:
+    match key:
+        case "role":
+            return False
+        case "provider_specific_fields":
+            fields: Final = as_str_mapping(value) or {}
+            return any(
+                name not in _REPLAY_METADATA_FIELDS and field not in ("", [], {}, None)
+                for name, field in fields.items()
+            )
+        case _:
+            return value not in ("", [], {}, None)
+```
+
+The final change is 339 additions and 33 deletions across `caching_handler.py`, the Messages cache writer, and their two test files.
+
 ## Verification: break it on purpose, then run it for real
 
 I wrote the failing cases first. The new cases join the existing empty-response tests in `test_caching_handler.py`, which feed both the "do not store" and "treat a stored one as a miss" tests: an empty text block, a block with `citations: None` and a blank `text_delta`, and a block with `citations: []`. The writer test in `test_response_cache.py` became a parametrized `test_stream_without_output_is_not_cached`, renamed because what it claims changed. A parametrized replay test covers the cases that must still be cached:
@@ -132,9 +160,22 @@ The unit tests feed hand-written SSE through the native handler, so they do not 
 | After, stale entry still in Redis | 1, 2, 3 | Absent |
 | After, upstream replies "hello" | 1, then 1 | Present, real answers still cached |
 
-The after-run log shows three "treating it as a miss" lines for the stored empty entry and three "not caching a stream with no output" lines. The upstream is a script, not real Gemini, because there is no way to make the real API return an empty answer on demand.
+The after-run log shows three "treating it as a miss" lines for the stored empty entry and three "not caching a stream with no output" lines.
 
-What ran where: the unit tests, mutation script and live proxy ran on my Mac, with Python 3.10 in the local venv. The repository's test-quality gate reports an increase on 27 untouched files that use 3.12 syntax under 3.10, and passes under 3.12. The full CI suite and the remaining review checks on the PR are still pending.
+For the wider fix, the end-to-end check moved to real Gemini. Two proxies with two workers each shared one Redis, each case alternated its calls between them, and a forwarder in front of Google counted the requests that actually reached Gemini. At `max_tokens: 16`, Gemini 3.8 Flash often returns only a thought signature, so each empty case retried new prompts until it did. Codestral covered the code-completion fills.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Messages stream, empty | Replayed | Gemini called |
+| Messages, not streamed, empty | Replayed | Gemini called |
+| Chat stream, empty | Replayed | Gemini called |
+| Chat, not streamed, empty | Replayed | Gemini called |
+| SDK stream, empty | Replayed | Gemini called |
+| Empty entry stored by the old version | Replayed | Gemini called |
+| Text and tool replies | Cached | Cached |
+| Code fills: indentation, newline or empty | Cached | Cached |
+
+At the final commit, 140 focused tests and `make check` pass, and the PR is merged.
 
 ## Core concepts this exercised
 
@@ -142,4 +183,5 @@ What ran where: the unit tests, mutation script and live proxy ran on my Mac, wi
 - **Match on payload, not on markers.** An opened block says nothing about whether it holds anything. The fix reads the content, using the same "any field other than the type tag" rule chat streams already use.
 - **Guard against over-tightening.** Tool calls, CRLF streams, U+2028 and `[DONE]` lines are all shapes where a tighter check could start dropping real answers. Each has a test that passes before and after.
 - **Mutation testing as a test audit.** A mutation script showed two survivors and one equivalent mutant after my first version, which is how I found a branch no realistic stream could reach.
-- **Reproduce at the layer where it lives.** Unit tests skip the adapter that creates the empty block. The live proxy run is the one that shows the whole path, and I say which parts are scripted.
+- **Reproduce at the layer where it lives.** Unit tests skip the adapter that creates the empty block. The proxy runs against real Gemini are what show the whole path, across both routes and both response modes.
+- **Fix the class, not the instance.** The report was one route in one mode. The same coarse check sat behind every reply shape the cache stores, so the fix applies one definition of "has output" everywhere, including what does not count as output.
