@@ -1,0 +1,93 @@
+---
+title: "Why AIBrix clients got an error status with an empty body"
+description: "Reproducing a flaky gateway bug against real Envoy, showing that the fix suggested in the issue would still reset the stream, and proposing the body-mutation approach that the upstream fix adopted."
+lede: "When an upstream error body reached the AIBrix gateway in more than one chunk, the client sometimes got a 400 with no body at all. The issue suggested buffering the chunks and answering once. Running it against real Envoy showed that this would still fail, because by the time the body arrives the response headers have already gone to the client."
+project: "AIBrix"
+repository: "vllm-project/aibrix"
+repositoryUrl: "https://github.com/vllm-project/aibrix"
+issueNumber: "#3372"
+contributionType: "Bug diagnosis"
+technicalArea: "AI gateway / Envoy ext_proc"
+status: "Upstream Recognised"
+prMerged: false
+date: "2026-11-01"
+complexity: "Medium"
+issueUrl: "https://github.com/vllm-project/aibrix/issues/3372"
+stack:
+  - "Go"
+  - "Envoy"
+  - "Envoy ext_proc"
+  - "gRPC"
+shortSummary: "Reproduced a flaky empty-error-body bug in the AIBrix gateway against Envoy 1.33.2 and traced it to Envoy's streamed ext_proc semantics: once headers are forwarded, a body-phase ImmediateResponse can only reset the stream. Showed the issue's suggested fix would still fail and proposed body_mutation on the final chunk instead. The issue author adopted that approach in the upstream fix PR."
+concepts:
+  - "Envoy ext_proc processing modes"
+  - "Testing against the real proxy"
+  - "Checking a suggested fix before building it"
+  - "HTTP response framing"
+  - "Flaky test diagnosis"
+---
+
+## Context: a gateway that sits inside Envoy
+
+[AIBrix](https://github.com/vllm-project/aibrix) is a control plane for serving LLMs on Kubernetes. Its gateway plugin runs as an Envoy external processor (`ext_proc`): Envoy streams each request and response to the plugin over gRPC, and the plugin answers each message with mutations or, when something goes wrong, an `ImmediateResponse` that replaces the reply.
+
+Response bodies are configured in `STREAMED` mode, so Envoy sends the body to the plugin chunk by chunk as it arrives from the model server. On a non-2xx upstream status the plugin rewrites the body into a single OpenAI-style error envelope. That rewrite happens in the `st.isRespError` branch of `pkg/plugins/gateway/gateway.go`.
+
+## Symptom: a 400 with nothing in it
+
+[Issue #3372](https://github.com/vllm-project/aibrix/issues/3372) came from a flaky end-to-end test. A prefill/decode pod answered 400, and the gateway logged two `request end` lines 150 µs apart, the second with an empty message:
+
+```
+"request end" requestID="1979b451-..." errorCode=400 errorMessage=<{"error":{"code":null,"message":"invalid x-aibrix-mock-delay-ms",...}}>
+"request end" requestID="1979b451-..." errorCode=400 errorMessage=""
+```
+
+The client then failed with `unexpected end of JSON input`. Whether Envoy split the error body into two messages depended on timing, which is why the test only failed sometimes.
+
+## Root cause: answering every chunk, after the headers had left
+
+The error branch handles each `ResponseBody` message on its own:
+
+```go
+if st.isRespError {
+    body := string(req.Request.(*extProcPb.ProcessingRequest_ResponseBody).ResponseBody.GetBody())
+    body = string(rewriteVideoJobErrorBody(st.routerCtx, []byte(body)))
+    resp = s.responseErrorProcessingWithHeaders(st.ctx, st.routerCtx, st.lastRespHeaders, st.respErrorCode, st.model, st.requestID, body)
+}
+```
+
+`responseErrorProcessingWithHeaders` builds an `ImmediateResponse`. So a body that arrives as "JSON, then an empty end-of-stream chunk" gets two immediate responses, the second built from an empty string.
+
+The issue author's reading was that the duplicate answer was the bug. When I reproduced it against `envoyproxy/envoy:v1.33.2` with the response body in `STREAMED` mode, I found a deeper problem. Envoy forwards the response headers to the client as soon as the external processor answers the headers message, unless the whole body was already buffered. After that point an `ImmediateResponse` in the body phase cannot replace the reply. All Envoy can do is reset the stream. The client has already seen `400` and gets an empty, truncated body.
+
+![Before: the 400 headers go to the client first, then the gateway answers a body chunk with an ImmediateResponse, and Envoy can only reset the stream, so the client sees a 400 with an empty body. After: the gateway drops Content-Length at header time, clears the non-final chunks, and writes the full normalized error into the end-of-stream chunk with body_mutation, so the client receives the complete JSON error](/images/aibrix-3372/streamed-error-body.svg)
+
+## Constraints: the suggested fix had the same flaw
+
+The issue proposed two fixes: accumulate the chunks until `end_of_stream` and normalize once, or handle only the first chunk. Both still answer with an `ImmediateResponse` during the body phase. In my reproduction, accumulating and then sending one `ImmediateResponse` still reset the stream. Fixing the double answer alone would have left the client with the same empty body.
+
+So the fix had to stay inside the response that Envoy was already streaming, rather than try to replace it.
+
+## Design: rewrite the stream instead of replacing it
+
+What worked in my reproduction used only mutations Envoy can still apply after headers are sent:
+
+- **At header time, remove `Content-Length`.** The normalized error will not be the same length as the upstream body, and a stale length breaks framing.
+- **Clear the body of each non-final chunk.** Nothing partial reaches the client.
+- **On the `end_of_stream` chunk, write the complete normalized error through `body_mutation`.** The client gets one well-formed JSON error with the original status.
+
+I posted the reproduction, the reason the suggested fix would not work, and this direction on the issue, and asked whether it was acceptable for the `isRespError` branch before taking it.
+
+## Outcome: adopted upstream
+
+The issue author replied that they had reached the same approach and validated it against Envoy 1.33.2 by running the real gateway `Server.Process` over gRPC. They opened [PR #3382](https://github.com/vllm-project/aibrix/pull/3382), which removes `Content-Length` at header time, clears intermediate chunks and writes the complete error into the final chunk through `BodyMutation`, and they credited the reproduction and the stream-reset explanation in the thread. They already had a working patch, so I did not open a competing PR.
+
+What I contributed is the diagnosis: the real-Envoy reproduction, the reason a body-phase `ImmediateResponse` cannot work once headers are forwarded, and the direction that the fix took. The implementation, its test matrix and the end-to-end run are the PR author's work.
+
+## Core concepts this exercised
+
+- **Test against the real proxy, not a model of it.** The bug lives in how Envoy treats a late `ImmediateResponse`, which a unit test with a fake gRPC stream would not show. Running real Envoy is what exposed it.
+- **Check a suggested fix before building it.** The fix in the issue looked reasonable and would have removed the duplicate log line, but the client would still have got an empty body.
+- **Know what can still change after headers are sent.** Once headers are on the wire, only the body stream can be shaped, so the fix had to use body mutations and drop `Content-Length` early.
+- **Explain why a test is flaky.** The failure depended on whether Envoy happened to split the body, which explains why it only showed up sometimes in CI.
+- **Coordinate instead of racing.** Posting the evidence and asking before building led to one correct fix upstream instead of two competing ones.
