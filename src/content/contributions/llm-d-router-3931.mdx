@@ -1,0 +1,111 @@
+---
+title: "Keeping a request on one rollout revision across a conditional-decode miss in llm-d-router"
+description: "The coordinator now forwards response headers from a conditional-decode 412, so encode, prefill and decode stay on the revision the probe was scheduled against. Part 1 of a two-part fix."
+lede: "During a rollout, the llm-d router pins every phase of a disaggregated request to one revision by forwarding a header from phase to phase. On a prefix cache miss, the first probe came back as a 412 and the coordinator threw its headers away, so the rest of the request could land on a different revision. The fix in the coordinator is one line. Deciding how to split the problem, and what the EPP side needs, was the real work."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#3931"
+contributionType: "Bug fix"
+technicalArea: "LLM request routing / disaggregated serving coordinator"
+status: "Merged"
+prMerged: true
+date: "2026-11-06"
+complexity: "Medium"
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/3931"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/4044"
+stack:
+  - "Go"
+  - "Kubernetes"
+  - "Envoy ext_proc"
+  - "net/http/httptest"
+shortSummary: "Made the coordinator's conditional-decode step capture the response headers of a 412 cache miss, so the rollout revision header reaches the encode, prefill and decode phases. Merged as part 1 of #3931; the EPP half, which stamps the revision on the 412, needs a new opt-in plugin hook and is proposed separately."
+concepts:
+  - "Cross-component header contracts"
+  - "Splitting a fix along ownership lines"
+  - "Fail-closed vs silent fallback"
+  - "Pipeline state propagation"
+  - "Table-driven regression tests"
+---
+
+## Context: one request, several hops, one revision
+
+The [llm-d router](https://github.com/llm-d/llm-d-router) serves LLM traffic with prefill and decode split across different vLLM pods. A coordinator runs each request as a pipeline of steps, and each step goes through the gateway to an Endpoint Picker (EPP) that chooses a pod for that phase. In larger deployments the encode, prefill and decode phases can each have their own EPP.
+
+When a new set of prefill and decode pods is rolled out, a screener plugin in the EPP picks a revision for the request and stamps it on the response as `x-llm-d-disagg-revision`. The coordinator copies that header onto the next phase's request, and the next EPP treats it as a strict filter. That forwarded header is how separate EPPs agree on a revision without sharing state.
+
+The first step is often a conditional-decode probe: the coordinator asks the decode EPP to serve the request directly (`Prefer: if-available`) if the prompt prefix is already cached. On a miss the EPP answers `412 Precondition Failed`, and the coordinator continues with encode, prefill and decode. [Issue #3931](https://github.com/llm-d/llm-d-router/issues/3931) reported that the revision chosen for the probe did not survive that 412.
+
+## Symptom: the probe's revision vanishes
+
+In a three-EPP cascade, the decode EPP scheduled the probe against revision B and answered 412. The prefill request that followed carried no revision header, so the prefill EPP made a fresh, unpinned choice, and decode followed whatever prefill picked. One logical request could start on one revision and finish on another, which is exactly what the screener exists to prevent.
+
+I reproduced the coordinator side with a flow test: a pipeline of conditional-decode, prefill and decode against a fake gateway that answers the probe with a 412 carrying `X-LLM-D-Disagg-Revision: revision-b`.
+
+```
+go test ./pkg/coordinator/steps/ -run 'TestResponseHeaders_' -count=1
+--- FAIL: TestResponseHeaders_FlowFromConditionalDecodeMiss
+    prefill revision header = "", want "revision-b"
+    decode revision header = "", want "revision-b"
+```
+
+![The decode EPP answers the probe with a 412 carrying revision B. Before the fix the coordinator drops it and prefill picks any revision. After the fix both prefill and decode carry revision B](/images/llm-d-router-3931/probe-revision.svg)
+
+## Root cause: two halves, both missing
+
+**The coordinator ignored headers on the 412.** In `pkg/coordinator/steps/conditional_decode.go`, the 412 branch marked a cache miss and returned `errCacheMiss`. The encode, prefill and render steps all call `reqCtx.CaptureResponseHeaders(resp.Header)` on their responses. This branch didn't, and the docs said as much: 412 hints "are not yet consumed by the coordinator".
+
+**The EPP never stamps the revision on the 412.** The 412 is an error returned by the `PrefixBasedPDDecider` during `PreRequest`, which the server turns into an immediate response. The screener only stamps the revision in its `ResponseHeader` hook, and that hook runs when an upstream pod answers. On an immediate response no pod answered, so the hook never runs and the error carries no headers.
+
+Fixing either half alone does nothing for the reported case. Both are needed.
+
+## Constraints: the halves are not equally safe
+
+The coordinator half is small and self-contained. The EPP half is not. Getting one plugin's header onto an immediate response produced by a different plugin has no existing mechanism. Running every response-header plugin on the 412 would break the documented contract that those hooks run for "the pod that served the request": session affinity would hand out a token for a pod that never served, and latency and LoRA-residency plugins would record side effects for work that didn't happen. That code also overlaps an open PR that rewrites the same director error path.
+
+## Design: split the fix along ownership lines
+
+I wrote up both halves on the issue and split them into two PRs.
+
+For the EPP half, three options went through a design review:
+
+- **Run all response-header plugins on post-scheduling rejection.** About 25 lines, but it changes the hook contract and triggers the side effects above. Rejected.
+- **Have the decider stamp the revision from its own config.** Wrong layer: it duplicates the screener's header and label settings and misses the 412 the router returns by default when no gate plugin is configured. Rejected.
+- **An opt-in `RequestRejected` hook**, modeled on the recently merged `RequestAbandoned` interface, that the director calls only for plugins that implement it, with the screener delegating to its existing stamping logic. This is the one I proposed. It touches framework code owned by the router maintainers, so it waits on their sign-off.
+
+The coordinator half didn't need to wait. Once a 412 carries the header, the coordinator has to forward it, whichever EPP mechanism wins. That became [PR #4044](https://github.com/llm-d/llm-d-router/pull/4044), marked "Part of #3931" so the issue stays open for the second half.
+
+For the coordinator change itself I checked a few things before writing it. `StripInternalHeaders` does not strip the revision header. The default `forward_response_headers` already includes it. The callback runs synchronously, so there is no concurrency concern. I placed the call inside the 412 case rather than restructuring the switch, to stay clear of another open PR editing the same file.
+
+The change also has a behavior consequence worth stating in the PR. After a 412 that carries a revision, encode and prefill become strict on that revision. If the revision has no ready pod for a role, the request fails with a 503 instead of silently switching revisions. That matches how prefill to decode already behaves, and failing closed is the right default during a rollout.
+
+## The fix: one line and two doc notes
+
+```go
+case resp.StatusCode == http.StatusPreconditionFailed:
+	cacheMiss = true
+	reqCtx.CaptureResponseHeaders(resp.Header)
+	coordmetrics.IncConditionalDecodeProbes(coordmetrics.ProbeResultDeferred)
+	return errCacheMiss
+```
+
+`CaptureResponseHeaders` keeps only the names listed in `forward_response_headers`, so nothing new leaks to later phases. I updated `docs/coordinator_architecture.md` and `docs/communication.md` to say the coordinator now forwards those 412 headers and still ignores hints in the 412 body.
+
+## Verification
+
+The flow test above was written first and failed for the expected reason. I then made it table-driven:
+
+| Case | Prefill and decode receive |
+| --- | --- |
+| 412 carries `revision-b` | `revision-b` |
+| 412 without a revision header | no header, later phases unconstrained |
+
+Both cases pass with the fix. Locally I ran `go test ./pkg/coordinator/...`, `gofmt` and `go vet` on the coordinator packages, and the project's golangci-lint and typos checks scoped to `pkg/coordinator/steps` inside the builder container. The full `make lint` was OOM-killed in a 4 GB colima VM on my 8 GB Mac, so the complete presubmit was left to upstream CI. I didn't add a separate encode-path flow test, since the multimodal fixtures are heavy and encode reads the same captured headers. Whether Envoy passes immediate-response headers through end to end, and the reporter's GPU measurement, are outside what I could run.
+
+## Core concepts this exercised
+
+- **A header is a contract between components.** The revision header only works if every hop stamps it and every hop forwards it. The bug was one hop that did neither on its error path.
+- **Split along ownership lines.** The coordinator half was safe and needed no one's sign-off. The EPP half needed a framework hook. Shipping the first while proposing the second kept progress moving without forcing a framework change through.
+- **Fail closed during a rollout.** Forwarding the revision turns a silent revision switch into a visible 503 when a revision is missing a role. That is a behavior change, so it went in the PR text, not just the code.
+- **Respect hook contracts.** Reusing every response-header plugin on a rejection would have been fewer lines and wrong. An opt-in interface changes nothing for plugins that don't ask for it.
+- **Test both sides of the condition.** The table covers the 412 with and without the header, so the fix is shown to forward what is there and invent nothing when it is not.
