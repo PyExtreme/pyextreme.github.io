@@ -10,7 +10,7 @@ const contributions = (await getCollection('contributions', ({ data }) => !data.
 );
 const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const open = contributions.filter((c) => !c.data.prMerged && c.data.status === 'PR Open').length;
-const repositories = new Set(contributions.map((c) => c.data.repository)).size;
+const repositories = new Set(contributions.map((c) => c.data.repository.split('/')[0])).size;
 const stats = [
 	{ value: contributions.length, label: 'Upstream contributions' },
 	{ value: merged, label: 'Merged upstream' },
@@ -22,7 +22,7 @@ const stats = [
 <BaseLayout title="Open source" description="Upstream contributions to vLLM, llm-d, and vLLM Router: inference lifecycle, request routing, flow control, and concurrency fixes.">
 	<main id="main" class="listing-page">
 		<PageHeader eyebrow="Open source" title="Upstream contributions">
-			<p>Issues I picked up in open-source LLM serving infrastructure, with the root cause, the fix, and the verification for each.</p>
+			<p>Contributor to llm-d, NVIDIA Dynamo and LiteLLM. I hunt down the hard bugs in production LLM serving, from request routing to KV-cache transfer, and ship each fix with its root cause and the proof that it works.</p>
 		</PageHeader>
 		<StatStrip items={stats} />
 		<section class="contributions" aria-labelledby="contributions-title">
