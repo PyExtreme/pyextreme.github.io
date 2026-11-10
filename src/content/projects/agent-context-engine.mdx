@@ -1,0 +1,158 @@
+---
+title: "Agent Context Engine"
+headline: "Answering every question from a 900-token context"
+description: "A Python library that decides what a long-running AI agent puts in its model context on every call: three memory layers, hybrid retrieval, four compression methods and a rule-based adaptive planner, benchmarked against Claude on 2,204 graded answers."
+lede: "Long-running agents accumulate far more history than fits in a context window. Sending everything is expensive, eventually impossible, and still misses facts from earlier sessions. I built a context-management library that records everything an agent sees and does, keeps durable memory across sessions, and builds a context that always fits a token budget. Then I measured it against a real model."
+year: 2026
+updated: "2026-11-10"
+order: 4
+kind: "Infrastructure"
+stack:
+  - "Python 3.11"
+  - "SQLite"
+  - "NumPy"
+  - "Pydantic"
+  - "sentence-transformers (MiniLM)"
+  - "Claude API"
+  - "pytest"
+outcome: "The adaptive policy answered all 92 benchmark questions correctly from a 900-token context, 70% fewer tokens than sending the full history, which scored 73%. Six experiments, 2,204 graded answers from Claude Opus 5.5, $12.39 of model spend, 131 tests."
+links: []
+---
+
+**TL;DR**
+
+- I built a context engine that sits between an agent loop and its model. The agent records messages, tool calls and facts; before each model call it asks for a context that fits a token budget. Everything runs locally on an 8 GB laptop: one SQLite file, NumPy, and optional extras for real embeddings and a real model.
+- The **adaptive policy answered 100% of 92 benchmark questions from about 900 tokens**, 70% fewer tokens than full history, which scored 73% because it cannot see earlier sessions. At 320 turns (about 11,600 tokens of history) it still answered every question from the same 900 tokens.
+- A context that cannot fit comes back as an **explicit `OVERFLOW`, never a silently truncated one**. Tool calls and their results are atomic. Shortened tool outputs carry a reference, and the original is always recoverable.
+- **Running the benchmarks against a real model found five bugs** that unit tests had missed, including one that made adaptive score 0% on cross-session questions at a *larger* budget. Each now has a regression test.
+- Every answer is graded deterministically and every response is cached and committed, so the full benchmark regenerates offline in about two minutes at no cost. The whole suite cost **$12.39** under a hard $15 spend cap.
+
+![Task success against mean context tokens for five policies: adaptive 100% at 896 tokens, retrieval 99% at 634, full history 73% at 2,950, summarization 48% at 864, sliding window 17% at 785](/images/agent-context-engine/policy-comparison.svg)
+
+## The problem
+
+An agent that runs for many turns, calls tools and comes back across sessions has three context problems at once:
+
+- **Size.** Tool outputs are long. A research agent that reads eight 700-token reports has 5,600 tokens of tool output before it says anything.
+- **Time.** Facts stated early in a long conversation get pushed out by naive truncation, and facts from *earlier sessions* are not in the conversation at all.
+- **Change.** Users correct themselves. A context that contains both the old and the new budget invites the model to answer with the old one.
+
+The requirements I set: a hard token budget that is never exceeded, protected content (system prompt, current goal, pinned constraints) that is never dropped to hit a target, no broken tool call/result pairs, memory isolated per user or project, and every decision measured on a real model's answers rather than on retrieval proxies.
+
+## Architecture
+
+The agent talks to one object, `ContextManager`. It writes history with `record()` and asks for a context with `prepare(query, window)`, which reserves room for the reply (scaled by how complex the query looks, capped at a quarter of the window) and builds the rest under a policy.
+
+| Component | What it does |
+|---|---|
+| **Memory** | One SQLite store with three layers. *Working*: the current session's messages and task state. *Episodic*: append-only events and session summaries. *Semantic*: keyed facts with duplicate, supersede and insert rules. |
+| **Retrieval** | Hybrid ranking over stored memories and passages of older messages: cosine similarity, BM25, recency and importance, a relevance gate, optional MMR for diversity. |
+| **Compression** | Truncation, extractive, LLM summarization and hierarchical summarization behind one interface, each reporting which salient facts it lost. |
+| **Tool-output optimizer** | Keeps recent outputs whole, turns stale ones into stubs or query-relevant extracts, and can rehydrate any of them. |
+| **Policies** | Five strategies behind one `build_context(query, session_id, token_budget)` interface: full history, sliding window, summarization, retrieval and adaptive. |
+| **Providers** | Core code depends only on an `LLMClient` protocol. A Claude adapter and a cached, spend-capped client live outside it. |
+
+### Memory that can be corrected
+
+Scope is the isolation boundary: one user, tenant or project. Writes are checked against the session's scope, not just reads, so a bug in a caller cannot plant information in another scope that a later reader might trust.
+
+Semantic facts follow three rules. The same text reinforces the existing fact and appends provenance. The same key with different text **supersedes** the old record in one transaction, keeping it as history. Anything else is inserted. A partial unique index allows at most one current fact per `(scope, key)`, so "never two current values" holds in the database, not just in Python. In the benchmarks, a superseded memory was never returned for any query under any setting.
+
+### Tool outputs: shorter, never lost
+
+| Action | When | What the model sees |
+|---|---|---|
+| Full | One of the two most recent results, or under 400 tokens | The whole output |
+| Stub | Older output from a re-fetchable tool such as web search | A one-line reference: tool, arguments, "call again" |
+| Extract | Older output over the size limit | The sentences most relevant to the current query, plus the reference |
+
+The tool-output optimizer rewrites messages in the context and never touches the stored log, so `rehydrate(call_id)` always returns the original. The research-agent example reads eight 700-token reports through a 1,600-token window: all eight are extracted, and the first report is rehydrated intact at the end.
+
+### The adaptive policy
+
+![Adaptive policy pipeline: protect, optimize tool outputs, measure, plan, allocate, assemble, then the shared finish() gate that returns OK or an explicit OVERFLOW](/images/agent-context-engine/adaptive-pipeline.svg)
+
+The planner is rule-based on purpose. Each rule that fires is recorded with its reason, for example *"tool output is 95% of history: speaker prior off (research-shaped)"*, so any context can be explained after the fact.
+
+Two design choices mattered most:
+
+- **Relevance is measured with cosine similarity, not BM25.** BM25 is normalized per query, so the best lexical hit always scores 1.0 and cannot say whether *anything* is relevant. The cosine gate decides whether retrieval runs at all.
+- **The budget is shared by relevance, not fixed shares.** `RelevanceAwareAllocator` water-fills the flexible budget across recent turns, summary and memories, caps each at its demand and passes unused share on. A property test with 500 random cases checks it never exceeds budget or demand.
+
+## How I measured it
+
+Task success is graded on a real model's answer, not on whether retrieval found the right memory. Answers come from Claude Opus 5.5 and are checked deterministically: correct if the answer contains the current value, *stale* if it gives only a superseded value. Each answer also records whether the evidence was in the context at all, which separates retrieval failures from reading failures.
+
+A seeded generator builds 29 scenarios with 92 probe questions across five workloads, plus 20 long-horizon and 6 paraphrased scenarios. Codenames, ids and amounts are random, so the model cannot answer from prior knowledge.
+
+| Workload | Shape |
+|---|---|
+| A: Long conversations | 70 to 110 turns of chatter with 5 facts, 2 corrected late |
+| B: Research agent | 6 long regional reports read through tools |
+| C: Multi-step task | Chained tool calls returning verbose JSON |
+| D: Cross-session | Facts stated in sessions 1 and 2, asked in session 3 |
+| E: Conflicting memories | Facts corrected in a later session or inside the current one |
+
+Every model response is cached under a hash of the exact request, and the cache is committed. All published tables regenerate offline at no cost, with the originally recorded latencies. The cache doubles as a spend ledger with a hard cap.
+
+## Results
+
+### Policy comparison (900-token budget, 92 probes)
+
+| Policy | Task success | Context tokens | Reduction | p95 latency | Cost / success |
+|---|---|---|---|---|---|
+| Full history (unbounded) | 73% | 2,950 | 0% | 3.2 s | $0.0185 |
+| Sliding window | 17% | 785 | 73% | 4.8 s | $0.0226 |
+| Summarization | 48% | 864 | 71% | 4.5 s | $0.0089 |
+| Retrieval | 99% | 634 | 79% | 3.2 s | $0.0034 |
+| **Adaptive** | **100%** | **896** | **70%** | **2.8 s** | **$0.0046** |
+
+Full history fails only on the cross-session workloads (0% on D, 28% on E), because it sees just the current session. Context building adds under 0.1 s to a call.
+
+Retrieval looks almost as good and is cheaper per success, but the main probes are phrased like the facts, which flatters word matching. With questions reworded to share no content word with the fact, retrieval fell to **46%** with the default hashing embedder and 83% with MiniLM. Adaptive held **83% and 92%**.
+
+### Long conversations
+
+![Task success by conversation length at a 900-token budget: adaptive and retrieval stay at 100% through 320 turns, summarization falls to 70%, sliding window to 10%, budgeted full history overflows from 40 turns](/images/agent-context-engine/long-horizon.svg)
+
+### Compression
+
+On 8 seeded conversations of 60 to 120 turns, at a 25% size target:
+
+| Method | Facts stated by the user | Same facts as tool output |
+|---|---|---|
+| Truncation | 8% | 8% |
+| Extractive | 98% | 4% |
+| LLM summary (Claude) | 100% | 100% |
+
+LLM summarization was the only method that kept facts regardless of who stated them. The extractive method's speaker prior, which favours what the user said, lifted retention from 27% to 98% on chat-shaped history and collapsed it on tool-shaped history. That finding became a planner rule: the prior is switched off when tool output dominates.
+
+### Retrieval
+
+On hand-labelled dev and test query sets, hybrid ranking with recency beat either signal alone (test MRR 0.950 against 0.900 semantic-only and 0.875 lexical-only). MiniLM raised paraphrase MRR from 0.833 to 1.000. It also lowered precision@3, because more weak results pass the same similarity gate: the gate threshold is embedder-specific, so it has to be tuned with the embedder.
+
+## Bugs the real model found
+
+Unit tests passed. Running the benchmarks against Claude exposed five defects, each fixed with a regression test:
+
+| Bug | Symptom in the benchmark | Fix |
+|---|---|---|
+| Adaptive skipped stored memories whenever the current session fit | 0% on cross-session workloads at 1,500 tokens, worse than at 900 | The full-mode check includes relevant stored memories, and full mode adds them |
+| Retrieval ranked whole messages | A 500-token document could not fit the memory section; evidence in context 33% on research | Long messages are split into ~100-token passages before ranking |
+| Adaptive searched shortened tool outputs | Ids inside stubbed JSON were unreachable; evidence 50% on multi-step | Retrieval and summaries read the original messages |
+| Memory allowance smaller than one memory line | The most relevant fact was allocated 25 tokens and left out | The allowance is topped up to the best hit's size from the recent-turns share |
+| LLM summary label pushed output over budget | A hierarchical summary came back 3 tokens over its target | The trim accounts for the label, with a final guard |
+
+The second and third fixes together took evidence-in-context on the research and multi-step workloads from 33 to 50% to 100%. The benchmark also caught an integration problem: the first Claude adapter sent tool-call turns with empty content, which the real API rejects.
+
+## Limitations
+
+- **Synthetic workloads.** Formulaic chatter, random values, and mostly single-fact questions. With 5 to 6 scenarios per cell, differences under about 10 points are ties.
+- **No automatic memory extraction.** The cross-session workloads include the facts an extraction step would have written, so they measure storage and retrieval, not extraction.
+- **Paraphrase.** With the default hashing embedder, retrieval falls to 46% when a question shares no words with the stored fact. A real embedder fixes most of it at the cost of an 850 MB dependency.
+- **Token counting.** Budgets use a heuristic counter that runs about 9% under Claude's own counts, so production use needs the provider tokenizer or a margin.
+- **Hand-set planner thresholds.** The relevance gate and other rules were set by hand. Learning them from benchmark data is the obvious next step.
+
+## What I would take from it
+
+Measure context management on the model's answer, not on a retrieval score, and run it against the real model early. Every one of the five bugs above was invisible to unit tests and obvious in the first real benchmark run. The second lesson is that a hard budget needs an explicit failure mode: once overflow is a status the caller sees, every policy can be held to the same contract, and none of them can quietly hand the model a truncated history.

@@ -26,8 +26,11 @@ const latestDate = new Date(`${latest.data.date}T00:00:00`).toLocaleDateString('
 const areas = [
 	{
 		title: 'Agent systems and evaluation',
-		text: 'Pre-registered, equal-budget comparisons of agent architectures with deterministic replay and per-call cost accounting.',
-		evidence: [{ label: 'AI Incident Commander', href: '/projects/ai-incident-commander/' }],
+		text: 'Pre-registered, equal-budget comparisons of agent architectures, and context and memory management for long-running agents, measured on graded model answers with per-call cost accounting.',
+		evidence: [
+			{ label: 'AI Incident Commander', href: '/projects/ai-incident-commander/' },
+			{ label: 'Agent Context Engine', href: '/projects/agent-context-engine/' },
+		],
 	},
 	{
 		title: 'Retrieval systems',

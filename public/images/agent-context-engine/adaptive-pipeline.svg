@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" width="760" height="330" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">How the adaptive policy builds a context</title>
+<desc id="d">Six steps. Protect system prompt, query, task state and pinned messages. Optimize old tool outputs into stubs and extracts with references. Measure history size, tool share and relevance. Plan full or compressed mode with recorded reasons. Allocate the flexible budget by relevance. Assemble recent turns, memories and summary. Every policy ends in the finish() gate, which returns OK or an explicit OVERFLOW.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.grid{stroke:#e6e5e1}.axis{stroke:#9b9a95}.c1{stroke:#2a78d6;fill:#2a78d6}.c2{stroke:#1f9e74;fill:#1f9e74}.c3{stroke:#eb6834;fill:#eb6834}.c4{stroke:#8a63d2;fill:#8a63d2}.c5{stroke:#9b9a95;fill:#9b9a95}.ring{stroke:#fcfcfb}.box{fill:#f3f2ee;stroke:#c9c7c0}.hot{fill:rgba(42,120,214,0.10);stroke:#2a78d6}.arr{stroke:#9b9a95;fill:none}.ah{fill:#9b9a95}.bad{fill:#eb6834}.ok{fill:#1f9e74}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.grid{stroke:#33332f}.axis{stroke:#6f6e69}.c1{stroke:#3987e5;fill:#3987e5}.c2{stroke:#2fb487;fill:#2fb487}.c3{stroke:#d95926;fill:#d95926}.c4{stroke:#9d7ae0;fill:#9d7ae0}.c5{stroke:#7d7c76;fill:#7d7c76}.ring{stroke:#1a1a19}.box{fill:#232321;stroke:#4a4945}.hot{fill:rgba(90,156,236,0.16);stroke:#5a9cec}.arr{stroke:#7d7c76}.ah{fill:#7d7c76}.bad{fill:#d95926}.ok{fill:#2fb487}}</style>
+<rect class="bg" x="0" y="0" width="760" height="330" rx="8"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+<text class="ink" x="24" y="32" font-size="17" font-weight="600">Adaptive policy: one call to prepare(query, window)</text>
+<text class="ink2" x="24" y="52" font-size="12.5">Every rule that fires is written to metadata["plan"]["reasons"], so each context explains itself</text>
+<rect class="box" x="24" y="78" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="38" y="106" font-size="14" font-weight="600">1  Protect</text>
+<text class="ink2" x="38" y="128" font-size="12">system prompt, query,</text>
+<text class="ink2" x="38" y="144" font-size="12">task state, pinned</text>
+<line class="arr" x1="188" x2="206" y1="120.0" y2="120.0" stroke-width="1.5" marker-end="url(#a)"/>
+<rect class="box" x="208" y="78" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="222" y="106" font-size="14" font-weight="600">2  Optimize tools</text>
+<text class="ink2" x="222" y="128" font-size="12">old outputs → stubs or</text>
+<text class="ink2" x="222" y="144" font-size="12">query extracts + refs</text>
+<line class="arr" x1="372" x2="390" y1="120.0" y2="120.0" stroke-width="1.5" marker-end="url(#a)"/>
+<rect class="box" x="392" y="78" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="406" y="106" font-size="14" font-weight="600">3  Measure</text>
+<text class="ink2" x="406" y="128" font-size="12">history size, tool share,</text>
+<text class="ink2" x="406" y="144" font-size="12">best cosine relevance</text>
+<line class="arr" x1="556" x2="574" y1="120.0" y2="120.0" stroke-width="1.5" marker-end="url(#a)"/>
+<rect class="box" x="576" y="78" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="590" y="106" font-size="14" font-weight="600">4  Plan</text>
+<text class="ink2" x="590" y="128" font-size="12">full or compressed mode,</text>
+<text class="ink2" x="590" y="144" font-size="12">retrieval gate, prior</text>
+<path class="arr" d="M657.0,164 L657.0,180 L105.0,180 L105.0,197" stroke-width="1.5" marker-end="url(#a)"/>
+<rect class="box" x="24" y="200" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="38" y="228" font-size="14" font-weight="600">5  Allocate</text>
+<text class="ink2" x="38" y="250" font-size="12">water-fill flexible budget</text>
+<text class="ink2" x="38" y="266" font-size="12">by relevance, pass leftovers</text>
+<line class="arr" x1="188" x2="206" y1="242.0" y2="242.0" stroke-width="1.5" marker-end="url(#a)"/>
+<rect class="box" x="208" y="200" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="222" y="228" font-size="14" font-weight="600">6  Assemble</text>
+<text class="ink2" x="222" y="250" font-size="12">recent turns, memories,</text>
+<text class="ink2" x="222" y="266" font-size="12">then summary</text>
+<line class="arr" x1="372" x2="390" y1="242.0" y2="242.0" stroke-width="1.5" marker-end="url(#a)"/>
+<rect class="hot" x="392" y="200" width="162" height="84" rx="8" stroke-width="1.25"/>
+<text class="ink" x="406" y="228" font-size="14" font-weight="600">finish() gate</text>
+<text class="ink2" x="406" y="250" font-size="12">hard budget check,</text>
+<text class="ink2" x="406" y="266" font-size="12">shared by all 5 policies</text>
+<path class="arr" d="M556,228 L574,218" stroke-width="1.5" marker-end="url(#a)"/>
+<path class="arr" d="M556,256 L574,266" stroke-width="1.5" marker-end="url(#a)"/>
+<circle class="ok" cx="584" cy="216" r="5"/><text class="ink" x="596" y="220" font-size="13" font-weight="600">OK</text><text class="ink2" x="622" y="220" font-size="12">fits the budget</text>
+<circle class="bad" cx="584" cy="268" r="5"/><text class="ink" x="596" y="272" font-size="13" font-weight="600">OVERFLOW</text>
+<text class="ink2" x="596" y="288" font-size="12">+ required_tokens, never</text><text class="ink2" x="596" y="302" font-size="12">silently truncated</text>
+<text class="ink2" x="24" y="316" font-size="12">Retrieval and the summary read the original messages, not the shortened tool outputs.</text>
+</svg>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Task success as the conversation grows, 900-token budget</title>
+<desc id="d">Experiment 2. Turns 10, 40, 120, 320 (about 11,600 tokens at 320). Adaptive and retrieval 100% at every length. Summarization 100, 90, 80, 70. Sliding window 100, 50, 20, 10. Full history at the same budget overflows from 40 turns: 100, 0, 0, 0.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.grid{stroke:#e6e5e1}.axis{stroke:#9b9a95}.c1{stroke:#2a78d6;fill:#2a78d6}.c2{stroke:#1f9e74;fill:#1f9e74}.c3{stroke:#eb6834;fill:#eb6834}.c4{stroke:#8a63d2;fill:#8a63d2}.c5{stroke:#9b9a95;fill:#9b9a95}.ring{stroke:#fcfcfb}.box{fill:#f3f2ee;stroke:#c9c7c0}.hot{fill:rgba(42,120,214,0.10);stroke:#2a78d6}.arr{stroke:#9b9a95;fill:none}.ah{fill:#9b9a95}.bad{fill:#eb6834}.ok{fill:#1f9e74}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.grid{stroke:#33332f}.axis{stroke:#6f6e69}.c1{stroke:#3987e5;fill:#3987e5}.c2{stroke:#2fb487;fill:#2fb487}.c3{stroke:#d95926;fill:#d95926}.c4{stroke:#9d7ae0;fill:#9d7ae0}.c5{stroke:#7d7c76;fill:#7d7c76}.ring{stroke:#1a1a19}.box{fill:#232321;stroke:#4a4945}.hot{fill:rgba(90,156,236,0.16);stroke:#5a9cec}.arr{stroke:#7d7c76}.ah{fill:#7d7c76}.bad{fill:#d95926}.ok{fill:#2fb487}}</style>
+<rect class="bg" x="0" y="0" width="760" height="420" rx="8"/>
+<text class="ink" x="78" y="30" font-size="17" font-weight="600">320 turns, still answered from 900 tokens</text>
+<text class="ink2" x="78" y="50" font-size="12.5">Task success by conversation length · 900-token budget · 320 turns ≈ 11,600 tokens of history</text>
+<line class="grid" x1="78" x2="600" y1="350.0" y2="350.0" stroke-width="1"/>
+<text class="ink2" x="68" y="354.0" font-size="12" text-anchor="end">0%</text>
+<line class="grid" x1="78" x2="600" y1="280.5" y2="280.5" stroke-width="1"/>
+<text class="ink2" x="68" y="284.5" font-size="12" text-anchor="end">25%</text>
+<line class="grid" x1="78" x2="600" y1="211.0" y2="211.0" stroke-width="1"/>
+<text class="ink2" x="68" y="215.0" font-size="12" text-anchor="end">50%</text>
+<line class="grid" x1="78" x2="600" y1="141.5" y2="141.5" stroke-width="1"/>
+<text class="ink2" x="68" y="145.5" font-size="12" text-anchor="end">75%</text>
+<line class="grid" x1="78" x2="600" y1="72.0" y2="72.0" stroke-width="1"/>
+<text class="ink2" x="68" y="76.0" font-size="12" text-anchor="end">100%</text>
+<text class="ink2" x="78.0" y="370" font-size="12" text-anchor="middle">10</text>
+<text class="ink2" x="252.0" y="370" font-size="12" text-anchor="middle">40</text>
+<text class="ink2" x="426.0" y="370" font-size="12" text-anchor="middle">120</text>
+<text class="ink2" x="600.0" y="370" font-size="12" text-anchor="middle">320</text>
+<text class="ink2" x="339.0" y="394" font-size="12" text-anchor="middle">Conversation length (turns)</text>
+<path class="c1" d="M78.0,70.0 L252.0,70.0 L426.0,70.0 L600.0,70.0" style="fill:none" stroke-width="3"/>
+<circle class="c1 ring" cx="78.0" cy="70.0" r="4.5" stroke-width="1.5"/>
+<circle class="c1 ring" cx="252.0" cy="70.0" r="4.5" stroke-width="1.5"/>
+<circle class="c1 ring" cx="426.0" cy="70.0" r="4.5" stroke-width="1.5"/>
+<circle class="c1 ring" cx="600.0" cy="70.0" r="4.5" stroke-width="1.5"/>
+<text class="ink" x="614" y="68.0" font-size="13" font-weight="600">Adaptive</text>
+<path class="c2" d="M78.0,74.0 L252.0,74.0 L426.0,74.0 L600.0,74.0" style="fill:none" stroke-width="2"/>
+<circle class="c2 ring" cx="78.0" cy="74.0" r="4.5" stroke-width="1.5"/>
+<circle class="c2 ring" cx="252.0" cy="74.0" r="4.5" stroke-width="1.5"/>
+<circle class="c2 ring" cx="426.0" cy="74.0" r="4.5" stroke-width="1.5"/>
+<circle class="c2 ring" cx="600.0" cy="74.0" r="4.5" stroke-width="1.5"/>
+<text class="ink" x="614" y="86.0" font-size="13" font-weight="400">Retrieval</text>
+<path class="c4" d="M78.0,72.0 L252.0,99.8 L426.0,127.6 L600.0,155.4" style="fill:none" stroke-width="2"/>
+<circle class="c4 ring" cx="78.0" cy="72.0" r="4.5" stroke-width="1.5"/>
+<circle class="c4 ring" cx="252.0" cy="99.8" r="4.5" stroke-width="1.5"/>
+<circle class="c4 ring" cx="426.0" cy="127.6" r="4.5" stroke-width="1.5"/>
+<circle class="c4 ring" cx="600.0" cy="155.4" r="4.5" stroke-width="1.5"/>
+<text class="ink" x="614" y="159.4" font-size="13" font-weight="400">Summarization</text>
+<path class="c3" d="M78.0,72.0 L252.0,211.0 L426.0,294.4 L600.0,322.2" style="fill:none" stroke-width="2"/>
+<circle class="c3 ring" cx="78.0" cy="72.0" r="4.5" stroke-width="1.5"/>
+<circle class="c3 ring" cx="252.0" cy="211.0" r="4.5" stroke-width="1.5"/>
+<circle class="c3 ring" cx="426.0" cy="294.4" r="4.5" stroke-width="1.5"/>
+<circle class="c3 ring" cx="600.0" cy="322.2" r="4.5" stroke-width="1.5"/>
+<text class="ink" x="614" y="316.2" font-size="13" font-weight="400">Sliding window</text>
+<path class="c5" d="M78.0,72.0 L252.0,350.0 L426.0,350.0 L600.0,350.0" style="fill:none" stroke-width="2"/>
+<circle class="c5 ring" cx="78.0" cy="72.0" r="4.5" stroke-width="1.5"/>
+<circle class="c5 ring" cx="252.0" cy="350.0" r="4.5" stroke-width="1.5"/>
+<circle class="c5 ring" cx="426.0" cy="350.0" r="4.5" stroke-width="1.5"/>
+<circle class="c5 ring" cx="600.0" cy="350.0" r="4.5" stroke-width="1.5"/>
+<text class="ink" x="614" y="354.0" font-size="13" font-weight="400">Full history, budgeted</text>
+<text class="ink2" x="260.0" y="342.0" font-size="11.5">full history at 900 tokens overflows from 40 turns</text>
+</svg>
