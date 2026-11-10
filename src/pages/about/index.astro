@@ -2,6 +2,7 @@
 import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import StatStrip from '../../components/StatStrip.astro';
+import ContactPanel from '../../components/ContactPanel.astro';
 import { site } from '../../data/site';
 
 const contributions = await getCollection('contributions', ({ data }) => !data.draft);
@@ -11,7 +12,7 @@ const repositories = new Set(contributions.map((c) => c.data.repository)).size;
 const stats = [
 	{ value: `${site.yearsExperience}+`, label: 'Years shipping ML and LLM systems' },
 	{ value: '2.5M', label: 'Products under review moderation' },
-	{ value: 'Millions', label: 'Of transactions scored at Paytm' },
+	{ value: '10+', label: 'Production AI systems shipped' },
 	{ value: contributions.length, label: `Upstream PRs across ${repositories} repos` },
 ];
 
@@ -136,12 +137,6 @@ const toolkit = [
 	{ group: 'Languages', items: ['Python', 'C++', 'Go', 'Rust', 'Java'] },
 ];
 
-const contactLinks = [
-	{ href: site.github, label: 'GitHub', external: true },
-	site.linkedin && { href: site.linkedin, label: 'LinkedIn', external: true },
-	site.email && { href: `mailto:${site.email}`, label: 'Email', external: false },
-	site.resume && { href: site.resume, label: 'Résumé (PDF)', external: true },
-].filter(Boolean) as { href: string; label: string; external: boolean }[];
 ---
 
 <BaseLayout title="About" description={site.description}>
@@ -157,7 +152,7 @@ const contactLinks = [
 				<div class="btn-row">
 					<a class="btn btn-primary" href="#experience">Experience</a>
 					<a class="btn" href="/projects/">Case studies</a>
-					<a class="btn" href={site.github} rel="me noopener noreferrer" target="_blank">GitHub<span aria-hidden="true"> ↗</span></a>
+					{site.email && <a class="btn" href={`mailto:${site.email}`}>Get in touch</a>}
 				</div>
 			</div>
 			<aside class="now-card" aria-label="Right now">
@@ -318,25 +313,7 @@ const contactLinks = [
 			</div>
 		</section>
 
-		<section class="contact" aria-labelledby="contact-title">
-			<p class="eyebrow">Get in touch</p>
-			<h2 id="contact-title" class="display-2">Hiring for a senior or staff AI engineer, or building something hard?</h2>
-			<p class="lede">
-				I’m happy to talk with teams working on agents, retrieval, or LLM inference at scale, and with founders who need someone
-				who can take an AI product from prototype to production.
-			</p>
-			<div class="btn-row">
-				{contactLinks.map((link, i) => (
-					<a
-						class:list={['btn', { 'btn-primary': i === 0 }]}
-						href={link.href}
-						{...(link.external ? { target: '_blank', rel: 'me noopener noreferrer' } : {})}
-					>
-						{link.label}{link.external && <span aria-hidden="true"> ↗</span>}
-					</a>
-				))}
-			</div>
-		</section>
+		<ContactPanel />
 	</main>
 </BaseLayout>
 
@@ -420,7 +397,7 @@ const contactLinks = [
 		padding: 1px 7px;
 		border-radius: 999px;
 		background: var(--accent);
-		color: var(--ink);
+		color: var(--on-accent);
 		font-size: 10px;
 		vertical-align: 1px;
 	}
@@ -495,22 +472,6 @@ const contactLinks = [
 		text-transform: uppercase;
 	}
 	.toolkit .chip { padding: 6px 11px; color: var(--ink); font-size: 12px; }
-
-	.contact {
-		margin-top: 16px;
-		padding: clamp(32px, 5vw, 56px);
-		border-radius: 20px;
-		background: var(--ink);
-		color: var(--paper);
-	}
-	.contact .eyebrow { color: var(--accent); }
-	.contact .display-2 { max-width: 760px; margin-bottom: 20px; }
-	.contact .lede { color: #c9d1cd; }
-	.contact .btn { border-color: var(--paper); color: var(--paper); }
-	.contact .btn:hover { background: var(--paper); color: var(--ink); }
-	.contact .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--ink); }
-	.contact .btn-primary:hover { background: var(--paper); border-color: var(--paper); }
-	.contact :focus-visible { outline-color: var(--accent); }
 
 	@media (max-width: 900px) {
 		.about-hero, .bio-grid, .oss-grid { grid-template-columns: 1fr; }

@@ -4,7 +4,8 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import ProjectCard from '../components/ProjectCard.astro';
 import ContributionCard from '../components/ContributionCard.astro';
 import StatStrip from '../components/StatStrip.astro';
-import { site } from '../data/site';
+import ContactPanel from '../components/ContactPanel.astro';
+import { site, keepIdentifiers } from '../data/site';
 
 const projects = (await getCollection('projects', ({ data }) => !data.draft && data.listed)).sort((a, b) => a.data.order - b.data.order);
 const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort((a, b) => {
@@ -14,13 +15,30 @@ const contributions = (await getCollection('contributions', ({ data }) => !data.
 const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const repositories = new Set(contributions.map((c) => c.data.repository)).size;
 const stats = [
-	{ value: `${site.yearsExperience}+`, label: 'Years in production AI' },
+	{ value: '10+', label: 'Production AI systems shipped' },
+	{ value: '90%', label: 'Top-setup hit rate at $4.5 per 100-symbol scan' },
 	{ value: contributions.length, label: 'Upstream contributions' },
 	{ value: merged, label: 'Merged upstream' },
-	{ value: projects.length, label: 'Case studies' },
 ];
+const latest = contributions[0];
+const latestDate = new Date(`${latest.data.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
 
 const areas = [
+	{
+		title: 'Agent systems and evaluation',
+		text: 'Pre-registered, equal-budget comparisons of agent architectures with deterministic replay and per-call cost accounting.',
+		evidence: [{ label: 'AI Incident Commander', href: '/projects/ai-incident-commander/' }],
+	},
+	{
+		title: 'Retrieval systems',
+		text: 'Evidence-grounded RAG over SEC filings, with a pre-registered evaluation programme that rejected eleven techniques and shipped two.',
+		evidence: [{ label: 'MarketLane Research', href: '/projects/marketlane-research-rag/' }],
+	},
+	{
+		title: 'AI products in production',
+		text: 'Three generations of a verified LLM scan pipeline, measured on accuracy, cost and latency, for a live market-intelligence product.',
+		evidence: [{ label: 'MarketLane AI', href: '/projects/marketlane-ai/' }],
+	},
 	{
 		title: 'LLM inference and serving',
 		text: 'Startup and teardown correctness, streaming lifecycles, and resource ownership inside production inference servers.',
@@ -30,62 +48,42 @@ const areas = [
 		],
 	},
 	{
-		title: 'Request routing and scheduling',
+		title: 'Request routing and infrastructure',
 		text: 'Flow control, prefill/decode disaggregation, cache-aware routing, and admission feedback in LLM gateways.',
 		evidence: [
 			{ label: 'llm-d-router #2488', href: '/open-source/llm-d-router-2488/' },
 			{ label: 'vLLM Router #299', href: '/open-source/vllm-router-299/' },
 		],
 	},
-	{
-		title: 'Retrieval systems',
-		text: 'Evidence-grounded RAG over SEC filings, with a pre-registered evaluation programme that rejected eleven techniques and shipped two.',
-		evidence: [{ label: 'MarketLane Research', href: '/projects/marketlane-research-rag/' }],
-	},
-	{
-		title: 'Agent systems and evaluation',
-		text: 'Pre-registered, equal-budget comparisons of agent architectures with deterministic replay and per-call cost accounting.',
-		evidence: [{ label: 'AI Incident Commander', href: '/projects/ai-incident-commander/' }],
-	},
-	{
-		title: 'Reliability and observability',
-		text: 'Three generations of a verified LLM scan pipeline, measured on accuracy, cost and latency, for a live market-intelligence product.',
-		evidence: [{ label: 'MarketLane AI', href: '/projects/marketlane-ai/' }],
-	},
 ];
 ---
 
 <BaseLayout>
-	<main id="main">
+	<main id="main" class="home">
 		<section class="hero" aria-labelledby="intro-title">
 			<div class="hero-intro">
 				<p class="eyebrow">{site.name} · {site.role} · {site.yearsExperience} years in production AI</p>
-				<h1 id="intro-title" class="hero-title">Production AI systems, built to hold up under real load.</h1>
+				<h1 id="intro-title" class="hero-title">AI systems built end to end, from the agent down to the inference stack.</h1>
 				<p class="hero-description">
-					I design, build, and operate LLM serving, retrieval, and distributed AI infrastructure. Recent work: upstream fixes
-					in vLLM and llm-d, a retrieval platform for SEC filings, and a pre-registered study of multi-agent incident
-					diagnosis.
+					I design, build and operate AI products across the whole stack: agents and retrieval, the evaluation that decides
+					what ships, and the serving and infrastructure underneath. Recent work: a live market-intelligence product, a
+					retrieval platform over SEC filings, and upstream fixes in vLLM, llm-d and NVIDIA Dynamo.
 				</p>
 				<div class="btn-row">
 					<a class="btn btn-primary" href="/projects/">See the work</a>
 					<a class="btn" href="/open-source/">Open-source contributions</a>
-					<a class="btn" href={site.github} rel="me noopener noreferrer" target="_blank">GitHub<span aria-hidden="true"> ↗</span></a>
+					{site.email && <a class="btn" href={`mailto:${site.email}`}>Get in touch</a>}
 				</div>
-				<ul class="hero-areas chip-list" aria-label="Focus areas">
-					<li class="chip">LLM serving</li>
-					<li class="chip">Inference</li>
-					<li class="chip">RAG</li>
-					<li class="chip">Request routing</li>
-					<li class="chip">Agent evaluation</li>
-					<li class="chip">Distributed systems</li>
-				</ul>
+				<p class="hero-employers">
+					<span class="hero-employers-label">Experience</span>
+					{site.employers.map((name) => <span class="hero-employer">{name}</span>)}
+				</p>
 			</div>
 			<div class="hero-proof">
-				<StatStrip items={stats} />
+				<StatStrip items={stats} columns={2} />
 				<p class="hero-highlight">
-					<span class="hero-highlight-label">Latest</span>
-					<a href={`/open-source/${contributions[0].id}/`}>{contributions[0].data.title}</a>
-					<span class="hero-highlight-meta">{contributions[0].data.repository} · {contributions[0].data.prMerged ? 'merged upstream' : contributions[0].data.status}</span>
+					<span class="hero-highlight-label">Latest {latest.data.prMerged ? 'merged upstream' : 'contribution'} · {latest.data.repository} {latest.data.issueNumber} · {latestDate}</span>
+					<a href={`/open-source/${latest.id}/`} set:html={keepIdentifiers(latest.data.highlight ?? latest.data.title)} />
 				</p>
 			</div>
 		</section>
@@ -105,7 +103,7 @@ const areas = [
 						title={project.data.title}
 						description={project.data.description}
 						href={`/projects/${project.id}/`}
-						chips={[project.data.kind, String(project.data.year), ...project.data.stack.slice(0, 3)]}
+						chips={[project.data.kind, String(project.data.year), ...project.data.stack.slice(0, 2)]}
 					/>
 				))}
 			</div>
@@ -128,7 +126,7 @@ const areas = [
 			<div class="section-heading">
 				<div>
 					<p class="eyebrow">03 / Technical areas</p>
-					<h2 id="areas-title" class="display-2">What I work on</h2>
+					<h2 id="areas-title" class="display-2">Across the stack</h2>
 				</div>
 			</div>
 			<ul class="area-list">
@@ -143,6 +141,8 @@ const areas = [
 				))}
 			</ul>
 		</section>
+
+		<ContactPanel />
 	</main>
 </BaseLayout>
 
@@ -163,13 +163,15 @@ const areas = [
 		text-wrap: balance;
 	}
 	.hero-description { max-width: 560px; margin: 0 0 28px; color: var(--ink-soft); font-size: 17px; line-height: 1.65; text-wrap: pretty; }
-	.hero-areas { margin-top: 28px; }
+	.home { padding-bottom: 96px; }
+	.hero-employers { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin: 28px 0 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+	.hero-employers-label { color: var(--muted); font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+	.hero-employer { color: var(--ink-soft); }
 	.hero-proof { display: grid; gap: 20px; }
-	.hero-highlight { display: grid; gap: 4px; margin: 0; font-size: 14px; line-height: 1.45; }
+	.hero-highlight { display: grid; gap: 6px; margin: 0; font-size: 15px; line-height: 1.45; }
 	.hero-highlight-label { color: var(--muted); font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
 	.hero-highlight a { color: var(--ink); font-weight: 600; text-decoration: none; }
 	.hero-highlight a:hover { text-decoration: underline; text-decoration-color: var(--accent-deep); }
-	.hero-highlight-meta { color: var(--muted); font: 500 12px var(--font-mono); }
 	.contribution-list { border-top: 1px solid var(--line); }
 	.area-list {
 		display: grid;

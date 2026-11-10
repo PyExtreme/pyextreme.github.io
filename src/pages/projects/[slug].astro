@@ -2,6 +2,7 @@
 import { getCollection, render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
+import { keepIdentifiers } from '../../data/site';
 import '../../styles/prose.css';
 import '../../styles/article.css';
 
@@ -17,13 +18,14 @@ const words = (project.body ?? '').split(/\s+/).filter(Boolean).length;
 const minutes = Math.max(1, Math.round(words / 220));
 const pageTitle = data.headline ?? data.title;
 const eyebrow = [data.kind, String(data.year), data.headline ? data.title : null].filter(Boolean).join(' · ');
+const isBlog = data.kind === 'Technical blog';
 ---
 
 <BaseLayout title={pageTitle} description={data.description} type="article" noindex={!data.listed}>
 	<main id="main" class="article-page">
 		<header class="article-header">
 			<p class="eyebrow">{eyebrow}</p>
-			<h1 class="display-1">{pageTitle}</h1>
+			<h1 class="display-1" set:html={keepIdentifiers(pageTitle)} />
 			{data.lede && <p class="lede">{data.lede}</p>}
 			<dl class="article-meta">
 				{data.stack.length > 0 && (
@@ -56,6 +58,8 @@ const eyebrow = [data.kind, String(data.year), data.headline ? data.title : null
 			<aside class="article-aside"><TableOfContents headings={headings} /></aside>
 			<div class="prose"><Content /></div>
 		</div>
-		<p class="backlink"><a href="/projects/">← All projects</a></p>
+		<p class="backlink">
+			{isBlog ? <a href="/projects/marketlane-research-rag/">← MarketLane Research case study</a> : <a href="/projects/">← All projects</a>}
+		</p>
 	</main>
 </BaseLayout>

@@ -19,6 +19,7 @@ stack:
   - "Kubernetes"
   - "Envoy ext_proc"
   - "net/http/httptest"
+highlight: "A one-line coordinator fix keeps every phase of a disaggregated request on one rollout revision"
 shortSummary: "Made the coordinator's conditional-decode step capture the response headers of a 412 cache miss, so the rollout revision header reaches the encode, prefill and decode phases. Merged as part 1 of #3931; the EPP half, which stamps the revision on the 412, needs a new opt-in plugin hook and is proposed separately."
 concepts:
   - "Cross-component header contracts"

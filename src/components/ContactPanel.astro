@@ -1,0 +1,58 @@
+---
+import { site } from '../data/site';
+
+interface Props {
+	title?: string;
+}
+const { title = 'Hiring for a senior or staff AI engineer, or building something hard?' } = Astro.props;
+
+const links = [
+	site.email && { href: `mailto:${site.email}`, label: site.email, external: false },
+	site.linkedin && { href: site.linkedin, label: 'LinkedIn', external: true },
+	{ href: site.github, label: 'GitHub', external: true },
+	site.resume && { href: site.resume, label: 'Résumé (PDF)', external: true },
+].filter(Boolean) as { href: string; label: string; external: boolean }[];
+---
+
+<section class="contact" aria-labelledby="contact-title">
+	<p class="eyebrow">Get in touch</p>
+	<h2 id="contact-title" class="display-2">{title}</h2>
+	<p class="lede">
+		I’m happy to talk with teams working on agents, retrieval, or LLM inference at scale, and with founders who need someone
+		who can take an AI product from prototype to production. Open to full-time roles and to consulting engagements.
+	</p>
+	<div class="btn-row">
+		{links.map((link, i) => (
+			<a
+				class:list={['btn', { 'btn-primary': i === 0 }]}
+				href={link.href}
+				{...(link.external ? { target: '_blank', rel: 'me noopener noreferrer' } : {})}
+			>
+				{link.label}{link.external && <span aria-hidden="true"> ↗</span>}
+			</a>
+		))}
+	</div>
+</section>
+
+<style>
+	.contact {
+		margin-top: 16px;
+		padding: clamp(28px, 5vw, 56px);
+		border: 1px solid var(--panel);
+		border-radius: 20px;
+		background: var(--panel);
+		color: var(--panel-ink);
+	}
+	.contact .eyebrow { color: var(--accent); }
+	.contact .display-2 { max-width: 760px; margin-bottom: 20px; font-size: clamp(26px, 3.4vw, 40px); }
+	.contact .lede { color: var(--panel-ink); opacity: 0.82; }
+	.contact .btn { border-color: var(--panel-ink); color: var(--panel-ink); overflow-wrap: anywhere; }
+	.contact .btn:hover { background: var(--panel-ink); color: var(--panel); }
+	.contact .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+	.contact .btn-primary:hover { background: var(--panel-ink); border-color: var(--panel-ink); }
+	.contact :focus-visible { outline-color: var(--accent); }
+	:global([data-theme='dark']) .contact { border-color: var(--line); }
+	@media (prefers-color-scheme: dark) {
+		:global(:root:not([data-theme='light'])) .contact { border-color: var(--line); }
+	}
+</style>

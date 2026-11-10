@@ -1,43 +1,39 @@
-# Astro Starter Kit: Minimal
+# pyextreme.github.io
 
-```sh
-npm create astro@latest -- --template minimal
-```
+Portfolio of Ankit Jha, Staff AI Engineer. Live at [pyextreme.github.io](https://pyextreme.github.io).
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+The site covers AI systems built end to end: agents, retrieval and evaluation, down to LLM inference, request routing and the infrastructure underneath.
 
-## 🚀 Project Structure
+- **Projects**: case studies with the architecture, the trade-offs and the measured results.
+- **Open source**: write-ups of upstream contributions to vLLM, llm-d, NVIDIA Dynamo and LiteLLM, each with the root cause and the test that reproduces it.
+- **About**: experience, toolkit and contact details.
 
-Inside of your Astro project, you'll see the following folders and files:
+## How it is built
+
+A static [Astro](https://astro.build) site deployed to GitHub Pages by the workflow in `.github/workflows/deploy.yml`.
 
 ```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+src/
+├── content/
+│   ├── projects/        Case studies (MDX, validated by a Zod schema)
+│   └── contributions/   Open-source write-ups (MDX, validated by a Zod schema)
+├── components/          Cards, navigation, stat strip, interactive explainers
+├── layouts/             Base layout: metadata, Open Graph tags, theme
+├── pages/               Home, listings, detail routes, About
+├── styles/              Design tokens (light and dark), prose and article styles
+└── data/site.ts         Name, role and contact links used across the site
+public/                  Favicon, Open Graph image, diagrams
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+Projects and contributions are content collections defined in `src/content.config.ts`. Listing pages, statistics, metadata tables and reading times are generated from the frontmatter, so adding a write-up is a single MDX file.
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+## Local development
 
-Any static assets, like images, can be placed in the `public/` directory.
+Requires Node 22.12 or newer.
 
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+| Command           | Action                                    |
+| :---------------- | :---------------------------------------- |
+| `npm install`     | Install dependencies                      |
+| `npm run dev`     | Start the dev server at `localhost:4321`  |
+| `npm run build`   | Build the production site into `dist/`    |
+| `npm run preview` | Preview the production build locally      |

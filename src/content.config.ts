@@ -16,7 +16,7 @@ const projects = defineCollection({
 		year: z.number().int(),
 		updated: isoDate.optional(),
 		order: z.number().int(),
-		kind: z.enum(['Product', 'Research', 'Infrastructure']),
+		kind: z.enum(['Product', 'Research', 'Infrastructure', 'Technical blog']),
 		stack: z.array(z.string()).default([]),
 		outcome: z.string().optional(),
 		links: z.array(link).default([]),
@@ -47,6 +47,8 @@ const contributions = defineCollection({
 		prUrl: z.string().url().optional(),
 		commitUrl: z.string().url().optional(),
 		stack: z.array(z.string()).default([]),
+		/** One-line result shown in the homepage hero when this is the latest contribution. Falls back to the title. */
+		highlight: z.string().optional(),
 		shortSummary: z.string(),
 		concepts: z.array(z.string()),
 		draft: z.boolean().default(false),

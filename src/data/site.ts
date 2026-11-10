@@ -2,17 +2,16 @@ export const site = {
 	name: 'Ankit Jha',
 	role: 'Staff AI Engineer',
 	yearsExperience: 7,
-	summary: 'LLM serving · RAG · Inference · Distributed AI systems',
+	summary: 'End-to-end AI systems: agents, retrieval, evaluation, inference and infrastructure',
 	description:
-		'Ankit Jha is a Staff AI Engineer with 7 years of experience building production AI systems: LLM inference and serving, request routing, retrieval, and agent evaluation.',
+		'Ankit Jha is a Staff AI Engineer with 7 years of experience building AI systems end to end: agents, retrieval and evaluation, down to LLM inference, request routing and the infrastructure underneath.',
 	url: 'https://pyextreme.github.io',
 	github: 'https://github.com/PyExtreme',
-	/** TODO: add the public LinkedIn profile URL. Rendered only when non-empty. */
-	linkedin: '',
-	/** TODO: add a public contact email. Rendered only when non-empty. */
-	email: '',
+	linkedin: 'https://www.linkedin.com/in/ankitjha-42',
+	email: 'ankitjha.email@gmail.com',
 	/** TODO: add a résumé PDF under public/ and set its path here, e.g. '/ankit-jha-resume.pdf'. */
 	resume: '',
+	employers: ['PhysicsWallah', 'Paytm', 'Meesho', 'Amazon'],
 };
 
 export const navLinks = [
@@ -20,3 +19,9 @@ export const navLinks = [
 	{ href: '/open-source/', label: 'Open source' },
 	{ href: '/about/', label: 'About' },
 ];
+
+/** Keeps hyphenated identifiers such as "llm-d-router" on one line. Returns HTML. */
+export function keepIdentifiers(text: string): string {
+	const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	return escaped.replace(/[\w.]+(?:-[\w.]+)+/g, (token) => `<span class="nowrap">${token}</span>`);
+}

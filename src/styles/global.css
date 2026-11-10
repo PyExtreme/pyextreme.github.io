@@ -1,4 +1,5 @@
-:root {
+:root,
+.theme-light {
 	--ink: #17211f;
 	--ink-soft: #3f4946;
 	--muted: #5c6561;
@@ -8,10 +9,46 @@
 	--paper-2: #edf0ea;
 	--accent: #d6ef62;
 	--accent-deep: #8fae1c;
+	--on-accent: #17211f;
+	--panel: #17211f;
+	--panel-ink: #f7f8f5;
+}
+:root {
+	color-scheme: light;
 	--max-width: 1120px;
-	--font-sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-sans: 'Manrope Variable', 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		color-scheme: dark;
+		--ink: #e9eeeb;
+		--ink-soft: #c2cbc6;
+		--muted: #98a39e;
+		--line: #2b3633;
+		--line-strong: #46534f;
+		--paper: #111816;
+		--paper-2: #1a2320;
+		--accent-deep: #b9d44a;
+		--panel: #1a2320;
+		--panel-ink: #e9eeeb;
+	}
+}
+:root[data-theme='dark'] {
+	color-scheme: dark;
+	--ink: #e9eeeb;
+	--ink-soft: #c2cbc6;
+	--muted: #98a39e;
+	--line: #2b3633;
+	--line-strong: #46534f;
+	--paper: #111816;
+	--paper-2: #1a2320;
+	--accent-deep: #b9d44a;
+	--panel: #1a2320;
+	--panel-ink: #e9eeeb;
+}
+/* Figures drawn for a light surface keep the light palette in dark mode. */
+.theme-light { background: var(--paper); color: var(--ink); color-scheme: light; }
 
 *,
 *::before,
@@ -61,9 +98,9 @@ main { min-height: 60vh; }
 
 .display-1 {
 	margin: 0 0 24px;
-	font-size: clamp(40px, 6.5vw, 80px);
+	font-size: clamp(32px, 4.6vw, 56px);
 	font-weight: 700;
-	line-height: 1;
+	line-height: 1.05;
 	letter-spacing: -0.035em;
 	text-wrap: balance;
 }
@@ -96,7 +133,7 @@ main { min-height: 60vh; }
 .section-heading .eyebrow { margin-bottom: 10px; }
 .section-link { font: 500 12px var(--font-mono); white-space: nowrap; }
 
-.listing-page { padding: 88px 0 140px; }
+.listing-page { padding: 56px 0 120px; }
 .project-list { border-top: 1px solid var(--line); }
 
 .chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -125,7 +162,7 @@ main { min-height: 60vh; }
 	transition: background-color 0.15s, color 0.15s, border-color 0.15s;
 }
 .btn:hover { background: var(--ink); color: var(--paper); }
-.btn-primary { background: var(--accent); border-color: var(--accent); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn-primary:hover { background: var(--ink); border-color: var(--ink); }
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
@@ -134,8 +171,10 @@ main { min-height: 60vh; }
 @media (max-width: 640px) {
 	.site-frame { width: min(calc(100% - 32px), var(--max-width)); }
 	.section-block { padding: 56px 0 64px; }
-	.listing-page { padding: 56px 0 96px; }
+	.listing-page { padding: 40px 0 88px; }
 	.display-1 { margin-bottom: 20px; }
 }
 
 .status-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.nowrap { white-space: nowrap; }
