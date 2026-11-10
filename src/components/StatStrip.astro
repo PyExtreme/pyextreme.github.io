@@ -1,11 +1,13 @@
 ---
 interface Props {
 	items: { value: string | number; label: string }[];
+	/** Columns on wide screens. Narrow screens always use two. */
+	columns?: 2 | 4;
 }
-const { items } = Astro.props;
+const { items, columns = 4 } = Astro.props;
 ---
 
-<dl class="stat-strip">
+<dl class:list={['stat-strip', `cols-${columns}`]}>
 	{items.map((item) => (
 		<div class="stat">
 			<dt>{item.label}</dt>
@@ -17,19 +19,24 @@ const { items } = Astro.props;
 <style>
 	.stat-strip {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0;
 		margin: 0;
 		border-top: 1px solid var(--line);
 		border-bottom: 1px solid var(--line);
 	}
-	.stat { display: flex; flex-direction: column-reverse; gap: 6px; padding: 20px 24px 20px 0; }
-	.stat + .stat { padding-left: 24px; border-left: 1px solid var(--line); }
+	.stat { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 6px; padding: 20px 24px; border-left: 1px solid var(--line); }
+	.stat:first-child { padding-left: 0; border-left: 0; }
 	dd { margin: 0; font-size: clamp(28px, 3.2vw, 40px); font-weight: 700; line-height: 1; letter-spacing: -0.03em; }
 	dt { color: var(--muted); font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
-	@media (max-width: 640px) {
-		.stat-strip { grid-template-columns: repeat(2, 1fr); }
-		.stat { padding: 16px 16px 16px 0; }
+
+	.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.cols-2 .stat:nth-child(odd) { padding-left: 0; border-left: 0; }
+	.cols-2 .stat:nth-child(n + 3) { border-top: 1px solid var(--line); }
+
+	@media (max-width: 760px) {
+		.stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+		.stat { padding: 16px; }
 		.stat:nth-child(odd) { padding-left: 0; border-left: 0; }
 		.stat:nth-child(n + 3) { border-top: 1px solid var(--line); }
 	}

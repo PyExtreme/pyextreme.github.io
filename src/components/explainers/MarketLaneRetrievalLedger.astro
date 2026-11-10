@@ -181,7 +181,7 @@ const funnel = [
 const pct = (n: number) => `${((n / TOTAL) * 100).toFixed(1)}%`;
 ---
 
-<figure class="lr" data-lr>
+<figure class="lr theme-light" data-lr>
 	<figcaption class="lr-head">
 		<span class="lr-eyebrow">Interactive · 149 development questions · frozen 28-company corpus · 8-passage budget</span>
 	</figcaption>
@@ -329,7 +329,7 @@ const pct = (n: number) => `${((n / TOTAL) * 100).toFixed(1)}%`;
 	.lr-detail-why { color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
 	.lr-detail-run { font: 400 11.5px/1.4 var(--font-mono); color: var(--muted); }
 
-	.lr-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+	.lr-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); table-layout: fixed; left: 0; margin: 0; }
 
 	@media (max-width: 720px) {
 		.lr-axis, .lr-row-btn { grid-template-columns: minmax(0, 1fr) 110px; gap: 4px 10px; }

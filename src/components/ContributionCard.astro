@@ -1,31 +1,32 @@
 ---
 import type { CollectionEntry } from 'astro:content';
 import StatusPill from './StatusPill.astro';
+import { keepIdentifiers } from '../data/site';
 
 interface Props {
 	contribution: CollectionEntry<'contributions'>;
 }
 const { contribution } = Astro.props;
 const d = contribution.data;
-const statuses = d.prMerged ? ['Merged', 'Upstream Recognised'] : [d.status];
+const status = d.prMerged ? 'Merged' : d.status;
 const href = `/open-source/${contribution.id}/`;
 const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 ---
 
-<article class="contribution" data-date={d.date} data-complexity={d.complexity} data-status={statuses.join('|')}>
+<article class="contribution" data-date={d.date} data-complexity={d.complexity} data-status={status}>
 	<div class="contribution-main">
 		<p class="contribution-repo">
 			<a href={d.repositoryUrl} target="_blank" rel="noopener noreferrer">{d.repository}</a>
 			<span class="contribution-ref">· {d.issueNumber} · <time datetime={d.date}>{date}</time></span>
 		</p>
-		<h3 class="contribution-title"><a href={href}>{d.title}</a></h3>
+		<h3 class="contribution-title"><a href={href} set:html={keepIdentifiers(d.title)} /></h3>
 		<p class="contribution-summary">{d.shortSummary}</p>
 		<ul class="chip-list">
-			{d.concepts.map((concept) => <li class="chip">{concept}</li>)}
+			{d.concepts.slice(0, 3).map((concept) => <li class="chip">{concept}</li>)}
 		</ul>
 	</div>
 	<div class="contribution-side">
-		<span class="status-pills">{statuses.map((status) => <StatusPill status={status} />)}</span>
+		<StatusPill status={status} />
 		<p class="contribution-meta">{d.complexity} · {d.technicalArea}</p>
 		<p class="contribution-links">
 			<a href={href}>Write-up</a>
@@ -40,26 +41,40 @@ const date = new Date(`${d.date}T00:00:00`).toLocaleDateString('en-US', { year: 
 	.contribution {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 240px;
-		gap: 24px 48px;
-		padding: 28px 0;
+		gap: 20px 48px;
+		padding: 24px 0;
 		border-bottom: 1px solid var(--line);
 	}
 	.contribution[hidden] { display: none; }
-	.contribution-repo { margin: 0 0 10px; font: 500 12px var(--font-mono); }
+	.contribution-repo { margin: 0 0 8px; font: 500 12px var(--font-mono); }
 	.contribution-repo a { color: var(--ink); text-decoration: none; }
 	.contribution-repo a:hover { text-decoration: underline; }
 	.contribution-ref { color: var(--muted); }
-	.contribution-title { margin: 0 0 10px; font-size: 22px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
+	.contribution-title { margin: 0 0 8px; font-size: 21px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; text-wrap: balance; }
 	.contribution-title a { text-decoration: none; }
 	.contribution-title a:hover { text-decoration: underline; text-decoration-color: var(--accent-deep); text-underline-offset: 5px; }
-	.contribution-summary { max-width: 62ch; margin: 0 0 14px; color: var(--ink-soft); font-size: 15px; line-height: 1.55; }
-	.contribution-side { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding-top: 2px; }
+	.contribution-summary {
+		display: -webkit-box;
+		max-width: 68ch;
+		margin: 0 0 12px;
+		overflow: hidden;
+		color: var(--ink-soft);
+		font-size: 15px;
+		line-height: 1.55;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+	}
+	.contribution-side { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding-top: 2px; }
 	.contribution-meta { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 	.contribution-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; font: 500 12px var(--font-mono); }
 	.contribution-links a { color: var(--ink); }
 	@media (max-width: 760px) {
-		.contribution { grid-template-columns: 1fr; gap: 16px; }
-		.contribution-side { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
-		.contribution-meta { flex-basis: 100%; }
+		.contribution { grid-template-columns: 1fr; gap: 12px; padding: 20px 0; }
+		.contribution-title { font-size: 19px; }
+		.contribution-summary { -webkit-line-clamp: 3; line-clamp: 3; }
+		.contribution-side { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+		.contribution-meta { display: none; }
+		.contribution-main .chip:nth-child(n + 3) { display: none; }
 	}
 </style>

@@ -17,44 +17,45 @@ const stats = [
 	{ value: open, label: 'Pull requests open' },
 	{ value: repositories, label: 'Repositories' },
 ];
+
+const isMerged = (c: (typeof contributions)[number]) => c.data.prMerged || c.data.status === 'Merged' || c.data.status === 'Upstream Recognised';
+const statusOptions = [
+	{ value: 'All', label: 'All', count: contributions.length },
+	{ value: 'Merged', label: 'Merged', count: contributions.filter(isMerged).length },
+	{ value: 'PR Open', label: 'PR open', count: contributions.filter((c) => !isMerged(c) && c.data.status === 'PR Open').length },
+	{ value: 'Other', label: 'In progress', count: contributions.filter((c) => !isMerged(c) && c.data.status !== 'PR Open').length },
+].filter((option) => option.count > 0);
+const complexityOptions = ['Hard', 'Medium', 'Simple'].filter((level) => contributions.some((c) => c.data.complexity === level));
 ---
 
-<BaseLayout title="Open source" description="Upstream contributions to vLLM, llm-d, and vLLM Router: inference lifecycle, request routing, flow control, and concurrency fixes.">
+<BaseLayout title="Open source" description="Upstream contributions across the open-source LLM stack: vLLM, llm-d, NVIDIA Dynamo and LiteLLM. Inference correctness, request routing, flow control and caching fixes, each with a write-up.">
 	<main id="main" class="listing-page">
 		<PageHeader eyebrow="Open source" title="Upstream contributions">
-			<p>I build and optimize production AI infrastructure, tackling the systems challenges behind LLM serving, inference efficiency, request routing, and distributed reliability. Contributor to llm-d, NVIDIA Dynamo, and LiteLLM.</p>
+			<p>I build AI systems end to end, and I fix the layer underneath them when it breaks. These are my contributions to vLLM, llm-d, NVIDIA Dynamo and LiteLLM: inference correctness, request routing, flow control and caching. Each has a write-up with the root cause and the test that reproduces it.</p>
 		</PageHeader>
 		<StatStrip items={stats} />
 		<section class="contributions" aria-labelledby="contributions-title">
 			<div class="section-heading">
 				<h2 id="contributions-title" class="display-2">Contribution log</h2>
-				<form class="contribution-controls" aria-label="Filter contributions">
-					<label>
-						<span>Status</span>
-						<select id="status-filter">
-							<option value="All" selected>All</option>
-							<option value="Merged">Merged</option>
-							<option value="PR Open">PR open</option>
-							<option value="Implementation">In progress</option>
-						</select>
-					</label>
-					<label>
-						<span>Complexity</span>
-						<select id="complexity-filter">
-							<option value="All" selected>All</option>
-							<option value="Hard">Hard</option>
-							<option value="Medium">Medium</option>
-							<option value="Simple">Simple</option>
-						</select>
-					</label>
-					<label>
-						<span>Order</span>
-						<select id="date-sort">
-							<option value="desc" selected>Latest first</option>
-							<option value="asc">Oldest first</option>
-						</select>
-					</label>
-				</form>
+				<div class="contribution-controls">
+					<div class="segmented" role="group" aria-label="Filter by status" data-filter="status">
+						{statusOptions.map((option, i) => (
+							<button type="button" data-value={option.value} aria-pressed={i === 0 ? 'true' : 'false'}>
+								{option.label} <span class="count">{option.count}</span>
+							</button>
+						))}
+					</div>
+					{complexityOptions.length > 1 && (
+						<div class="segmented" role="group" aria-label="Filter by complexity" data-filter="complexity">
+							<button type="button" data-value="All" aria-pressed="true">Any complexity</button>
+							{complexityOptions.map((level) => <button type="button" data-value={level} aria-pressed="false">{level}</button>)}
+						</div>
+					)}
+					<div class="segmented" role="group" aria-label="Sort order" data-filter="order">
+						<button type="button" data-value="desc" aria-pressed="true">Latest</button>
+						<button type="button" data-value="asc" aria-pressed="false">Oldest</button>
+					</div>
+				</div>
 			</div>
 			<div class="contribution-list" id="contribution-list">
 				{contributions.map((contribution) => <ContributionCard contribution={contribution} />)}
@@ -65,44 +66,54 @@ const stats = [
 </BaseLayout>
 
 <style>
-	.contributions { padding-top: 56px; }
-	.contribution-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
-	.contribution-controls label { display: grid; gap: 6px; color: var(--muted); font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
-	.contribution-controls select {
-		min-width: 140px;
-		padding: 9px 32px 9px 12px;
-		border: 1px solid var(--line-strong);
+	.contributions { padding-top: 40px; }
+	.contributions .section-heading { margin-bottom: 24px; }
+	.contribution-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+	.segmented { display: inline-flex; flex-wrap: wrap; padding: 3px; border: 1px solid var(--line-strong); border-radius: 999px; }
+	.segmented button {
+		padding: 7px 12px;
+		border: 0;
 		border-radius: 999px;
-		color: var(--ink);
-		background: var(--paper);
-		font: 500 12px var(--font-mono);
-		text-transform: none;
+		background: transparent;
+		color: var(--ink-soft);
+		font: 500 12px/1 var(--font-mono);
+		cursor: pointer;
+		transition: background-color 0.15s, color 0.15s;
 	}
+	.segmented button:hover { color: var(--ink); background: var(--paper-2); }
+	.segmented button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+	.segmented .count { opacity: 0.65; }
 	.contribution-list { border-top: 1px solid var(--line); }
 	.contribution-empty { padding: 32px 0; color: var(--muted); border-bottom: 1px solid var(--line); }
+	@media (max-width: 640px) {
+		.contributions { padding-top: 32px; }
+		.segmented button { padding: 8px 10px; }
+	}
 </style>
 
 <script>
 	const list = document.querySelector<HTMLElement>('#contribution-list');
 	const empty = document.querySelector<HTMLElement>('#contribution-empty');
-	const dateSort = document.querySelector<HTMLSelectElement>('#date-sort');
-	const complexityFilter = document.querySelector<HTMLSelectElement>('#complexity-filter');
-	const statusFilter = document.querySelector<HTMLSelectElement>('#status-filter');
+	const groups = Array.from(document.querySelectorAll<HTMLElement>('.segmented[data-filter]'));
 
-	if (list && empty && dateSort && complexityFilter && statusFilter) {
+	if (list && empty && groups.length > 0) {
 		const cards = Array.from(list.querySelectorAll<HTMLElement>('.contribution'));
+		const state: Record<string, string> = { status: 'All', complexity: 'All', order: 'desc' };
+		const merged = (card: HTMLElement) => /^(Merged|Upstream Recognised)$/.test(card.dataset.status ?? '');
+		const matchesStatus = (card: HTMLElement) => {
+			if (state.status === 'All') return true;
+			if (state.status === 'Merged') return merged(card);
+			if (state.status === 'PR Open') return card.dataset.status === 'PR Open';
+			return !merged(card) && card.dataset.status !== 'PR Open';
+		};
 
 		const update = () => {
-			const direction = dateSort.value === 'asc' ? 1 : -1;
-			const complexity = complexityFilter.value;
-			const status = statusFilter.value;
+			const direction = state.order === 'asc' ? 1 : -1;
 			let visible = 0;
 			cards
 				.sort((a, b) => direction * (a.dataset.date ?? '').localeCompare(b.dataset.date ?? ''))
 				.forEach((card) => {
-					const show =
-						(complexity === 'All' || card.dataset.complexity === complexity) &&
-						(status === 'All' || (status === 'Merged' ? card.dataset.status !== undefined && /Merged|Upstream Recognised/.test(card.dataset.status) : card.dataset.status === status));
+					const show = matchesStatus(card) && (state.complexity === 'All' || card.dataset.complexity === state.complexity);
 					card.hidden = !show;
 					if (show) visible += 1;
 					list.append(card);
@@ -110,6 +121,14 @@ const stats = [
 			empty.hidden = visible > 0;
 		};
 
-		for (const control of [dateSort, complexityFilter, statusFilter]) control.addEventListener('change', update);
+		for (const group of groups) {
+			group.addEventListener('click', (event) => {
+				const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-value]');
+				if (!button) return;
+				state[group.dataset.filter ?? ''] = button.dataset.value ?? '';
+				for (const other of group.querySelectorAll('button')) other.setAttribute('aria-pressed', String(other === button));
+				update();
+			});
+		}
 	}
 </script>

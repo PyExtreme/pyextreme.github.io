@@ -3,6 +3,7 @@ import { getCollection, render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import TableOfContents from '../../components/TableOfContents.astro';
 import StatusPill from '../../components/StatusPill.astro';
+import { keepIdentifiers } from '../../data/site';
 import '../../styles/prose.css';
 import '../../styles/article.css';
 
@@ -16,7 +17,7 @@ const { data } = contribution;
 const { Content, headings } = await render(contribution);
 const words = (contribution.body ?? '').split(/\s+/).filter(Boolean).length;
 const minutes = Math.max(1, Math.round(words / 220));
-const statuses = data.prMerged ? ['Merged', 'Upstream Recognised'] : [data.status];
+const status = data.prMerged ? 'Merged' : data.status;
 const date = new Date(`${data.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 ---
 
@@ -24,12 +25,12 @@ const date = new Date(`${data.date}T00:00:00`).toLocaleDateString('en-US', { yea
 	<main id="main" class="article-page">
 		<header class="article-header">
 			<p class="eyebrow">Open source · <a href={data.repositoryUrl} target="_blank" rel="noopener noreferrer">{data.repository}</a> · {data.issueNumber}</p>
-			<h1 class="display-1">{data.title}</h1>
+			<h1 class="display-1" set:html={keepIdentifiers(data.title)} />
 			{data.lede && <p class="lede">{data.lede}</p>}
 			<dl class="article-meta">
 				<div>
 					<dt>Status</dt>
-					<dd class="status-pills">{statuses.map((status) => <StatusPill status={status} />)}</dd>
+					<dd><StatusPill status={status} /></dd>
 				</div>
 				<div>
 					<dt>Date</dt>

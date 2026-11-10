@@ -22,7 +22,7 @@ const variant = status.toLowerCase().replaceAll(' ', '-');
 		text-transform: uppercase;
 		white-space: nowrap;
 	}
-	.status.merged { background: var(--accent); border-color: var(--accent); font-weight: 700; }
+	.status.merged { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 	.status.merged::before { content: '✓'; }
 	.status.pr-open { border-color: var(--ink); }
 	.status.closed, .status.investigating { color: var(--muted); }

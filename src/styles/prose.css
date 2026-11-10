@@ -49,9 +49,12 @@
 	font: 13px/1.65 var(--font-mono);
 	overflow-x: auto;
 }
+.prose :not(pre) > code { overflow-wrap: anywhere; }
 .prose pre code { padding: 0; background: transparent; color: inherit; font: inherit; }
 .prose pre[data-language='text'] { font-size: 12.5px; }
-.prose img { display: block; max-width: 100%; height: auto; margin: 2em 0; }
+.prose img { display: block; max-width: 100%; height: auto; margin: 2em 0; border-radius: 8px; }
+.prose p:has(> img:only-child) { margin: 2em 0; overflow-x: auto; }
+.prose p:has(> img:only-child) img { margin: 0; }
 .prose table {
 	width: 100%;
 	margin: 2em 0;
@@ -76,5 +79,7 @@
 	.prose pre { padding: 16px; font-size: 12px; }
 	.prose pre[data-language='text'] { font-size: 11px; }
 	.prose table { display: block; overflow-x: auto; }
+	/* Diagrams keep a readable size and scroll sideways inside their own box. */
+	.prose p:has(> img:only-child) img { width: 680px; max-width: none; }
 	.prose th, .prose td { padding-right: 12px; }
 }

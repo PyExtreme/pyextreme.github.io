@@ -1,4 +1,7 @@
 ---
+import '@fontsource-variable/manrope/wght.css';
+import '@fontsource/dm-mono/latin-400.css';
+import '@fontsource/dm-mono/latin-500.css';
 import '../styles/global.css';
 import Navigation from '../components/Navigation.astro';
 import SiteFooter from '../components/SiteFooter.astro';
@@ -16,6 +19,7 @@ interface Props {
 const { title, description = site.description, type = 'website', noindex = false } = Astro.props;
 const fullTitle = title ? `${title} | ${site.name}` : `${site.name} | ${site.role}`;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
+const ogImage = new URL('/og.png', Astro.site ?? site.url).href;
 const sameAs = [site.github, site.linkedin].filter(Boolean);
 const person = {
 	'@context': 'https://schema.org',
@@ -24,6 +28,7 @@ const person = {
 	jobTitle: site.role,
 	url: site.url,
 	sameAs,
+	...(site.email ? { email: `mailto:${site.email}` } : {}),
 };
 ---
 
@@ -38,21 +43,27 @@ const person = {
 		{noindex && <meta name="robots" content="noindex" />}
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="sitemap" href="/sitemap-index.xml" />
-		<meta name="theme-color" content="#f7f8f5" />
+		<meta name="theme-color" content="#f7f8f5" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#111816" media="(prefers-color-scheme: dark)" />
+		<script is:inline>
+			try {
+				const theme = localStorage.getItem('theme');
+				if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+			} catch {}
+		</script>
 		<meta property="og:type" content={type} />
 		<meta property="og:site_name" content={site.name} />
 		<meta property="og:title" content={fullTitle} />
 		<meta property="og:description" content={description} />
 		<meta property="og:url" content={canonical} />
-		<meta name="twitter:card" content="summary" />
+		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={`${site.name}, ${site.role}. ${site.summary}.`} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:image" content={ogImage} />
 		<meta name="twitter:title" content={fullTitle} />
 		<meta name="twitter:description" content={description} />
-		<link rel="preconnect" href="https://fonts.googleapis.com" />
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link
-			rel="stylesheet"
-			href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
-		/>
 		<script type="application/ld+json" set:html={JSON.stringify(person)} />
 	</head>
 	<body>
