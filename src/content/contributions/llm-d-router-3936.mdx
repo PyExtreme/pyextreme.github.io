@@ -1,0 +1,113 @@
+---
+title: "Designing one source of truth for the prefill profile name in llm-d-router"
+description: "Reproduced a bug where six EPP plugins lost track of the prefill endpoint once its scheduling profile was renamed, proposed moving the name onto the scheduling result, and reviewed the upstream fix PR that adopted that design."
+lede: "In llm-d's disaggregated serving, the prefill scheduling profile can have any name, but six plugins looked it up by the literal string \"prefill\". Rename it and they quietly treated the decode pod as the prefill pod, so cache indexes, load counters and latency training data all drifted. The code change is mechanical. The work was choosing where the name should live and what should happen for handlers that never set it."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#3936"
+contributionType: "Design and code review"
+technicalArea: "LLM request routing / EPP plugin framework"
+status: "Upstream Recognised"
+prMerged: false
+date: "2026-11-06"
+complexity: "Medium"
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/3936"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/4153"
+stack:
+  - "Go"
+  - "Kubernetes"
+  - "Gateway API Inference Extension"
+  - "Prometheus"
+highlight: "Proposed the scheduling-result design that the upstream fix for renamed prefill profiles adopted"
+shortSummary: "Reproduced the failure on main: with the prefill profile named prefill-h200, every renamed-profile row failed in all five plugins under test. Proposed adding PrefillProfileName to SchedulingResult, set by the profile handlers, so plugins read one field instead of a hard-coded string. The upstream fix PR (#4153) uses that shape; I reviewed it and flagged the missing fallback for out-of-tree handlers and two plugins whose own defaults can disagree with the result."
+concepts:
+  - "Single source of truth for configuration"
+  - "Silent fallbacks as a failure mode"
+  - "Backward compatibility for out-of-tree extensions"
+  - "Reproducing before proposing"
+  - "Reviewing a design you proposed"
+---
+
+## Context: a scheduler with named profiles
+
+The [llm-d router](https://github.com/llm-d/llm-d-router) is a Kubernetes inference gateway. Its Endpoint Picker (EPP) chooses which vLLM pod serves each request. For disaggregated serving, where prefill and decode run on different pods, a profile handler runs several scheduling profiles per request, typically one for decode and one for prefill, and returns a `SchedulingResult`. That result holds a map of profile name to chosen endpoints, plus `PrimaryProfileName`, the profile whose endpoint actually serves the response.
+
+After scheduling, a set of plugins read that result to keep routing state accurate: prefix-cache producers record which pod now holds which prompt blocks, an in-flight load producer tracks outstanding requests per pod, a latency producer collects TTFT training samples, and an LRU scorer spreads cold requests across prefill pods.
+
+`disagg-profile-handler` lets an operator name the prefill profile anything, for example `prefill-h200` for a pool of H200 nodes. [Issue #3936](https://github.com/llm-d/llm-d-router/issues/3936) reported that most of those plugins did not follow the rename.
+
+## Symptom: the decode pod gets credited with prefill work
+
+With the prefill profile renamed and decode as the primary profile, nothing errors. Each plugin just misses the prefill endpoint and falls back to the decode one:
+
+| Plugin | What goes wrong |
+|---|---|
+| `approximate-prefix-cache-producer` | Prompt blocks are not indexed on the prefill pod; cache predictions are recorded for decode |
+| `precise-prefix-cache-producer` | No speculative cache entries are written for the prefill pod |
+| `inflight-load-producer` | The prefill pod's in-flight count is held until end of stream instead of released at first token |
+| `predicted-latency-producer` | TTFT samples are attributed to the decode pod, so the prefill model gets no training data |
+| `no-hit-lru` scorer | The used prefill pod is never moved in the LRU, so the next cold request picks it again |
+| `p2p-source-producer` | Metrics label the decision `endpoint_role="decode"` while the pull targets the prefill pod |
+
+The issue author attached table-driven tests that run each plugin with the prefill profile named `prefill` and then `prefill-h200`. I ran them on main at `b0fad71b`, two days after the issue was filed, to check nothing had already fixed it. Every `prefill-h200` row still failed in all five packages.
+
+```
+make test-filter PATTERN='TestRenamedPrefillProfile' TYPE=epp epp_TEST_PACKAGES="./pkg/epp/framework/plugins/requesthandling/dataproducer/approximateprefix/... ./pkg/epp/framework/plugins/requesthandling/dataproducer/preciseprefixcache/... ./pkg/epp/framework/plugins/requesthandling/dataproducer/inflightload/... ./pkg/epp/framework/plugins/requesthandling/dataproducer/predictedlatency/... ./pkg/epp/framework/plugins/scheduling/scorer/nohitlru/..."
+```
+
+![Before: the handler runs profiles named decode and prefill-h200, plugins look up the name prefill, find nothing and use the decode pod. After: the handler also sets PrefillProfileName to prefill-h200 and plugins read the prefill pod through that field](/images/llm-d-router-3936/prefill-profile-name.svg)
+
+## Root cause: the name lived in the wrong place
+
+Only the profile handler knows which profile is the prefill stage. It already records that knowledge for one role, by setting `PrimaryProfileName`, but nothing recorded the prefill role. So each plugin had to guess. Five of them hard-coded the constant `"prefill"` and indexed `ProfileResults` with it. Two others, `p2p-source-producer` and `latency-reporter`, took their own `prefillProfileName` parameter, which an operator had to keep in sync with the handler config by hand.
+
+This had come up before. An earlier proposal, #1091, suggested prefill and decode name fields on `SchedulingResult`, and was closed by the stale bot. The multimodal producer still has a comment pointing at it for its hard-coded `encode` profile.
+
+## Constraints: what a fix had to respect
+
+- **Out-of-tree profile handlers exist.** `SchedulingResult` is part of the plugin framework interface. A new field that custom handlers don't know about will be empty for them. If plugins treat empty as "no prefill stage", every custom handler that names its profile `prefill` loses prefill handling, silently, on upgrade.
+- **Aggregated and decode-only requests are normal.** An empty field has to mean something sensible for requests that have no prefill stage at all.
+- **Two plugins already have an explicit parameter.** Operators may have set `prefillProfileName` on `p2p-source-producer` or `latency-reporter`. Removing it or ignoring it would break their config.
+- **Six plugins, one interface change.** Mixing the framework change and six plugin rewrites in one diff makes review harder and makes a partial revert impossible.
+
+## Design: put the name on the scheduling result
+
+I posted the design on the issue on 2026-11-06.
+
+**Chosen: a `PrefillProfileName` field on `SchedulingResult`, set by the handler.** The three handlers that build a result (disagg, header, single) set it in `ProcessResults`, next to `PrimaryProfileName`. A helper beside `PrimaryEndpoint()` returns the prefill target. An empty field means no prefill stage. Every affected plugin reads the result after scheduling anyway, so they get one source instead of a constant or a parameter each.
+
+For the open questions in the issue:
+
+- `header-profile-handler` sets the field from the `prefillProfile` parameter it already has.
+- The `prefillProfileName` parameters on `p2p-source-producer` and `latency-reporter` default to the result's field, and an explicit value still wins.
+- For custom handlers that leave the field unset, a temporary scheduler fallback to a profile literally named `prefill`, so their behavior does not change on upgrade. I said a clean break would also be acceptable if the maintainers preferred it.
+- Ship it as a framework-only PR first, then move the plugins in a second one.
+
+**Rejected: a `prefillProfileName` parameter on every plugin.** It fixes each plugin but leaves operators to keep seven configs in sync with the handler, which is the same class of bug one level up.
+
+**Rejected: infer prefill as "the profile that is not primary".** It breaks as soon as a result carries a third profile such as `encode`.
+
+## Outcome: the upstream fix adopted the design
+
+Before I started the framework PR, another contributor opened [#4153](https://github.com/llm-d/llm-d-router/pull/4153). It adds `SchedulingResult.PrefillProfileName` and a `PrefillProfile()` helper, has the disagg and header handlers set it, and switches all six plugins over. It reuses the issue's reproduction tests, and it rejects the "not primary" inference for the same reason. It differs from my proposal in three ways: no `DecodeProfileName` (fine, `PrimaryProfileName` already covers decode), one PR instead of two, and no fallback for handlers that leave the field empty.
+
+Since the shape matched, I said on the PR that I was happy for the fix to land there rather than open a competing one, and reviewed the diff instead. Two findings:
+
+- **No fallback for an empty field.** An out-of-tree handler that names its profile `prefill` and does not set the new field will lose prefill handling in all six plugins, with no error. That is the same silent failure the issue reported, moved to a different set of users.
+- **Two plugins can still disagree with the result.** `p2p-source-producer` and `latency-reporter` keep their own `prefillProfileName` defaulting to `"prefill"`. On a renamed profile, the pull decision can then use a different profile from the one the role label reports. I suggested defaulting them to the result's field when unset.
+
+The PR is open and awaiting a maintainer decision on those points. A related hard-coded `encode` profile in the multimodal producer is a possible follow-up issue, out of scope here.
+
+## What I ran
+
+- The issue's five reproduction tests, locally, on main at `b0fad71b`: every `prefill-h200` row fails in all five packages.
+- The review of #4153 was a read of the diff against the issue's open questions. I did not run the PR branch's tests myself; the PR's CI was green at the time.
+
+## Core concepts this exercised
+
+- **Single source of truth for configuration.** The component that decides a fact (the profile handler) should publish it. Every consumer that re-derives it, from a constant or its own parameter, is a place for the copies to drift.
+- **Silent fallbacks as a failure mode.** The original bug never errored; plugins fell back to the decode pod and produced plausible but wrong state. The same risk reappears in any fix that treats a missing field as "nothing to do".
+- **Backward compatibility for out-of-tree extensions.** Adding a field to a framework interface is only non-breaking if consumers handle the value that old producers will leave in it.
+- **Reproducing before proposing.** Running the repro on current main confirmed the bug was still live and gave the design a concrete target before any discussion of shape.
+- **Reviewing a design you proposed.** When someone else implements your design, the useful contribution is checking the edges you cared about, not a parallel PR.
