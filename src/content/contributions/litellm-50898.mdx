@@ -1,0 +1,144 @@
+---
+title: "Keeping carried end-user spend when LiteLLM retries a budget reset"
+description: "A fix so a retried budget reset no longer resets rollover-capped end users a second time, which erased the overage they were meant to carry into the new window."
+lede: "When LiteLLM's budget reset job failed after resetting end users but before moving the budget window, the next run reset the same end users again and wiped the spend they were supposed to carry over. The reset had no durable record of who was already done, and the obvious place to keep one, the budget's own reset time, is sometimes empty."
+project: "LiteLLM"
+repository: "BerriAI/litellm"
+repositoryUrl: "https://github.com/BerriAI/litellm"
+issueNumber: "#50898"
+contributionType: "Bug fix"
+technicalArea: "LLM gateway / budget reset job"
+status: "Merged"
+prMerged: true
+date: "2026-11-11"
+complexity: "Hard"
+issueUrl: "https://github.com/BerriAI/litellm/issues/50898"
+prUrl: "https://github.com/BerriAI/litellm/pull/51143"
+stack:
+  - "Python"
+  - "pytest"
+  - "PostgreSQL"
+  - "Prisma"
+  - "Redis"
+concepts:
+  - "Idempotent retries"
+  - "Per-row stamps vs cursors"
+  - "Multi-pod races"
+  - "Read replica lag"
+  - "Mutation testing"
+shortSummary: "Added a nullable spend_reset_window column to the end-user table so each reset stamps the budget window it closes and a retry skips users already done. Budgets with no reset time get one pinned from the writer before the sweep, and a pod that loses that race leaves the tier alone. Checked with a failing-first test, a 15-mutant run, and a live two-worker proxy on Postgres and Redis: 15 -> 5 -> 5 after the fix, where main went 15 -> 5 -> 0."
+---
+
+## Context: rollover budgets and the reset job
+
+[LiteLLM](https://github.com/BerriAI/litellm) is a gateway that puts one API in front of many model providers, and it can track spend and enforce budgets. A budget tier has a cap and a duration, and customers (end users) can be attached to a tier. When the budget rollover setting is on, a reset does not simply zero everyone. A customer who overspent the cap keeps the overage: spend above the cap is carried into the new window as `spend - cap`, and spend under the cap is zeroed.
+
+A background job, `ResetBudgetJob` in `litellm/proxy/common_utils/reset_budget_job.py`, finds tiers whose `budget_reset_at` has passed and resets everything linked to them. Keys, orgs, tags and the other linked tables are reset in one database transaction together with the tier's window advance. End users are the exception. They are reset in separate committed pages, because a single statement over millions of end users once outlived the database client's 30 second timeout.
+
+[Issue #50898](https://github.com/BerriAI/litellm/issues/50898) reported that a retried reset erased the carried spend of rollover-capped end users.
+
+## Symptom: 15 becomes 5 becomes 0
+
+Take a tier with `max_budget: 10` and `budget_duration: "1d"`, rollover on, and a customer who spent 15. The window closes and the job runs. The end-user reset commits and the customer is at 5, as intended. Then the transaction that advances the tier's window fails once. The tier's `budget_reset_at` is untouched, so the tier is due again, and the next run resets the customer a second time: 5 is under the cap, so it is zeroed. The customer ends at 0 instead of 5.
+
+I first reproduced it with a script that drives the real job against an in-memory fake database, and later against a real Postgres, where a one-shot trigger made the window advance fail:
+
+```
+before: spend 15.0
+after failing tick: spend=5.0, reset time not moved
+after retry tick:   spend=0.0, reset time moved
+expected carried spend: 5.0
+```
+
+![Before: the first tick resets the end user to 5 and the window advance fails, so the retry sees 5 under the cap and zeroes it. After: the first tick stamps the user with the window it closed, so the retry skips the user and spend stays 5](/images/litellm-50898/retried-reset.svg)
+
+The same replay also hits tiers with no cap. A user zeroed on the failed tick who spends again before the retry is zeroed a second time, so new-window spend is refunded.
+
+## Root cause: nothing says a row was already reset
+
+`_reset_expired_budget_cascade` runs `_reset_enduser_spend` and then `_commit_budget_cascade`. If the second step fails, the tier comes back with its old `budget_reset_at`, and `_reset_enduser_spend` starts again from the first page. The reset rules in `_queue_enduser_tier_resets` are not idempotent: after one pass an over-cap row holds `spend - cap`, which falls inside the "zero it" predicate on the second pass.
+
+`LiteLLM_EndUserTable` had no column that recorded which window a row was last reset for, so a replay could not tell finished rows from pending ones. Keys, users and teams had already been made safe with a per-row compare on their own `budget_reset_at` column in an earlier fix. End users had no equivalent.
+
+## Constraints: why the obvious fixes were wrong
+
+- **Moving end users back into the cascade transaction.** That is the design the paged commits replaced, and it brings back the statement that outlives the client timeout.
+- **A per-tier "already reset" flag.** It would have to be cleared at the right moment, and it does not cover a failure on page two of several.
+- **A monotonic "stamp is older than the window" guard.** An admin can set a tier's `budget_reset_at` backwards through `/budget/update`, so an older stamp is not always a stale one.
+- **The window itself is sometimes missing.** Tag budgets, older rows and an admin clearing the field all leave `budget_reset_at` null, and the tier is still reset. A stamp built from a null window means nothing.
+- **Several pods can sweep at once.** The reset job does not always hold a lock, so two pods can read the same tier and reset it concurrently.
+
+## Design: stamp the row with the window it closed
+
+Three options went through a design review before I wrote code:
+
+- **A per-row stamp on the end-user table (chosen).** Both page statements get a guard, and each reset writes the window it closed into the row in the same statement. A retry for the same window matches no rows that are already done. It also covers a failure on a later page, a changed set of linked tiers, and new spend arriving between ticks on rows already stamped.
+- **A persisted walk cursor per tier.** It needs about 150 lines of raw SQL, is unsafe under concurrent walkers unless it is also guarded in the statement, misses rows added behind the cursor, and leaves state rows behind. Rejected.
+- **Resetting the last page inside the cascade transaction, or a compare on spend.** Both only cover part of the failures. Rejected.
+
+The review blocked my first version of the guard. I had used `stamp < window`, which is wrong when the window is null or has been pinned backwards. The accepted guard is `stamp IS NULL OR stamp != window`, so any mismatch is a reset and only an exact match is skipped. It also asked that the test fake follow SQL NULL semantics rather than Python's.
+
+## The fix: a column, a guard, and a pinned window
+
+The guard and the stamp live in one place, a small unit of work in `litellm/repositories/unit_of_work.py` that both page statements share:
+
+```python
+where = {"AND": [where, {"OR": [{"spend_reset_window": None}, {"NOT": {"spend_reset_window": window}}]}]}
+data = {**data, "spend_reset_window": window}
+```
+
+The rest of the change is what makes `window` trustworthy:
+
+- **One nullable column.** `spend_reset_window` on `LiteLLM_EndUserTable`, in all three schema copies, with a migration that only adds a column, so there is no table rewrite.
+- **A window per tier.** `reset_budget_job` records each tier's pre-advance `budget_reset_at` and stamps its end users with it. A tier whose window is null is left unguarded, which is today's behavior.
+- **Pinning an empty reset time.** A tier with no `budget_reset_at` gets the tick's time written into it before any end user is reset, only if the field is empty, so the retry reads back the same window.
+- **The pin is read from the writer.** The first read-back used the default client, which can route reads to a replica. A lagging replica returned null and the guard went away, so the pin and its read-back now use the writer.
+- **A pod that loses the race steps aside.** If the read-back is later than the pod's own pin, another pod already pinned or advanced the tier, so this sweep leaves that tier and everything linked to it alone. The pin is truncated to the millisecond because the column is `timestamp(3)` and rounds.
+
+The final change is 880 additions and 86 deletions, mostly tests.
+
+## Verification: red first, then break it on purpose
+
+The first new tests failed on the unfixed code: a failing window advance took an over-cap user from 5 to 0, a second-page failure took a capless user from 3 to 0 and a double-cap user from 18 to 8. The test ledger is an in-memory fake that evaluates the `where` and `data` the code builds, with SQL NULL semantics, and lets me inject a failure at the batch commit.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Window advance fails, over-cap user | 5 then 0 | 5 then 5 |
+| Page two fails, capless user | 3 then 0 | 3 then 3 |
+| Page two fails, double-cap user | 18 then 8 | 18 then 18 |
+| Next window really closes | Reset | Reset again |
+| Tier never reset, or admin clears the reset time | Replayed | Pinned or unguarded as designed |
+| Another sweep already advanced the tier | Double reset | Tier left alone |
+
+A mutation script then changed the guard and the pin in 15 ways, such as `IS NULL` only, no null branch, a `<` guard, no stamp on the zero or the decrement statement, no guard, the first tier's window for every tier, no pin for an empty reset time, a pin that overwrites a stored time, reading the pin back from the replica, and rollover caps for a tier the sweep left out. All 15 failed at least one test. Four rounds of independent code review each found something real, including the replica read, the stale-sweep double reset, and caps still applied to a tier that had been left out, and each fix got a test and a new mutant.
+
+What ran locally:
+
+- **Unit tests.** `test_reset_budget_job.py`, `test_unit_of_work.py` and `test_customer_budget.py`, 204 passed after the final rebase.
+- **`make check`.** It passed at the last review commit. After the rebase onto current main, which added a migration with the same timestamp prefix as mine, I renamed my migration to apply after it and did not rerun `make check`, since the diff was unchanged. That is left to CI.
+- **Migration lints.** The lock timeout and no data rewrite scripts, plus a fresh-database `migrate deploy` that applied everything in order.
+- **A live proxy.** Postgres 16.6 and Redis 7 in Docker, two proxy workers, a fresh database for each side, and a one-shot trigger that fails the first window advance, so no LiteLLM code was patched. I ran it twice per side, once with a reset time a minute in the past and once with no reset time.
+
+| Side | Reset time set | Reset time unset |
+| --- | --- | --- |
+| Before (merge base) | 15 -> 5 -> 0 | 15 -> 5 -> 0 |
+| After | 15 -> 5 -> 5 | 15 -> 5 -> 5 |
+
+In every After run the next window still resets the customer, 22 to 12.
+
+What the live run does not cover: it is one proxy and one database, so the read replica and the concurrent pod cases are covered by unit tests only. The DB schema migration test in CI, `test_db_schema_migration.py`, was left to upstream CI. The PR is merged.
+
+## Known gaps I wrote into the PR
+
+- A user at spend 0 on the failed tick gets no stamp, so the retry can still zero spend added before it.
+- A stale cascade replaying an older window can still reset twice, because the window advance has no compare-and-set. That predates this fix and also affects keys and orgs, so I did not address it here.
+- `num_endusers_updated` still counts rows the guard skipped on a retry.
+
+## Core concepts this exercised
+
+- **Make retries safe with durable per-row state.** A retry is only harmless if each unit of work can tell that it is already done. A stamp on the row, written in the same statement as the change, does that without a second transaction.
+- **Prefer an equality guard to an ordering guard.** `!=` skips only the exact window that was closed. `<` would have skipped rows after an admin pinned a window backwards.
+- **Do not trust a value that can be null.** The window the guard depends on was sometimes missing, so the fix pins it first, from the writer, and gives up on a tier cleanly if another pod got there first.
+- **Reads can go to a replica.** A read-back used to confirm a write has to go to the writer, or lag silently removes the guard.
+- **Mutation testing audits the tests.** Fifteen mutants, each killed, is how I knew the guard, the pin and the left-out tier rule were each pinned by a test.
+- **Say what was not proven.** A one-node live run does not prove concurrency, so the write-up and the PR say which cases are unit-tested only.
