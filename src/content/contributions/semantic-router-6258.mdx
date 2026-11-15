@@ -1,0 +1,123 @@
+---
+title: "Keeping a model runtime alive after a log line over 1 MiB in vLLM Semantic Router"
+description: "Fixed the router's process supervisor so one oversized log line no longer stops it reading the runtime's output, which left the child blocked on write and never restarted."
+lede: "vLLM Semantic Router starts its model runtime as a child process and forwards every line it prints into the router's logs. One line over 1 MiB made the reader quietly give up. Nothing drained the pipe after that, so the next write blocked, the process looked hung, and the supervisor never noticed. The fix had to keep reading without losing output and without making normal shutdowns noisy."
+project: "vLLM Semantic Router"
+repository: "vllm-project/semantic-router"
+repositoryUrl: "https://github.com/vllm-project/semantic-router"
+issueNumber: "#6258"
+contributionType: "Bug fix"
+technicalArea: "LLM request routing / model runtime supervisor"
+status: "Merged"
+prMerged: true
+date: "2026-11-15"
+complexity: "Medium"
+issueUrl: "https://github.com/vllm-project/semantic-router/issues/6258"
+prUrl: "https://github.com/vllm-project/semantic-router/pull/6583"
+stack:
+  - "Go"
+  - "bufio"
+  - "os/exec"
+  - "zap"
+highlight: "Fixed a model runtime hang caused by one log line over 1 MiB"
+shortSummary: "forwardLogs read the runtime's stdout and stderr with a bufio.Scanner capped at 1 MiB. A longer line ended the scan with ErrTooLong, the pipe was never read again, and the child blocked on its next write so cmd.Wait never returned. Added a split function that forwards an oversized line in 1 MiB pieces and a warning for real read errors that stays quiet on the normal pipe close. Three tests failed on main (5 second hang, 0 lines forwarded, no warning) and pass with the fix."
+concepts:
+  - "Pipes and backpressure between processes"
+  - "Silent goroutine exits"
+  - "Choosing data preservation over truncation"
+  - "Separating noisy expected errors from real ones"
+  - "Deterministic tests for process-level bugs"
+---
+
+## Context: a supervisor that forwards runtime logs
+
+[vLLM Semantic Router](https://github.com/vllm-project/semantic-router) is an Envoy ExtProc router that picks a model backend for each LLM request. The models it uses for that decision (classifiers, embeddings) are served by a separate model runtime process. A supervisor in `pkg/modelservice/supervisor.go` starts that process, restarts it when it exits, and forwards each line it prints as a `runtime_log` event so operators see one log stream. Stdout and stderr share one pipe.
+
+[Issue #6258](https://github.com/vllm-project/semantic-router/issues/6258) reported that this forwarding could stop for good.
+
+## Symptom: the runtime hangs and is never restarted
+
+If the runtime prints one line longer than 1 MiB, log forwarding stops with no error. Shortly after, the runtime freezes and the supervisor keeps waiting on it.
+
+I reproduced it on main with a child that prints a 1.2 MB line, then 20000 short lines, then creates a marker file:
+
+```
+head -c 1200000 /dev/zero | tr '\0' a; echo; (20000 x echo after); touch done; sleep 30
+```
+
+- 1.2 MB line: the marker never appears within 5 seconds, 0 `runtime_log` entries after the long line.
+- 500 KB line as a control: passes in 0.21 s with 20001 entries.
+
+## Root cause: the scanner gives up and nobody reads the pipe
+
+`forwardLogs` used a `bufio.Scanner` with a 1 MiB max token. A longer line makes `Scan()` return false with `bufio.ErrTooLong`. The loop ended, the goroutine returned, and the error was never checked. Nothing read the pipe after that. Once the OS pipe buffer filled, the child blocked on its next write, so `cmd.Wait` never returned and the restart logic never ran.
+
+![The supervisor reading the runtime's pipe. Before the fix, a line over 1 MiB ends the scanner, the pipe fills and the runtime blocks on write. After the fix, the line is forwarded in 1 MiB pieces and the following lines keep flowing.](/images/semantic-router-6258/pipe-drain.svg)
+
+## Constraints
+
+- **Keep reading no matter what.** Any fix that can stop reading the pipe early brings the hang back.
+- **Do not lose output.** The lines after a giant one are often the useful ones, such as the error that follows a dump.
+- **Keep memory bounded.** The 1 MiB cap exists so a runaway line cannot grow the buffer without limit.
+- **Normal exits must stay quiet.** `cmd.Wait` closes the pipe when the process exits, so a read in progress can fail with `os.ErrClosed` on an ordinary shutdown. Surfacing read errors, as the issue asked, must not turn that into a warning on every restart.
+
+## Design
+
+**Chosen: split oversized lines inside the scanner.** A custom split function wraps `bufio.ScanLines`. When it would ask for more data and the buffer already holds 1 MiB, it returns the whole buffer as a token. `ErrTooLong` can no longer fire, nothing is dropped, the max record size and memory stay the same, and the read loop is untouched. After the loop, a real read error is logged as `runtime_log_read_failed`, except `os.ErrClosed`.
+
+**Rejected: truncate with `bufio.Reader.ReadSlice`.** Bounded too, but it drops the rest of the line, allocates 1 MiB per start, needs a new `truncated` field and is a bigger diff.
+
+**Rejected: `io.Copy(io.Discard)` after the scanner stops.** Stops the hang but throws away every later log line.
+
+**Out of scope:** `runOnce` calls `Wait` while logs are still being read, so a crashing runtime can lose its last lines. Separate bug, noted in the PR.
+
+## The fix
+
+```go
+const maxLogLine = 1024 * 1024
+
+scanner.Buffer(make([]byte, 64*1024), maxLogLine)
+scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+	advance, line, err := bufio.ScanLines(data, atEOF)
+	if line == nil && len(data) >= maxLogLine {
+		return len(data), data, nil
+	}
+	return advance, line, err
+})
+// ... forwarding loop unchanged ...
+if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
+	logging.ComponentWarnEvent("model_runtime", "runtime_log_read_failed", ...)
+}
+```
+
+A 1 MiB + 10 byte line now arrives as two `runtime_log` records (1 MiB, then 10 bytes) followed by the next line as normal.
+
+## Verification
+
+All three tests were written first and failed on main.
+
+| Test | What it checks | On main | With fix |
+|---|---|---|---|
+| `TestSupervisorKeepsReadingAfterAnOversizedLine` | Real `sh` child: 1.2 MB line, 40000 lines, then a marker file | Blocked for 5 s | Marker appears |
+| `TestSupervisorForwardsAnOversizedLineInPieces` | `forwardLogs` on an in-memory reader gives exactly 1 MiB, 10 bytes, `after` | 0 lines | Pass |
+| `TestSupervisorLogsAFailedLogRead` | Closed pipe logs nothing; a failing reader logs one warning with process and error | No warning | Pass |
+
+A design review caught a flaky first draft: the process test also asserted on log content, but the forwarding goroutine outlives `runOnce` and logged into the next test iteration (18 of 20 runs failed under `-race` in isolation). I moved content checks into the synchronous test and kept the process test to "did the child get unblocked".
+
+Ran locally on macOS arm64:
+
+- `go test ./pkg/modelservice/ -run TestSupervisor -count=1 -v`: 5/5 pass
+- New tests with `-race -count=10`: pass
+- `go test ./pkg/modelservice/... -count=1`: ok
+- `go vet` on darwin and `GOOS=windows`, `gofmt`, `golangci-lint` with the repo config: clean
+- `make config-schema-check`: pass
+
+`make test-semantic-router` and the model runtime E2E profile need the full router build and are left to CI.
+
+## Core concepts this exercised
+
+- **Pipes and backpressure between processes.** A child writing to a pipe blocks once the buffer is full. A reader that stops is not a logging problem, it is a liveness problem for the whole process.
+- **Silent goroutine exits.** `Scan()` returning false looks the same for EOF and for failure. Not checking `scanner.Err()` turned a recoverable condition into a hang with no log line.
+- **Choosing data preservation over truncation.** Splitting keeps every byte with the same memory bound, so there was no reason to accept losing the newest output.
+- **Separating noisy expected errors from real ones.** The new warning is only useful if it does not fire on every normal exit, so `os.ErrClosed` from `Wait` is excluded and tested.
+- **Deterministic tests for process-level bugs.** Asserting on observable effects (a marker file) in the process test, and on content only in a synchronous test, removed the goroutine-lifetime flake.

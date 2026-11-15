@@ -1,0 +1,120 @@
+---
+title: "Stopping retries of 4xx errors whose body fails to read in vLLM Semantic Router"
+description: "Fixed the model runtime connector so a 400, 401 or 403 is no longer sent again just because its error body was cut off, while keeping the read error and the status visible in the message."
+lede: "vLLM Semantic Router's model runtime connector retries 5xx and 429 but not client errors. One branch skipped that check: if the error body of a 400, 401 or 403 failed to read, the request was retried anyway. The fix is two lines. The work was choosing which two, because the obvious ones change what callers further up treat as a real answer."
+project: "vLLM Semantic Router"
+repository: "vllm-project/semantic-router"
+repositoryUrl: "https://github.com/vllm-project/semantic-router"
+issueNumber: "#6252"
+contributionType: "Bug fix"
+technicalArea: "LLM request routing / model runtime connector"
+status: "Merged"
+prMerged: true
+date: "2026-11-14"
+complexity: "Simple"
+issueUrl: "https://github.com/vllm-project/semantic-router/issues/6252"
+prUrl: "https://github.com/vllm-project/semantic-router/pull/6570"
+stack:
+  - "Go"
+  - "net/http"
+  - "Envoy ExtProc"
+highlight: "Stopped the router's model connector from retrying 4xx errors whose body failed to read"
+shortSummary: "readResponse in the model runtime connector marked a failed error-body read as retryable without checking the HTTP status, so 400, 401 and 403 were sent twice. Added the status check and wrapped the read error with the status, keeping the error kind and StatusCode field unchanged so callers that treat a status error as a real answer are not affected. A table test with a server that declares 32 bytes and sends 7 failed on main and passes with the fix."
+concepts:
+  - "Retry policy as a single rule applied on every path"
+  - "Error types as a contract with callers"
+  - "Narrowing behavior instead of reclassifying it"
+  - "Reproducing truncated responses deterministically"
+---
+
+## Context: the connector between the router and its models
+
+[vLLM Semantic Router](https://github.com/vllm-project/semantic-router) sits behind Envoy as an ExtProc service and decides which model backend serves each LLM request. To make that decision it calls its own model runtime (classifiers, embeddings, a looper that fans out to backends) through one HTTP client in `pkg/modelruntime/connector`. That client owns retries: an operation marked `RetrySafe` is retried on transport errors and on statuses that `retryableStatus` accepts (5xx, 429), but not on client errors like 400, 401 or 403.
+
+[Issue #6252](https://github.com/vllm-project/semantic-router/issues/6252) reported one path where that rule was skipped.
+
+## Symptom: a 403 sent twice
+
+When a backend answers with a non-2xx status, the connector reads the error body so it can include it in the error. If that read fails, for example because the connection closes before the declared `Content-Length` arrives, the request is retried regardless of the status.
+
+I reproduced it with a test server that writes the status line, declares `Content-Length: 100`, sends `partial` and closes:
+
+```
+status=400 attempts=2 kind=response retryable=true statusCode=0 err=... unexpected EOF
+status=401 attempts=2 kind=response retryable=true statusCode=0 err=... unexpected EOF
+status=403 attempts=2 kind=response retryable=true statusCode=0 err=... unexpected EOF
+status=503 attempts=2 kind=response retryable=true statusCode=0 err=... unexpected EOF
+```
+
+400, 401 and 403 should have been one attempt. The status also did not appear anywhere in the error, so the logs showed only `unexpected EOF`.
+
+![Two paths through readResponse for an HTTP 403 whose error body is cut off. Before the fix the request is retried and the error shows only unexpected EOF. After the fix it stops after one attempt and the error says read error body of HTTP status 403.](/images/semantic-router-6252/retry-gate.svg)
+
+## Root cause: one branch ignored `retryableStatus`
+
+`Client.readResponse` in `connector.go` has two branches for a non-success status. When the body reads fine, the error is retryable only if `operation.RetrySafe && retryableStatus(code)`. When the body read fails, it was:
+
+```go
+Retryable: operation.RetrySafe && ctx.Err() == nil,
+Cause:     readErr,
+```
+
+No status check, and the status code was dropped. The bug also leaked further up: the embedding provider does its own outer retry based on the connector error's `Retryable` flag, so it repeated the same 4xx too.
+
+## Constraints: the error type is a contract
+
+The issue suggested gating on `retryableStatus` and keeping the status code in the error. The second part looked like "set `StatusCode` on the error", but reading the callers showed that would break things:
+
+- `Error()` prints `with HTTP status N` and drops the cause once `StatusCode` is set, so the `unexpected EOF` would disappear from logs.
+- The looper maps a connector error's `StatusCode` to the status it returns to the client, so a read failure would change what the user sees.
+- Several callers in `modelservice` and `extproc` branch on `Kind == KindStatus` and treat the body as a real reply. One of them starts an automatic-output probe on a 400.
+
+## Design
+
+**Chosen: gate the retry and put the status in the cause.** In that branch only, `Retryable` becomes the old expression AND `retryableStatus(code)`, and the cause is wrapped as `read error body of HTTP status %d: %w`. `Kind` stays `KindResponse` and `StatusCode` stays 0. This only ever removes retries, never adds one, and `errors.Is` on the read error still works through `%w`.
+
+**Rejected: set `StatusCode` on the error.** Hides the read error in `Error()` and changes the looper's client-facing status. I mentioned it in the PR as a maintainer call.
+
+**Rejected: reclassify the error as `KindStatus`.** Callers would treat a broken body as a real answer, the 400 probe would fire, and the metrics label (which is the error kind) would move.
+
+**Out of scope:** the 2xx read-failure path has the same shape, but gating it would stop retrying truncated success bodies, which is a different decision.
+
+## The fix
+
+```diff
+-				Retryable: operation.RetrySafe && ctx.Err() == nil,
+-				Cause:     readErr,
++				Retryable: operation.RetrySafe && ctx.Err() == nil && retryableStatus(response.StatusCode),
++				Cause:     fmt.Errorf("read error body of HTTP status %d: %w", response.StatusCode, readErr),
+```
+
+A 403 with a truncated body is now one attempt, and its error reads `read error body of HTTP status 403: unexpected EOF`. A 503 with a truncated body is still retried.
+
+## Verification
+
+I wrote the test before the fix. `TestDoKeepsStatusRetryPolicyWhenErrorBodyReadFails` uses a plain handler that sets `Content-Length: 32` and writes 7 bytes, so the client gets `io.ErrUnexpectedEOF` without hijacking the connection.
+
+| Status | Attempts | Retryable | Error contains |
+|---|---|---|---|
+| 400 | 1 | false | `HTTP status 400` |
+| 401 | 1 | false | `HTTP status 401` |
+| 403 | 1 | false | `HTTP status 403` |
+| 503 | 2 | true | `HTTP status 503` |
+
+Each case also asserts `errors.Is(err, io.ErrUnexpectedEOF)`, `StatusCode == 0` and the server hit count. On main the 4xx cases made 2 attempts and the 503 case had no status in the message; with the fix all four pass.
+
+Ran locally on macOS:
+
+- `go test -race ./pkg/modelruntime/connector/`, plus `-count=200 -cpu 1,4` in an independent code review
+- `go test ./pkg/modelruntime/... ./pkg/looper/... ./pkg/modelservice/... ./pkg/embedding/... ./pkg/fallback/...`
+- The `extproc` tests that use the connector (shadow, served context window, automatic output)
+- `golangci-lint --new-from-rev upstream/main ./pkg/modelruntime/connector`: 0 issues
+
+`make test-semantic-router` had 4 failures on my Mac that also fail on clean main (CA trust and an h2c shutdown test), so they are unrelated. Linux is left to CI.
+
+## Core concepts this exercised
+
+- **Retry policy as a single rule applied on every path.** The status rule existed and was correct, but one error branch built its own `Retryable` expression. Bugs like this live in the branches that handle failures of the failure path.
+- **Error types as a contract with callers.** `Kind` and `StatusCode` are read by several callers in modelservice, looper and extproc that make routing and client-facing decisions. Before changing a field, I traced each consumer instead of trusting the field's name.
+- **Narrowing behavior instead of reclassifying it.** Adding a condition with AND can only remove retries, which made the change safe to reason about without touching any caller.
+- **Reproducing truncated responses deterministically.** A declared `Content-Length` larger than the body gives a stable `unexpected EOF` with a normal handler, which is simpler and more portable than hijacking the socket.
