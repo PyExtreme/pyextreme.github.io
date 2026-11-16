@@ -4,10 +4,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import PageHeader from '../../components/PageHeader.astro';
 import StatStrip from '../../components/StatStrip.astro';
 import ContributionCard from '../../components/ContributionCard.astro';
+import { byScore } from '../../data/contribution-score';
 
-const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort((a, b) =>
-	b.data.date.localeCompare(a.data.date),
-);
+const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort(byScore);
 const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const open = contributions.filter((c) => !c.data.prMerged && c.data.status === 'PR Open').length;
 const repositories = new Set(contributions.map((c) => c.data.repository.split('/')[0])).size;
@@ -52,7 +51,8 @@ const complexityOptions = ['Hard', 'Medium', 'Simple'].filter((level) => contrib
 						</div>
 					)}
 					<div class="segmented" role="group" aria-label="Sort order" data-filter="order">
-						<button type="button" data-value="desc" aria-pressed="true">Latest</button>
+						<button type="button" data-value="top" aria-pressed="true">Top</button>
+						<button type="button" data-value="desc" aria-pressed="false">Latest</button>
 						<button type="button" data-value="asc" aria-pressed="false">Oldest</button>
 					</div>
 				</div>
@@ -98,7 +98,8 @@ const complexityOptions = ['Hard', 'Medium', 'Simple'].filter((level) => contrib
 
 	if (list && empty && groups.length > 0) {
 		const cards = Array.from(list.querySelectorAll<HTMLElement>('.contribution'));
-		const state: Record<string, string> = { status: 'All', complexity: 'All', order: 'desc' };
+		const ranked = [...cards];
+		const state: Record<string, string> = { status: 'All', complexity: 'All', order: 'top' };
 		const merged = (card: HTMLElement) => /^(Merged|Upstream Recognised)$/.test(card.dataset.status ?? '');
 		const matchesStatus = (card: HTMLElement) => {
 			if (state.status === 'All') return true;
@@ -110,8 +111,7 @@ const complexityOptions = ['Hard', 'Medium', 'Simple'].filter((level) => contrib
 		const update = () => {
 			const direction = state.order === 'asc' ? 1 : -1;
 			let visible = 0;
-			cards
-				.sort((a, b) => direction * (a.dataset.date ?? '').localeCompare(b.dataset.date ?? ''))
+			(state.order === 'top' ? ranked : cards.sort((a, b) => direction * (a.dataset.date ?? '').localeCompare(b.dataset.date ?? '')))
 				.forEach((card) => {
 					const show = matchesStatus(card) && (state.complexity === 'All' || card.dataset.complexity === state.complexity);
 					card.hidden = !show;

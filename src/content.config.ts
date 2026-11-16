@@ -43,6 +43,8 @@ const contributions = defineCollection({
 		prMerged: z.boolean().default(false),
 		date: isoDate,
 		complexity: z.enum(['Simple', 'Medium', 'Hard']),
+		/** Severity and user-facing impact of the fix, 0-15. Feeds the ranking score in src/data/contribution-score.ts. */
+		impact: z.number().int().min(0).max(15),
 		issueUrl: z.string().url().optional(),
 		prUrl: z.string().url().optional(),
 		commitUrl: z.string().url().optional(),

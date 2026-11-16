@@ -6,12 +6,10 @@ import ContributionCard from '../components/ContributionCard.astro';
 import StatStrip from '../components/StatStrip.astro';
 import ContactPanel from '../components/ContactPanel.astro';
 import { site, keepIdentifiers } from '../data/site';
+import { byScore } from '../data/contribution-score';
 
 const projects = (await getCollection('projects', ({ data }) => !data.draft && data.listed)).sort((a, b) => a.data.order - b.data.order);
-const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort((a, b) => {
-	if (a.data.prMerged !== b.data.prMerged) return a.data.prMerged ? -1 : 1;
-	return b.data.date.localeCompare(a.data.date);
-});
+const contributions = (await getCollection('contributions', ({ data }) => !data.draft)).sort(byScore);
 const merged = contributions.filter((c) => c.data.prMerged || c.data.status === 'Upstream Recognised').length;
 const repositories = new Set(contributions.map((c) => c.data.repository)).size;
 const stats = [
@@ -20,7 +18,9 @@ const stats = [
 	{ value: contributions.length, label: 'Upstream contributions' },
 	{ value: merged, label: 'Merged upstream' },
 ];
-const latest = contributions[0];
+const latest = contributions
+	.filter((c) => c.data.prMerged)
+	.reduce((a, b) => (b.data.date > a.data.date ? b : a));
 const latestDate = new Date(`${latest.data.date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
 
 const areas = [
