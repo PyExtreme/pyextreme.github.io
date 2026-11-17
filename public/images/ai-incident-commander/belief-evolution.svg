@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240" font-family="'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace">
+  <style>
+    .bg { fill: #f7f8f5; }
+    .axis { stroke: #b4bdb8; stroke-width: 1; }
+    .grid { stroke: #d9dfdc; stroke-width: 0.5; stroke-dasharray: 4 3; }
+    .label { fill: #5c6561; font-size: 11px; }
+    .value { fill: #17211f; font-size: 11px; font-weight: 600; }
+    .title { fill: #17211f; font-size: 14px; font-weight: 700; }
+    .subtitle { fill: #5c6561; font-size: 11px; }
+    .line-h1 { fill: none; stroke: #8fae1c; stroke-width: 2.5; }
+    .line-h2 { fill: none; stroke: #2d8a7e; stroke-width: 2; }
+    .line-h3 { fill: none; stroke: #b4bdb8; stroke-width: 1.5; }
+    .threshold { stroke: #b8402a; stroke-width: 1; stroke-dasharray: 6 4; opacity: 0.6; }
+    .threshold-label { fill: #b8402a; font-size: 10px; opacity: 0.7; }
+    .dot-h1 { fill: #8fae1c; }
+    .dot-h2 { fill: #2d8a7e; }
+    .dot-h3 { fill: #b4bdb8; }
+    .confident { fill: #d6ef62; stroke: #8fae1c; stroke-width: 1.5; }
+    .badge { fill: #8fae1c; }
+    .badge-text { fill: #f7f8f5; font-size: 9px; font-weight: 700; }
+    .test-label { fill: #3f4946; font-size: 10px; }
+    .anno { fill: #5c6561; font-size: 10px; font-style: italic; }
+  </style>
+  <rect class="bg" width="680" height="240" rx="6"/>
+
+  <text class="title" x="40" y="28">Causal Engine: Belief Evolution</text>
+  <text class="subtitle" x="40" y="43">Bayesian posterior over hypotheses across test rounds</text>
+
+  <!-- Legend -->
+  <line x1="400" y1="20" x2="420" y2="20" stroke="#8fae1c" stroke-width="2.5"/>
+  <text class="test-label" x="424" y="24">True root (gateway)</text>
+  <line x1="540" y1="20" x2="560" y2="20" stroke="#2d8a7e" stroke-width="2"/>
+  <text class="test-label" x="564" y="24">Inference</text>
+  <line x1="400" y1="36" x2="420" y2="36" stroke="#b4bdb8" stroke-width="1.5"/>
+  <text class="test-label" x="424" y="40">Index</text>
+
+  <!-- Axes -->
+  <line class="axis" x1="80" y1="58" x2="80" y2="200"/>
+  <line class="axis" x1="80" y1="200" x2="620" y2="200"/>
+
+  <!-- Y axis: belief 0 to 1.0 -->
+  <text class="label" x="72" y="62" text-anchor="end">1.0</text>
+  <line class="grid" x1="80" y1="58" x2="620" y2="58"/>
+  <text class="label" x="72" y="98" text-anchor="end">0.75</text>
+  <line class="grid" x1="80" y1="94" x2="620" y2="94"/>
+  <text class="label" x="72" y="133" text-anchor="end">0.50</text>
+  <line class="grid" x1="80" y1="129" x2="620" y2="129"/>
+  <text class="label" x="72" y="168" text-anchor="end">0.25</text>
+  <line class="grid" x1="80" y1="165" x2="620" y2="165"/>
+  <text class="label" x="72" y="204" text-anchor="end">0</text>
+
+  <!-- X axis labels -->
+  <text class="label" x="140" y="218" text-anchor="middle">Prior</text>
+  <text class="label" x="310" y="218" text-anchor="middle">After test 1</text>
+  <text class="label" x="480" y="218" text-anchor="middle">After test 2</text>
+
+  <!-- Confidence threshold -->
+  <line class="threshold" x1="80" y1="86" x2="620" y2="86"/>
+  <text class="threshold-label" x="625" y="90">0.80</text>
+
+  <!-- Test annotations -->
+  <text class="test-label" x="225" y="215" text-anchor="middle">onset_order</text>
+  <text class="test-label" x="395" y="215" text-anchor="middle">latency_breakdown</text>
+
+  <!-- H1: gateway (true root) — 0.40 → 0.72 → 0.87 -->
+  <polyline class="line-h1" points="140,114 310,80 480,68"/>
+  <circle class="dot-h1" cx="140" cy="114" r="4"/>
+  <circle class="dot-h1" cx="310" cy="80" r="4"/>
+  <circle class="dot-h1" cx="480" cy="68" r="5"/>
+  <text class="value" x="148" y="110">0.40</text>
+  <text class="value" x="318" y="76">0.72</text>
+  <text class="value" x="488" y="64" fill="#8fae1c">0.87</text>
+
+  <!-- H2: inference — 0.35 → 0.18 → 0.09 -->
+  <polyline class="line-h2" points="140,120 310,154 480,172"/>
+  <circle class="dot-h2" cx="140" cy="120" r="3.5"/>
+  <circle class="dot-h2" cx="310" cy="154" r="3.5"/>
+  <circle class="dot-h2" cx="480" cy="172" r="3"/>
+  <text class="value" x="148" y="130">0.35</text>
+  <text class="value" x="318" y="164">0.18</text>
+  <text class="value" x="488" y="182">0.09</text>
+
+  <!-- H3: index — 0.10 → 0.06 → 0.03 -->
+  <polyline class="line-h3" points="140,172 310,181 480,190"/>
+  <circle class="dot-h3" cx="140" cy="172" r="3"/>
+  <circle class="dot-h3" cx="310" cy="181" r="3"/>
+  <circle class="dot-h3" cx="480" cy="190" r="2.5"/>
+
+  <!-- Confident badge -->
+  <rect class="confident" x="510" y="56" width="100" height="22" rx="11"/>
+  <rect class="badge" x="512" y="58" width="96" height="18" rx="9"/>
+  <text class="badge-text" x="560" y="70" text-anchor="middle">CONFIDENT</text>
+
+  <!-- Cost callout -->
+  <text class="anno" x="560" y="96" text-anchor="middle">2 tests · $0.007 per incident</text>
+</svg>

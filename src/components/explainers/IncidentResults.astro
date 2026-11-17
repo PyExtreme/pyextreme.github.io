@@ -1,0 +1,483 @@
+---
+// Results visualization for the AI Incident Commander four-arm comparison across two experiment phases.
+// Bar widths animate on scroll-in; tab switching shows each phase's data with a smooth crossfade.
+---
+
+<figure class="ir theme-light" data-results>
+	<figcaption class="ir-head">
+		<span class="ir-eyebrow">Experiment results · 2 phases · 105 incidents</span>
+		<div class="ir-tabs" role="tablist" aria-label="Experiment phase">
+			<button type="button" role="tab" aria-selected="true" data-tab="re2">RE2 Microservices (45 incidents)</button>
+			<button type="button" role="tab" aria-selected="false" data-tab="sim">SIM-AI Infrastructure (60 incidents)</button>
+		</div>
+	</figcaption>
+
+	<div class="ir-phase" data-phase="re2">
+		<div class="ir-chart-label">AC@1 accuracy</div>
+		<div class="ir-chart" role="img" aria-label="Bar chart of AC@1 accuracy across five arms">
+			<div class="ir-bar" data-value="0.40" data-color="gray">
+				<span class="ir-bar-label">D0 <span class="ir-bar-sub">BARO, no model</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.40</span>
+			</div>
+			<div class="ir-bar" data-value="0.76" data-color="gray">
+				<span class="ir-bar-label">D1 <span class="ir-bar-sub">Digest only</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.76</span>
+			</div>
+			<div class="ir-bar" data-value="0.911" data-color="accent-deep">
+				<span class="ir-bar-label">B1 <span class="ir-bar-sub">Single agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.911</span>
+			</div>
+			<div class="ir-bar" data-value="0.911" data-color="ink">
+				<span class="ir-bar-label">MA <span class="ir-bar-sub">Multi-agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.911</span>
+			</div>
+			<div class="ir-bar" data-value="0.956" data-color="accent">
+				<span class="ir-bar-label">B1 <span class="ir-bar-sub">Vote of 3</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.956</span>
+			</div>
+		</div>
+
+		<dl class="ir-stats">
+			<div class="ir-stat">
+				<dd>$33</dd>
+				<dt>Total model spend</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>~600</dd>
+				<dt>Held-out runs</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>3</dd>
+				<dt>Frozen experiments</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>9 days</dd>
+				<dt>Total duration</dt>
+			</div>
+		</dl>
+	</div>
+
+	<div class="ir-phase" data-phase="sim" hidden>
+		<div class="ir-chart-label">Joint Accuracy</div>
+		<div class="ir-chart" role="img" aria-label="Bar chart of Joint Accuracy across four arms">
+			<div class="ir-bar" data-value="0.72" data-color="gray">
+				<span class="ir-bar-label">D1 <span class="ir-bar-sub">Digest only</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.72</span>
+			</div>
+			<div class="ir-bar" data-value="0.728" data-color="teal">
+				<span class="ir-bar-label">CE <span class="ir-bar-sub">Causal engine</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.728</span>
+			</div>
+			<div class="ir-bar" data-value="0.833" data-color="ink">
+				<span class="ir-bar-label">MA <span class="ir-bar-sub">Multi-agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.833</span>
+			</div>
+			<div class="ir-bar" data-value="0.894" data-color="accent-deep">
+				<span class="ir-bar-label">B1 <span class="ir-bar-sub">Single agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.894</span>
+			</div>
+		</div>
+
+		<div class="ir-sub-section">
+			<div class="ir-chart-label">Retry-storm stratum</div>
+			<div class="ir-chart" role="img" aria-label="Bar chart of Retry-storm stratum accuracy across three arms">
+				<div class="ir-bar" data-value="0.06" data-color="red">
+					<span class="ir-bar-label">B1 <span class="ir-bar-sub">Single agent</span></span>
+					<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+					<span class="ir-bar-value">0.06</span>
+				</div>
+				<div class="ir-bar" data-value="0.56" data-color="ink">
+					<span class="ir-bar-label">MA <span class="ir-bar-sub">Multi-agent</span></span>
+					<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+					<span class="ir-bar-value">0.56</span>
+				</div>
+				<div class="ir-bar" data-value="0.72" data-color="teal-win">
+					<span class="ir-bar-label">CE <span class="ir-bar-sub">Causal engine</span></span>
+					<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+					<span class="ir-bar-value">0.72</span>
+				</div>
+			</div>
+		</div>
+
+		<dl class="ir-stats">
+			<div class="ir-stat">
+				<dd>$15.45</dd>
+				<dt>Phase spend</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>540</dd>
+				<dt>Holdout units</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>10</dd>
+				<dt>Simulated services</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>16</dd>
+				<dt>Fault taxonomy</dt>
+			</div>
+		</dl>
+	</div>
+</figure>
+
+<style is:global>
+	.ir {
+		--ir-teal: #2d8a7e;
+		--ir-teal-win: #1a6e63;
+		--ir-red: #bc3126;
+		--ir-gray: var(--line-strong);
+		margin: 2.4em 0;
+		padding: 20px 20px 0;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: #fff;
+		color: var(--ink);
+		font-size: 15px;
+		line-height: 1.5;
+	}
+
+	.ir-head {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		align-items: center;
+		gap: 10px 16px;
+		margin-bottom: 20px;
+	}
+
+	.ir-eyebrow {
+		font: 500 11px/1.4 var(--font-mono);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+
+	.ir-tabs {
+		display: inline-flex;
+		flex-wrap: wrap;
+		border: 1px solid var(--line-strong);
+		border-radius: 8px;
+		overflow: hidden;
+	}
+
+	.ir-tabs button {
+		font: 500 12px/1.2 var(--font-mono);
+		border: 0;
+		border-right: 1px solid var(--line-strong);
+		background: transparent;
+		color: var(--ink-soft);
+		padding: 8px 12px;
+		cursor: pointer;
+		transition: background-color 0.3s, color 0.3s;
+	}
+
+	.ir-tabs button:last-child { border-right: 0; }
+
+	.ir-tabs button[aria-selected='true'] {
+		background: var(--ink);
+		color: var(--paper);
+	}
+
+	.ir-phase {
+		opacity: 1;
+		transition: opacity 0.3s ease;
+	}
+
+	.ir-phase[hidden] {
+		display: none;
+	}
+
+	.ir-chart-label {
+		font: 500 11px/1.4 var(--font-mono);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted);
+		margin-bottom: 12px;
+	}
+
+	.ir-chart {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.ir-bar {
+		display: grid;
+		grid-template-columns: 160px minmax(0, 1fr) 52px;
+		align-items: center;
+		gap: 12px;
+		height: 32px;
+	}
+
+	.ir-bar-label {
+		font: 600 13px/1 var(--font-sans);
+		color: var(--ink);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.ir-bar-sub {
+		font-weight: 400;
+		color: var(--muted);
+		font-size: 12px;
+	}
+
+	.ir-bar-track {
+		width: 100%;
+		height: 32px;
+		background: var(--paper-2);
+		border-radius: 0 3px 3px 0;
+		overflow: hidden;
+	}
+
+	.ir-bar-fill {
+		height: 100%;
+		width: 0%;
+		border-radius: 0 3px 3px 0;
+		transition: width 0.6s ease-out;
+	}
+
+	.ir[data-animated] .ir-bar-fill {
+		width: var(--bar-width);
+	}
+
+	/* Bar color assignments */
+	.ir-bar[data-color="gray"] .ir-bar-fill { background: var(--ir-gray); }
+	.ir-bar[data-color="accent-deep"] .ir-bar-fill { background: var(--accent-deep); }
+	.ir-bar[data-color="accent"] .ir-bar-fill { background: var(--accent); }
+	.ir-bar[data-color="ink"] .ir-bar-fill { background: var(--ink); }
+	.ir-bar[data-color="teal"] .ir-bar-fill { background: var(--ir-teal); }
+	.ir-bar[data-color="teal-win"] .ir-bar-fill {
+		background: var(--ir-teal-win);
+		box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
+	}
+	.ir-bar[data-color="red"] .ir-bar-fill { background: var(--ir-red); }
+
+	.ir-bar-value {
+		font: 600 13px/1 var(--font-mono);
+		color: var(--ink);
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+		opacity: 0;
+		transition: opacity 0.4s ease-out 0.5s;
+	}
+
+	.ir[data-animated] .ir-bar-value {
+		opacity: 1;
+	}
+
+	.ir-bar:hover .ir-bar-track {
+		box-shadow: 0 0 0 1px var(--line-strong);
+	}
+
+	.ir-bar:hover .ir-bar-value {
+		color: var(--ink);
+		opacity: 1;
+		transition-delay: 0s;
+	}
+
+	/* Sub-section for the retry-storm chart */
+	.ir-sub-section {
+		margin-top: 24px;
+		padding-top: 20px;
+		border-top: 1px dashed var(--line);
+	}
+
+	/* Stat tiles */
+	.ir-stats {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0;
+		margin: 24px 0 0;
+		border-top: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
+	}
+
+	.ir-stat {
+		display: flex;
+		flex-direction: column-reverse;
+		justify-content: flex-end;
+		gap: 6px;
+		padding: 20px 24px;
+		border-left: 1px solid var(--line);
+	}
+
+	.ir-stat:first-child {
+		padding-left: 0;
+		border-left: 0;
+	}
+
+	.ir-stat dd {
+		margin: 0;
+		font-size: clamp(28px, 3.2vw, 40px);
+		font-weight: 700;
+		line-height: 1;
+		letter-spacing: -0.03em;
+	}
+
+	.ir-stat dt {
+		color: var(--muted);
+		font: 500 11px/1.4 var(--font-mono);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	/* Bottom padding after the stat strip */
+	.ir-phase > .ir-stats:last-child {
+		margin-bottom: 0;
+		border-bottom: 0;
+		padding-bottom: 0;
+	}
+
+	/* Responsive */
+	@media (max-width: 760px) {
+		.ir { padding: 14px 12px 0; }
+
+		.ir-tabs {
+			width: 100%;
+		}
+
+		.ir-tabs button {
+			flex: 1;
+			text-align: center;
+			padding: 8px 8px;
+			font-size: 11px;
+		}
+
+		.ir-bar {
+			grid-template-columns: 120px minmax(0, 1fr) 46px;
+			gap: 8px;
+		}
+
+		.ir-bar-label { font-size: 12px; }
+		.ir-bar-sub { font-size: 11px; }
+
+		.ir-stats {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.ir-stat { padding: 16px; }
+		.ir-stat:nth-child(odd) { padding-left: 0; border-left: 0; }
+		.ir-stat:nth-child(n + 3) { border-top: 1px solid var(--line); }
+	}
+
+	@media (max-width: 480px) {
+		.ir-bar {
+			grid-template-columns: 90px minmax(0, 1fr) 40px;
+			gap: 6px;
+			height: 28px;
+		}
+
+		.ir-bar-track { height: 28px; }
+		.ir-bar-label { font-size: 11px; }
+		.ir-bar-sub { display: none; }
+		.ir-bar-value { font-size: 11px; }
+	}
+
+	/* Reduced motion */
+	@media (prefers-reduced-motion: reduce) {
+		.ir-bar-fill {
+			transition: none;
+		}
+
+		.ir-bar-value {
+			transition: none;
+		}
+
+		.ir-phase {
+			transition: none;
+		}
+
+		.ir-tabs button {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	function initIncidentResults() {
+		for (const root of document.querySelectorAll<HTMLElement>('[data-results]')) {
+			const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+			const phases = [...root.querySelectorAll<HTMLElement>('[data-phase]')];
+			let animated = false;
+
+			// Set bar widths as CSS custom properties (percentage of max value in each chart)
+			function setBarWidths() {
+				for (const phase of phases) {
+					const charts = phase.querySelectorAll<HTMLElement>('.ir-chart');
+					for (const chart of charts) {
+						const bars = [...chart.querySelectorAll<HTMLElement>('.ir-bar')];
+						const values = bars.map((b) => parseFloat(b.dataset.value || '0'));
+						const max = Math.max(...values);
+						bars.forEach((bar, i) => {
+							const pct = max > 0 ? (values[i] / max) * 100 : 0;
+							bar.querySelector<HTMLElement>('.ir-bar-fill')!.style.setProperty('--bar-width', pct + '%');
+						});
+					}
+				}
+			}
+
+			// Tab switching
+			function switchTab(key: string) {
+				tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === key)));
+				phases.forEach((p) => {
+					if (p.dataset.phase === key) {
+						p.hidden = false;
+						// Re-trigger animation for the newly visible phase
+						if (animated) {
+							triggerAnimation();
+						}
+					} else {
+						p.hidden = true;
+					}
+				});
+			}
+
+			tabs.forEach((tab) => {
+				tab.addEventListener('click', () => {
+					const key = tab.dataset.tab!;
+					switchTab(key);
+				});
+			});
+
+			// Animation trigger
+			function triggerAnimation() {
+				root.removeAttribute('data-animated');
+				// Force reflow so removing the attribute takes effect
+				void root.offsetHeight;
+				root.setAttribute('data-animated', '');
+			}
+
+			// IntersectionObserver for scroll-in animation
+			const observer = new IntersectionObserver(
+				(entries) => {
+					for (const entry of entries) {
+						if (entry.isIntersecting && !animated) {
+							animated = true;
+							triggerAnimation();
+							observer.unobserve(root);
+						}
+					}
+				},
+				{ threshold: 0.15 }
+			);
+
+			setBarWidths();
+			observer.observe(root);
+		}
+	}
+
+	// Run on initial load and on Astro view transitions
+	initIncidentResults();
+	document.addEventListener('astro:after-swap', initIncidentResults);
+</script>

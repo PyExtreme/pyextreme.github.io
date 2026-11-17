@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 320" font-family="'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace">
+  <style>
+    .bg { fill: #f7f8f5; }
+    .axis { stroke: #b4bdb8; stroke-width: 1; }
+    .grid { stroke: #d9dfdc; stroke-width: 0.5; stroke-dasharray: 4 3; }
+    .label { fill: #5c6561; font-size: 11px; }
+    .value { fill: #17211f; font-size: 13px; font-weight: 600; }
+    .title { fill: #17211f; font-size: 15px; font-weight: 700; }
+    .subtitle { fill: #5c6561; font-size: 11px; }
+    .bar-d1 { fill: #b4bdb8; }
+    .bar-ce { fill: #2d8a7e; }
+    .bar-ma { fill: #17211f; }
+    .bar-b1 { fill: #8fae1c; }
+    .bar-ce-retry { fill: #2d8a7e; }
+    .bar-ma-retry { fill: #3f4946; }
+    .bar-b1-retry { fill: #b8402a; opacity: 0.7; }
+    .legend-text { fill: #3f4946; font-size: 10px; }
+    .stratum-label { fill: #5c6561; font-size: 10px; font-style: italic; }
+    .win { fill: #d6ef62; stroke: #8fae1c; stroke-width: 1.5; rx: 3; }
+    .callout { fill: #8fae1c; font-size: 10px; font-weight: 600; }
+  </style>
+  <rect class="bg" width="680" height="320" rx="6"/>
+
+  <text class="title" x="40" y="30">SIM-AI Holdout: Joint Accuracy</text>
+  <text class="subtitle" x="40" y="46">60 incidents × 3 arms × 3 executions · Claude Haiku 5.5 · $6.96</text>
+
+  <!-- Grid lines -->
+  <line class="axis" x1="140" y1="62" x2="140" y2="195"/>
+  <line class="grid" x1="275" y1="62" x2="275" y2="195"/>
+  <line class="grid" x1="410" y1="62" x2="410" y2="195"/>
+  <line class="grid" x1="545" y1="62" x2="545" y2="195"/>
+  <line class="axis" x1="140" y1="195" x2="610" y2="195"/>
+
+  <!-- Scale labels -->
+  <text class="label" x="140" y="208" text-anchor="middle">0</text>
+  <text class="label" x="275" y="208" text-anchor="middle">0.25</text>
+  <text class="label" x="410" y="208" text-anchor="middle">0.50</text>
+  <text class="label" x="545" y="208" text-anchor="middle">0.75</text>
+
+  <!-- Bars: main results -->
+  <text class="label" x="135" y="82" text-anchor="end">D1</text>
+  <rect class="bar-d1" x="140" y="70" width="338" height="22" rx="0 3 3 0"/>
+  <text class="value" x="484" y="85">0.720</text>
+
+  <text class="label" x="135" y="112" text-anchor="end">CE</text>
+  <rect class="bar-ce" x="140" y="100" width="342" height="22" rx="0 3 3 0"/>
+  <text class="value" x="488" y="115">0.728</text>
+
+  <text class="label" x="135" y="142" text-anchor="end">MA</text>
+  <rect class="bar-ma" x="140" y="130" width="391" height="22" rx="0 3 3 0"/>
+  <text class="value" x="537" y="145" fill="#17211f">0.833</text>
+
+  <text class="label" x="135" y="172" text-anchor="end">B1</text>
+  <rect class="bar-b1" x="140" y="160" width="420" height="22" rx="0 3 3 0"/>
+  <text class="value" x="566" y="175">0.894</text>
+
+  <!-- Retry-storm stratum -->
+  <text class="title" x="40" y="238" font-size="13">Retry-storm stratum</text>
+  <text class="stratum-label" x="200" y="238">— where the causal engine wins</text>
+
+  <line class="axis" x1="140" y1="250" x2="610" y2="250"/>
+  <line class="axis" x1="140" y1="250" x2="140" y2="310"/>
+
+  <text class="label" x="135" y="268" text-anchor="end">B1</text>
+  <rect class="bar-b1-retry" x="140" y="256" width="28" height="18" rx="0 2 2 0"/>
+  <text class="value" x="174" y="270" font-size="11" fill="#b8402a">0.06</text>
+
+  <text class="label" x="135" y="288" text-anchor="end">MA</text>
+  <rect class="bar-ma-retry" x="140" y="276" width="263" height="18" rx="0 2 2 0"/>
+  <text class="value" x="409" y="290" font-size="11">0.56</text>
+
+  <text class="label" x="135" y="308" text-anchor="end">CE</text>
+  <rect class="bar-ce-retry" x="140" y="296" width="338" height="18" rx="0 2 2 0"/>
+  <rect class="win" x="137" y="293" width="346" height="24"/>
+  <rect class="bar-ce-retry" x="140" y="296" width="338" height="18" rx="0 2 2 0"/>
+  <text class="value" x="484" y="310" font-size="11" fill="#2d8a7e">0.72</text>
+  <text class="callout" x="520" y="310">← 12× B1</text>
+</svg>
