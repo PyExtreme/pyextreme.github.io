@@ -1,156 +1,158 @@
 ---
+// Animated walkthrough of the AI Incident Commander's multi-agent architecture.
+// Each scene is a `data-scene` state on the figure; CSS drives the motion, the script only steps and times it.
 const scenes = [
 	{
 		title: 'The alert fires',
-		dur: 6000,
-		calc: 'alert: cart-service latency > 500 ms',
+		dur: 7000,
+		calc: 'alert: cart-service latency > 500ms',
 		text: 'An alert fires on a symptom — a slow checkout page — while the root cause is several calls away. The system receives metrics, logs and traces from the observation window.',
 	},
 	{
 		title: 'The Commander plans',
-		dur: 6000,
+		dur: 8000,
 		calc: 'plan → candidates: [payment, cart, db]  tasks: 3 specialists',
 		text: 'The Commander reviews the anomaly digest and assigns each data source — metrics, logs, traces — to a specialist with a focused investigation brief.',
 	},
 	{
-		title: 'Specialists investigate',
-		dur: 8000,
+		title: 'Specialists investigate concurrently',
+		dur: 9000,
 		calc: 'fan-out: 3 specialists × 7 tools, asyncio.TaskGroup',
 		text: 'Three specialists investigate concurrently in separate contexts through seven read-only telemetry tools. Each builds evidence claims citing specific observations.',
 	},
 	{
 		title: 'The Skeptic challenges',
-		dur: 7000,
+		dur: 8000,
 		calc: 'checks: temporal ✓  topology ✓  attribution ✗ → challenge',
 		text: 'Deterministic checks — temporal ordering, topology consistency, attribution validity — test the leading theory. A model-driven Skeptic challenges any claim that survives.',
 	},
 	{
 		title: 'The diagnosis',
-		dur: 7000,
+		dur: 9000,
 		calc: 'rank: 1. payment (0.92)  2. db (0.06)  3. cart (0.02)',
-		text: 'The Commander adjudicates, may request one targeted follow-up, and produces a ranked diagnosis. Every claim cites an observation that a validator checks.',
+		text: 'The Commander adjudicates, may request one targeted follow-up, and produces a ranked diagnosis. Every claim cites an observation that a validator checks — neither system can win by inventing evidence.',
 	},
 	{
 		title: 'The comparison',
-		dur: 8000,
-		calc: 'B1: $0.0099, 14 s  |  MA: $0.0340, 18 s  |  AC@1: 0.911 each',
+		dur: 10000,
+		calc: 'B1: $0.0099, 14s  |  MA: $0.0340, 18s  |  AC@1: 0.911 each',
 		text: 'On a fast model, both systems reached 91.1% accuracy on 45 held-out incidents. The multi-agent system cost 3.4× more. Where coordination paid off: stability under prompt rewording, and robustness to timeouts on a slower model.',
 	},
 ];
+// Captions are this file's own constants, so rendering them as HTML is safe.
 const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 ---
 
-<figure class="ia theme-light" data-explainer-arch data-scene="1">
+<figure class="ia theme-light" data-ia-explainer data-scene="1">
 	<figcaption class="ia-head">
 		<span class="ia-eyebrow">Animated explainer · {scenes.length} scenes · {total} s</span>
 		<span class="ia-now" aria-hidden="true"></span>
 	</figcaption>
 
-	<svg class="ia-stage" viewBox="0 0 800 400" role="img" aria-label="Multi-agent incident response architecture: six microservices, a Commander, three specialists, a Skeptic, and the diagnosis flow.">
+	<svg class="ia-stage" viewBox="0 0 800 400" role="img" aria-label="A multi-agent incident response system receives an alert on a slow cart service, fans out to three specialist agents investigating metrics, logs and traces concurrently, challenges claims through a Skeptic, and produces a ranked root-cause diagnosis pointing to the payment service.">
 		<defs>
-			<marker id="ia-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink-soft)" /></marker>
-			<marker id="ia-arrow-acc" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--accent-deep)" /></marker>
+			<marker id="ia-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink-soft)" /></marker>
+			<marker id="ia-arr-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--accent-deep)" /></marker>
 		</defs>
 
-		<!-- Microservice row -->
-		<g class="svc-row">
-			<g class="svc" data-svc="gw"><rect x="40" y="30" width="90" height="36" rx="4"/><text x="85" y="53">Gateway</text></g>
-			<g class="svc" data-svc="auth"><rect x="155" y="30" width="90" height="36" rx="4"/><text x="200" y="53">Auth</text></g>
-			<g class="svc" data-svc="cat"><rect x="270" y="30" width="90" height="36" rx="4"/><text x="315" y="53">Catalog</text></g>
-			<g class="svc" data-svc="cart"><rect x="385" y="30" width="90" height="36" rx="4"/><text x="430" y="53">Cart</text></g>
-			<g class="svc" data-svc="pay"><rect x="500" y="30" width="90" height="36" rx="4"/><text x="545" y="53">Payment</text></g>
-			<g class="svc" data-svc="db"><rect x="615" y="30" width="90" height="36" rx="4"/><text x="660" y="53">DB</text></g>
+		<!-- Main architecture (scenes 1-5) -->
+		<g class="arch">
+			<!-- Services row -->
+			<g class="svc s-gw"><rect x="35" y="20" width="90" height="34" rx="5" /><text x="80" y="42">Gateway</text></g>
+			<g class="svc s-au"><rect x="155" y="20" width="90" height="34" rx="5" /><text x="200" y="42">Auth</text></g>
+			<g class="svc s-ct"><rect x="275" y="20" width="90" height="34" rx="5" /><text x="320" y="42">Catalog</text></g>
+			<g class="svc s-ca"><rect x="395" y="20" width="90" height="34" rx="5" /><text x="440" y="42">Cart</text></g>
+			<g class="svc s-py"><rect x="515" y="20" width="90" height="34" rx="5" /><text x="560" y="42">Payment</text></g>
+			<g class="svc s-db"><rect x="635" y="20" width="90" height="34" rx="5" /><text x="680" y="42">DB</text></g>
+
+			<!-- Alert: pulsing ring near Cart -->
+			<g class="alert">
+				<circle class="alert-ping" cx="470" cy="14" r="10" />
+				<circle class="alert-dot" cx="470" cy="14" r="5" />
+			</g>
+
+			<!-- Commander-to-service lines (candidates) -->
+			<line class="cmd-line" x1="390" y1="120" x2="440" y2="54" pathLength="1" marker-end="url(#ia-arr)" />
+			<line class="cmd-line" x1="400" y1="120" x2="560" y2="54" pathLength="1" marker-end="url(#ia-arr)" />
+			<line class="cmd-line" x1="410" y1="120" x2="680" y2="54" pathLength="1" marker-end="url(#ia-arr)" />
+
+			<!-- Commander -->
+			<g class="commander">
+				<rect x="325" y="120" width="150" height="40" rx="6" />
+				<text x="400" y="145">Commander</text>
+			</g>
+
+			<!-- Fan-out lines (Commander to specialists) -->
+			<line class="fan-line" x1="358" y1="160" x2="180" y2="246" marker-end="url(#ia-arr-a)" />
+			<line class="fan-line" x1="400" y1="160" x2="400" y2="246" marker-end="url(#ia-arr-a)" />
+			<line class="fan-line" x1="442" y1="160" x2="620" y2="246" marker-end="url(#ia-arr-a)" />
+
+			<!-- Specialists -->
+			<g class="spec sp-m"><rect x="128" y="246" width="104" height="34" rx="5" /><text x="180" y="268">Metrics</text></g>
+			<g class="spec sp-l"><rect x="348" y="246" width="104" height="34" rx="5" /><text x="400" y="268">Logs</text></g>
+			<g class="spec sp-t"><rect x="568" y="246" width="104" height="34" rx="5" /><text x="620" y="268">Traces</text></g>
+
+			<!-- Check marks (scene 4) -->
+			<text class="ck ck-ok ck-1" x="180" y="308">✓ temporal</text>
+			<text class="ck ck-ok ck-2" x="400" y="308">✓ topology</text>
+			<text class="ck ck-no ck-3" x="620" y="308">✗ attribution</text>
+
+			<!-- Skeptic lines (specialists to skeptic) -->
+			<line class="skp-line" x1="180" y1="280" x2="365" y2="326" pathLength="1" marker-end="url(#ia-arr)" />
+			<line class="skp-line" x1="400" y1="280" x2="400" y2="326" pathLength="1" marker-end="url(#ia-arr)" />
+			<line class="skp-line" x1="620" y1="280" x2="435" y2="326" pathLength="1" marker-end="url(#ia-arr)" />
+
+			<!-- Skeptic -->
+			<g class="skeptic"><rect x="338" y="326" width="124" height="36" rx="5" /><text x="400" y="349">Skeptic</text></g>
+
+			<!-- Diagnosis ranking (scene 5) -->
+			<g class="diagnosis">
+				<text class="dx dx-1" x="530" y="135">1. payment (0.92)</text>
+				<text class="dx dx-2" x="530" y="153">2. db (0.06)</text>
+				<text class="dx dx-3" x="530" y="171">3. cart (0.02)</text>
+			</g>
 		</g>
 
-		<!-- Alert pulse on Cart -->
-		<circle class="alert-pulse" cx="430" cy="48" r="22"/>
-		<text class="alert-icon" x="430" y="20">⚠</text>
-
-		<!-- Commander -->
-		<g class="commander">
-			<rect x="310" y="130" width="180" height="44" rx="6"/>
-			<text x="400" y="157">Commander</text>
-		</g>
-
-		<!-- Connection lines from Commander to services -->
-		<line class="cmd-link" x1="355" y1="130" x2="200" y2="66"/>
-		<line class="cmd-link" x1="400" y1="130" x2="430" y2="66"/>
-		<line class="cmd-link" x1="445" y1="130" x2="660" y2="66"/>
-
-		<!-- Specialists -->
-		<g class="spec spec-m">
-			<rect x="80" y="220" width="160" height="40" rx="5"/>
-			<text x="160" y="244">Metrics specialist</text>
-		</g>
-		<g class="spec spec-l">
-			<rect x="280" y="220" width="160" height="40" rx="5"/>
-			<text x="360" y="244">Logs specialist</text>
-		</g>
-		<g class="spec spec-t">
-			<rect x="480" y="220" width="160" height="40" rx="5"/>
-			<text x="560" y="244">Traces specialist</text>
-		</g>
-
-		<!-- Fan-out arrows from Commander to specialists -->
-		<line class="fanout" x1="355" y1="174" x2="160" y2="220"/>
-		<line class="fanout" x1="400" y1="174" x2="360" y2="220"/>
-		<line class="fanout" x1="445" y1="174" x2="560" y2="220"/>
-
-		<!-- Data flow lines from services to specialists -->
-		<line class="dataflow df-m1" x1="85" y1="66" x2="120" y2="220"/>
-		<line class="dataflow df-m2" x1="430" y1="66" x2="180" y2="220"/>
-		<line class="dataflow df-l1" x1="315" y1="66" x2="340" y2="220"/>
-		<line class="dataflow df-l2" x1="545" y1="66" x2="380" y2="220"/>
-		<line class="dataflow df-t1" x1="430" y1="66" x2="530" y2="220"/>
-		<line class="dataflow df-t2" x1="660" y1="66" x2="600" y2="220"/>
-
-		<!-- Skeptic -->
-		<g class="skeptic">
-			<rect x="310" y="300" width="180" height="40" rx="5"/>
-			<text x="400" y="324">Skeptic</text>
-		</g>
-
-		<!-- Check marks -->
-		<text class="check-mark ck1" x="340" y="358">✓ temporal</text>
-		<text class="check-mark ck2" x="420" y="358">✓ topology</text>
-		<text class="check-fail ck3" x="500" y="358">✗ attribution</text>
-
-		<!-- Converge arrows to Commander for diagnosis -->
-		<line class="converge cv1" x1="160" y1="260" x2="355" y2="174" marker-end="url(#ia-arrow)"/>
-		<line class="converge cv2" x1="360" y1="260" x2="400" y2="174" marker-end="url(#ia-arrow)"/>
-		<line class="converge cv3" x1="560" y1="260" x2="445" y2="174" marker-end="url(#ia-arrow)"/>
-
-		<!-- Diagnosis output -->
-		<g class="diagnosis">
-			<rect class="diag-box" x="260" y="130" width="280" height="44" rx="6"/>
-			<text class="diag-title" x="400" y="148">Root cause</text>
-			<text class="diag-result" x="400" y="164">1. payment (0.92)</text>
-		</g>
-
-		<!-- Comparison view -->
+		<!-- Comparison view (scene 6) -->
 		<g class="compare">
-			<rect class="cmp-box cmp-b1" x="100" y="100" width="250" height="180" rx="8"/>
-			<text class="cmp-label" x="225" y="130">Single Agent (B1)</text>
-			<text class="cmp-acc" x="225" y="165">AC@1: 0.911</text>
-			<text class="cmp-cost" x="225" y="190">$0.0099 / incident</text>
-			<text class="cmp-time" x="225" y="210">14 s wall time</text>
+			<!-- Left card: Single Agent -->
+			<rect class="cmp-card" x="50" y="40" width="320" height="320" rx="8" />
+			<text class="cmp-title" x="210" y="78">Single Agent (B1)</text>
+			<line class="cmp-rule" x1="80" x2="340" y1="90" y2="90" />
+			<text class="cmp-lbl" x="80" y="122">Cost</text>
+			<text class="cmp-val" x="80" y="144">$0.0099</text>
+			<rect class="cmp-bar b1-cost" x="80" y="152" width="70" height="6" rx="3" />
+			<text class="cmp-lbl" x="80" y="188">Latency</text>
+			<text class="cmp-val" x="80" y="210">14 s</text>
+			<rect class="cmp-bar b1-time" x="80" y="218" width="188" height="6" rx="3" />
+			<text class="cmp-lbl" x="80" y="254">AC@1</text>
+			<text class="cmp-val cmp-acc" x="80" y="276">91.1%</text>
+			<rect class="cmp-bar cmp-bar-g b1-acc" x="80" y="284" width="220" height="6" rx="3" />
 
-			<rect class="cmp-box cmp-ma" x="420" y="100" width="250" height="180" rx="8"/>
-			<text class="cmp-label" x="545" y="130">Multi-Agent (MA)</text>
-			<text class="cmp-acc" x="545" y="165">AC@1: 0.911</text>
-			<text class="cmp-cost" x="545" y="190">$0.0340 / incident</text>
-			<text class="cmp-time" x="545" y="210">18 s wall time</text>
-
-			<text class="cmp-eq" x="375" y="195">=</text>
-			<text class="cmp-note" x="400" y="310" text-anchor="middle">Same accuracy, 3.4× the cost</text>
+			<!-- Right card: Multi-Agent -->
+			<rect class="cmp-card" x="430" y="40" width="320" height="320" rx="8" />
+			<text class="cmp-title" x="590" y="78">Multi-Agent (MA)</text>
+			<line class="cmp-rule" x1="460" x2="720" y1="90" y2="90" />
+			<text class="cmp-lbl" x="460" y="122">Cost</text>
+			<text class="cmp-val" x="460" y="144">$0.0340</text>
+			<text class="cmp-mult" x="570" y="144">3.4×</text>
+			<rect class="cmp-bar cmp-bar-h ma-cost" x="460" y="152" width="240" height="6" rx="3" />
+			<text class="cmp-lbl" x="460" y="188">Latency</text>
+			<text class="cmp-val" x="460" y="210">18 s</text>
+			<rect class="cmp-bar cmp-bar-h ma-time" x="460" y="218" width="240" height="6" rx="3" />
+			<text class="cmp-lbl" x="460" y="254">AC@1</text>
+			<text class="cmp-val cmp-acc" x="460" y="276">91.1%</text>
+			<rect class="cmp-bar cmp-bar-g ma-acc" x="460" y="284" width="220" height="6" rx="3" />
+			<text class="cmp-win" x="460" y="326">✓ prompt stability</text>
+			<text class="cmp-win" x="460" y="344">✓ timeout robustness</text>
 		</g>
 	</svg>
 
 	<ol class="ia-steps">
 		{scenes.map((scene, i) => (
 			<li data-step={i + 1} data-dur={scene.dur} data-title={scene.title}>
-				<code class="ia-calc">{scene.calc}</code>
-				<p class="ia-text"><strong>{scene.title}.</strong> {scene.text}</p>
+				<code class="ia-calc" set:html={scene.calc} />
+				<p class="ia-text"><strong>{scene.title}.</strong> <span set:html={scene.text} /></p>
 			</li>
 		))}
 	</ol>
@@ -169,6 +171,8 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 
 <style>
 	.ia {
+		--ia-warn: #c44;
+		--ia-good: #55700d;
 		margin: 2.4em 0;
 		padding: 20px 20px 16px;
 		border: 1px solid var(--line);
@@ -180,111 +184,137 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 	.ia-now { color: var(--ink); text-align: right; }
 	.ia-stage { display: block; width: 100%; height: auto; font-family: var(--font-mono); }
 
-	/* Services */
-	.svc rect { fill: var(--paper-2); stroke: var(--line-strong); stroke-width: 1.5; transition: fill 0.5s, stroke 0.5s; }
-	.svc text { fill: var(--ink-soft); font-size: 13px; text-anchor: middle; font-weight: 500; }
-	[data-svc="cart"] rect { transition: fill 0.5s, stroke 0.5s; }
+	/* ---- SVG base styles ---- */
+	.svc rect { fill: var(--paper); stroke: var(--line-strong); stroke-width: 1.5; transition: fill 0.5s, stroke 0.5s, stroke-width 0.3s; }
+	.svc text { fill: var(--ink); font-size: 13px; font-weight: 600; text-anchor: middle; }
 
-	/* Alert */
-	.alert-pulse { fill: none; stroke: var(--accent-deep); stroke-width: 2; opacity: 0; }
-	.alert-icon { font-size: 16px; text-anchor: middle; opacity: 0; }
-	[data-scene='1'] .alert-pulse { opacity: 1; animation: ia-pulse 1.5s ease-in-out infinite; }
-	[data-scene='1'] .alert-icon { opacity: 1; }
-	[data-scene='1'] [data-svc="cart"] rect { fill: var(--accent); stroke: var(--accent-deep); }
+	.alert { opacity: 0; transition: opacity 0.4s; }
+	.alert-ping { fill: var(--ia-warn); opacity: 0.3; transform-box: fill-box; transform-origin: center; }
+	.alert-dot { fill: var(--ia-warn); }
 
-	/* Commander */
 	.commander { opacity: 0; transition: opacity 0.5s; }
 	.commander rect { fill: var(--ink); stroke: none; }
-	.commander text { fill: var(--paper); font-size: 15px; font-weight: 600; text-anchor: middle; }
-	[data-scene='2'] .commander,
-	[data-scene='3'] .commander,
-	[data-scene='4'] .commander,
-	[data-scene='5'] .commander { opacity: 1; }
+	.commander text { fill: var(--paper); font-size: 14px; font-weight: 700; text-anchor: middle; }
 
-	.cmd-link { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0; transition: opacity 0.4s; }
-	[data-scene='2'] .cmd-link { opacity: 1; transition-delay: 0.5s; }
-	[data-scene='2'] [data-svc="pay"] rect,
-	[data-scene='2'] [data-svc="cart"] rect,
-	[data-scene='2'] [data-svc="db"] rect { fill: var(--accent); stroke: var(--accent-deep); transition-delay: 0.8s; }
+	.cmd-line { opacity: 0; stroke: var(--ink-soft); stroke-width: 1.5; fill: none; stroke-dasharray: 1; stroke-dashoffset: 1; transition: opacity 0.4s; }
 
-	/* Specialists */
+	.fan-line { opacity: 0; stroke: var(--accent-deep); stroke-width: 1.5; fill: none; transition: opacity 0.5s; }
+
 	.spec { opacity: 0; transition: opacity 0.5s; }
-	.spec rect { fill: var(--paper-2); stroke: var(--accent-deep); stroke-width: 1.5; }
-	.spec text { fill: var(--ink); font-size: 12px; text-anchor: middle; font-weight: 500; }
-	[data-scene='3'] .spec { opacity: 1; }
-	[data-scene='3'] .spec-m { transition-delay: 0.2s; }
-	[data-scene='3'] .spec-l { transition-delay: 0.5s; }
-	[data-scene='3'] .spec-t { transition-delay: 0.8s; }
-	[data-scene='4'] .spec,
-	[data-scene='5'] .spec { opacity: 1; }
+	.spec rect { fill: var(--paper); stroke: var(--accent-deep); stroke-width: 1.5; transition: stroke-opacity 0.3s; }
+	.spec text { fill: var(--ink); font-size: 13px; font-weight: 600; text-anchor: middle; }
 
-	/* Fan-out arrows */
-	.fanout { stroke: var(--accent-deep); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
-	[data-scene='3'] .fanout { opacity: 1; animation: ia-draw 0.8s 0.3s ease-in-out both; }
-	[data-scene='4'] .fanout,
-	[data-scene='5'] .fanout { opacity: 1; stroke-dashoffset: 0; }
+	.ck { font-size: 11px; font-weight: 600; text-anchor: middle; opacity: 0; transition: opacity 0.4s; }
+	.ck-ok { fill: var(--ia-good); }
+	.ck-no { fill: var(--ia-warn); }
 
-	/* Data flow */
-	.dataflow { stroke: var(--accent); stroke-width: 1; opacity: 0; stroke-dasharray: 6 4; }
-	[data-scene='3'] .dataflow { opacity: 0.6; animation: ia-flow 2s 1s linear infinite; }
+	.skp-line { opacity: 0; stroke: var(--ink-soft); stroke-width: 1.5; fill: none; stroke-dasharray: 1; stroke-dashoffset: 1; transition: opacity 0.4s; }
 
-	/* Skeptic */
 	.skeptic { opacity: 0; transition: opacity 0.5s; }
-	.skeptic rect { fill: var(--paper-2); stroke: var(--ink); stroke-width: 1.5; }
+	.skeptic rect { fill: var(--paper); stroke: var(--ia-warn); stroke-width: 1.5; stroke-dasharray: 5 3; }
 	.skeptic text { fill: var(--ink); font-size: 13px; font-weight: 600; text-anchor: middle; }
-	[data-scene='4'] .skeptic { opacity: 1; }
 
-	.check-mark, .check-fail { font-size: 11px; opacity: 0; transition: opacity 0.4s; }
-	.check-mark { fill: #55700d; }
-	.check-fail { fill: #b8402a; }
-	[data-scene='4'] .ck1 { opacity: 1; transition-delay: 1s; }
-	[data-scene='4'] .ck2 { opacity: 1; transition-delay: 1.6s; }
-	[data-scene='4'] .ck3 { opacity: 1; transition-delay: 2.2s; }
-
-	/* Converge */
-	.converge { stroke: var(--ink-soft); stroke-width: 1; opacity: 0; }
-	[data-scene='5'] .converge { opacity: 1; animation: ia-draw 0.6s ease-in-out both; }
-	[data-scene='5'] .cv1 { animation-delay: 0.2s; }
-	[data-scene='5'] .cv2 { animation-delay: 0.4s; }
-	[data-scene='5'] .cv3 { animation-delay: 0.6s; }
-
-	/* Diagnosis */
 	.diagnosis { opacity: 0; transition: opacity 0.5s; }
-	.diag-box { fill: var(--accent); stroke: var(--accent-deep); stroke-width: 2; }
-	.diag-title { fill: var(--on-accent); font-size: 11px; text-anchor: middle; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
-	.diag-result { fill: var(--on-accent); font-size: 16px; text-anchor: middle; font-weight: 700; }
-	[data-scene='5'] .diagnosis { opacity: 1; transition-delay: 1.2s; }
-	[data-scene='5'] .commander { opacity: 0; }
+	.dx { font-size: 12px; fill: var(--muted); }
+	.dx-1 { fill: var(--ia-good); font-weight: 700; }
 
-	/* Comparison view */
-	.compare { opacity: 0; transition: opacity 0.5s; }
-	.cmp-box { fill: var(--paper-2); stroke: var(--line-strong); stroke-width: 1.5; }
-	.cmp-b1 { stroke: var(--accent-deep); }
-	.cmp-label { fill: var(--ink); font-size: 15px; font-weight: 700; text-anchor: middle; }
-	.cmp-acc { fill: var(--ink); font-size: 22px; font-weight: 700; text-anchor: middle; }
-	.cmp-cost { fill: var(--ink-soft); font-size: 13px; text-anchor: middle; }
-	.cmp-time { fill: var(--muted); font-size: 12px; text-anchor: middle; }
-	.cmp-eq { fill: var(--muted); font-size: 32px; font-weight: 300; text-anchor: middle; }
-	.cmp-note { fill: var(--accent-deep); font-size: 14px; font-weight: 600; }
-	[data-scene='6'] .compare { opacity: 1; }
-	[data-scene='6'] .svc-row,
-	[data-scene='6'] .commander,
-	[data-scene='6'] .spec,
-	[data-scene='6'] .skeptic,
-	[data-scene='6'] .diagnosis,
-	[data-scene='6'] .fanout,
-	[data-scene='6'] .dataflow,
-	[data-scene='6'] .cmd-link,
-	[data-scene='6'] .converge,
-	[data-scene='6'] .alert-pulse,
-	[data-scene='6'] .alert-icon,
-	[data-scene='6'] .check-mark,
-	[data-scene='6'] .check-fail { opacity: 0 !important; animation: none !important; }
+	.compare { opacity: 0; transition: opacity 0.6s; }
+	.cmp-card { fill: var(--paper); stroke: var(--line-strong); stroke-width: 1.5; }
+	.cmp-title { fill: var(--ink); font-size: 15px; font-weight: 700; text-anchor: middle; }
+	.cmp-rule { stroke: var(--line); stroke-width: 1; }
+	.cmp-lbl { fill: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; }
+	.cmp-val { fill: var(--ink); font-size: 15px; font-weight: 700; }
+	.cmp-acc { fill: var(--ia-good); }
+	.cmp-mult { fill: var(--ia-warn); font-size: 11px; font-weight: 700; }
+	.cmp-bar { fill: var(--line); transform-box: fill-box; transform-origin: left center; }
+	.cmp-bar-h { fill: var(--ink-soft); }
+	.cmp-bar-g { fill: var(--accent); }
+	.cmp-win { fill: var(--ia-good); font-size: 12px; font-weight: 600; }
 
-	@keyframes ia-pulse { 0%, 100% { r: 22; opacity: 0.3; } 50% { r: 30; opacity: 0.8; } }
-	@keyframes ia-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-	@keyframes ia-flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -20; } }
+	.arch { transition: opacity 0.6s; }
 
+	/* ===== Scene 1: The alert fires ===== */
+	[data-scene="1"] .alert { opacity: 1; }
+	[data-scene="1"] .alert-ping { animation: ia-ping 1.5s ease-out infinite; }
+	[data-scene="1"] .s-ca rect { stroke: var(--ia-warn); stroke-width: 2.5; }
+
+	/* ===== Scene 2: The Commander plans ===== */
+	[data-scene="2"] .commander { opacity: 1; transition-delay: 0.2s; }
+	[data-scene="2"] .cmd-line { opacity: 1; animation: ia-draw 0.7s 0.6s ease-in-out both; }
+	[data-scene="2"] .s-ca rect,
+	[data-scene="2"] .s-py rect,
+	[data-scene="2"] .s-db rect { stroke: var(--accent-deep); stroke-width: 2; }
+
+	/* ===== Scene 3: Specialists investigate ===== */
+	[data-scene="3"] .commander { opacity: 1; }
+	[data-scene="3"] .cmd-line { opacity: 1; stroke-dashoffset: 0; }
+	[data-scene="3"] .s-ca rect,
+	[data-scene="3"] .s-py rect,
+	[data-scene="3"] .s-db rect { stroke: var(--accent-deep); stroke-width: 2; }
+	[data-scene="3"] .spec { opacity: 1; }
+	[data-scene="3"] .sp-m { transition-delay: 0.3s; }
+	[data-scene="3"] .sp-l { transition-delay: 0.5s; }
+	[data-scene="3"] .sp-t { transition-delay: 0.7s; }
+	[data-scene="3"] .fan-line { opacity: 1; stroke-dasharray: 8 5; animation: ia-flow 0.5s 0.4s linear infinite both; }
+	[data-scene="3"] .spec rect { animation: ia-work 2s 0.6s ease-in-out infinite both; }
+
+	/* ===== Scene 4: The Skeptic challenges ===== */
+	[data-scene="4"] .commander { opacity: 1; }
+	[data-scene="4"] .cmd-line { opacity: 1; stroke-dashoffset: 0; }
+	[data-scene="4"] .s-ca rect,
+	[data-scene="4"] .s-py rect,
+	[data-scene="4"] .s-db rect { stroke: var(--accent-deep); stroke-width: 2; }
+	[data-scene="4"] .spec { opacity: 1; }
+	[data-scene="4"] .fan-line { opacity: 1; }
+	[data-scene="4"] .skeptic { opacity: 1; transition-delay: 0.3s; }
+	[data-scene="4"] .skp-line { opacity: 1; animation: ia-draw 0.6s 0.5s ease-in-out both; }
+	[data-scene="4"] .ck-1 { opacity: 1; transition-delay: 1.4s; }
+	[data-scene="4"] .ck-2 { opacity: 1; transition-delay: 1.8s; }
+	[data-scene="4"] .ck-3 { opacity: 1; transition-delay: 2.4s; }
+
+	/* ===== Scene 5: The diagnosis ===== */
+	[data-scene="5"] .commander { opacity: 1; }
+	[data-scene="5"] .cmd-line { opacity: 1; stroke-dashoffset: 0; }
+	[data-scene="5"] .spec { opacity: 1; }
+	[data-scene="5"] .fan-line { opacity: 1; }
+	[data-scene="5"] .skeptic { opacity: 1; }
+	[data-scene="5"] .s-ca rect,
+	[data-scene="5"] .s-db rect { stroke: var(--accent-deep); stroke-width: 2; }
+	[data-scene="5"] .s-py rect { fill: var(--accent); stroke: var(--accent-deep); stroke-width: 2.5; transition-delay: 0.8s; }
+	[data-scene="5"] .diagnosis { opacity: 1; transition-delay: 1.2s; }
+
+	/* ===== Scene 6: The comparison ===== */
+	[data-scene="6"] .arch { opacity: 0; }
+	[data-scene="6"] .compare { opacity: 1; transition-delay: 0.4s; }
+	[data-scene="6"] .cmp-bar { animation: ia-grow 0.6s 0.8s ease-out both; }
+	[data-scene="6"] .ma-cost { animation-delay: 0.9s; }
+	[data-scene="6"] .b1-time { animation-delay: 1.1s; }
+	[data-scene="6"] .ma-time { animation-delay: 1.2s; }
+	[data-scene="6"] .b1-acc { animation-delay: 1.4s; }
+	[data-scene="6"] .ma-acc { animation-delay: 1.5s; }
+
+	/* ---- Keyframes ---- */
+	@keyframes ia-ping {
+		0% { transform: scale(1); opacity: 0.6; }
+		100% { transform: scale(2.5); opacity: 0; }
+	}
+	@keyframes ia-draw {
+		from { stroke-dashoffset: 1; }
+		to { stroke-dashoffset: 0; }
+	}
+	@keyframes ia-flow {
+		to { stroke-dashoffset: -13; }
+	}
+	@keyframes ia-work {
+		0%, 100% { stroke-opacity: 1; }
+		50% { stroke-opacity: 0.3; }
+	}
+	@keyframes ia-grow {
+		from { transform: scaleX(0); }
+		to { transform: scaleX(1); }
+	}
+
+	/* ---- Steps & controls ---- */
 	.ia-steps { margin: 16px 0 0; padding: 0; list-style: none; }
 	.ia-steps li { margin: 0 0 14px; }
 	.ia-calc {
@@ -302,10 +332,17 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 	.ia-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 	.ia-controls[hidden] { display: none; }
 	.ia-btn {
-		min-width: 40px; height: 34px; padding: 0 12px;
-		border: 1px solid var(--line-strong); border-radius: 999px;
-		background: var(--paper); color: var(--ink);
-		font: 500 12px/1 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+		min-width: 40px;
+		height: 34px;
+		padding: 0 12px;
+		border: 1px solid var(--line-strong);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink);
+		font: 500 12px/1 var(--font-mono);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		cursor: pointer;
 	}
 	.ia-btn:hover { border-color: var(--ink); }
 	.ia-btn:disabled { opacity: 0.4; cursor: default; }
@@ -327,7 +364,7 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 </style>
 
 <script>
-	for (const fig of document.querySelectorAll<HTMLElement>('[data-explainer-arch]')) {
+	for (const fig of document.querySelectorAll<HTMLElement>('[data-ia-explainer]')) {
 		const steps = [...fig.querySelectorAll<HTMLLIElement>('[data-step]')];
 		const segs = [...fig.querySelectorAll<HTMLButtonElement>('.ia-seg')];
 		const controls = fig.querySelector<HTMLElement>('.ia-controls')!;
@@ -401,6 +438,7 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 		next.addEventListener('click', () => { touched = true; show(Math.min(current + 1, last)); });
 		segs.forEach((s, i) => s.addEventListener('click', () => { touched = true; show(i); }));
 
+		// Autoplay once the figure is mostly on screen; pause while it is scrolled away.
 		let pausedByScroll = false;
 		new IntersectionObserver(([entry]) => {
 			if (entry.isIntersecting) {
