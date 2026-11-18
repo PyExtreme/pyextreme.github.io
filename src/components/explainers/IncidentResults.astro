@@ -5,10 +5,11 @@
 
 <figure class="ir theme-light" data-results>
 	<figcaption class="ir-head">
-		<span class="ir-eyebrow">Experiment results · 2 phases · 105 incidents</span>
+		<span class="ir-eyebrow">Experiment results · 3 phases · 150 incidents</span>
 		<div class="ir-tabs" role="tablist" aria-label="Experiment phase">
-			<button type="button" role="tab" aria-selected="true" data-tab="re2">RE2 Microservices (45 incidents)</button>
-			<button type="button" role="tab" aria-selected="false" data-tab="sim">SIM-AI Infrastructure (60 incidents)</button>
+			<button type="button" role="tab" aria-selected="true" data-tab="re2">RE2 Microservices</button>
+			<button type="button" role="tab" aria-selected="false" data-tab="sim">SIM-AI Infrastructure</button>
+			<button type="button" role="tab" aria-selected="false" data-tab="h1">HolmesGPT Benchmark</button>
 		</div>
 	</figcaption>
 
@@ -58,6 +59,68 @@
 			<div class="ir-stat">
 				<dd>9 days</dd>
 				<dt>Total duration</dt>
+			</div>
+		</dl>
+	</div>
+
+	<div class="ir-phase" data-phase="h1" hidden>
+		<div class="ir-chart-label">AC@1 accuracy · Claude Haiku 5.5</div>
+		<div class="ir-chart" role="img" aria-label="Bar chart of AC@1 accuracy across four arms including HolmesGPT">
+			<div class="ir-bar" data-value="0.978" data-color="ink">
+				<span class="ir-bar-label">MA <span class="ir-bar-sub">Multi-agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.978</span>
+			</div>
+			<div class="ir-bar" data-value="0.956" data-color="teal">
+				<span class="ir-bar-label">HolmesGPT <span class="ir-bar-sub">CNCF agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.956</span>
+			</div>
+			<div class="ir-bar" data-value="0.889" data-color="gray">
+				<span class="ir-bar-label">HolmesGPT <span class="ir-bar-sub">+ advice</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.889</span>
+			</div>
+			<div class="ir-bar" data-value="0.867" data-color="accent-deep">
+				<span class="ir-bar-label">B1 <span class="ir-bar-sub">Single agent</span></span>
+				<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+				<span class="ir-bar-value">0.867</span>
+			</div>
+		</div>
+
+		<div class="ir-sub-section">
+			<div class="ir-chart-label">Domain advice effect</div>
+			<div class="ir-chart" role="img" aria-label="Bar chart showing how domain advice reduced HolmesGPT accuracy">
+				<div class="ir-bar" data-value="0.956" data-color="teal-win">
+					<span class="ir-bar-label">HolmesGPT <span class="ir-bar-sub">No advice</span></span>
+					<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+					<span class="ir-bar-value">0.956</span>
+				</div>
+				<div class="ir-bar" data-value="0.889" data-color="red">
+					<span class="ir-bar-label">HolmesGPT <span class="ir-bar-sub">+ B1's advice</span></span>
+					<div class="ir-bar-track"><div class="ir-bar-fill"></div></div>
+					<span class="ir-bar-value">0.889</span>
+				</div>
+			</div>
+			<p class="ir-annotation">Two sentences of domain advice, transplanted into a different runtime → same systematic errors as B1</p>
+		</div>
+
+		<dl class="ir-stats">
+			<div class="ir-stat">
+				<dd>$3.22</dd>
+				<dt>Total spend</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>180</dd>
+				<dt>Holdout runs</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>+8.9</dd>
+				<dt>Holmes over B1</dt>
+			</div>
+			<div class="ir-stat">
+				<dd>42%</dd>
+				<dt>Of MA's cost</dt>
 			</div>
 		</dl>
 	</div>
@@ -284,6 +347,14 @@
 		color: var(--ink);
 		opacity: 1;
 		transition-delay: 0s;
+	}
+
+	.ir-annotation {
+		font: 400 12px/1.5 var(--font-mono);
+		color: var(--muted);
+		margin: 12px 0 0;
+		padding: 0;
+		font-style: italic;
 	}
 
 	/* Sub-section for the retry-storm chart */

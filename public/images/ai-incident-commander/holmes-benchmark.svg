@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 340" font-family="'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace">
+  <style>
+    .bg { fill: #f7f8f5; }
+    .axis { stroke: #b4bdb8; stroke-width: 1; }
+    .grid { stroke: #d9dfdc; stroke-width: 0.5; stroke-dasharray: 4 3; }
+    .label { fill: #5c6561; font-size: 11px; }
+    .value { fill: #17211f; font-size: 13px; font-weight: 600; }
+    .title { fill: #17211f; font-size: 14px; font-weight: 700; }
+    .subtitle { fill: #5c6561; font-size: 11px; }
+    .section { fill: #17211f; font-size: 13px; font-weight: 700; }
+    .anno { fill: #3f4946; font-size: 10px; }
+    .bar-ma { fill: #17211f; }
+    .bar-holmes { fill: #2d8a7e; }
+    .bar-guided { fill: #5c6561; }
+    .bar-b1 { fill: #5c7a0f; }
+    .box { fill: none; stroke: #b4bdb8; stroke-width: 1; }
+    .red { fill: #b8402a; font-size: 10px; font-weight: 600; }
+  </style>
+
+  <rect class="bg" width="680" height="340" rx="6"/>
+
+  <!-- Title -->
+  <text class="title" x="40" y="28">HolmesGPT Benchmark · AC@1</text>
+  <text class="subtitle" x="40" y="43">45 RE2 Incidents · Claude Haiku 5.5</text>
+
+  <!-- Bar chart -->
+  <line class="axis" x1="170" y1="55" x2="170" y2="189"/>
+  <line class="axis" x1="170" y1="189" x2="575" y2="189"/>
+  <line class="grid" x1="270" y1="55" x2="270" y2="189"/>
+  <line class="grid" x1="370" y1="55" x2="370" y2="189"/>
+  <line class="grid" x1="470" y1="55" x2="470" y2="189"/>
+
+  <!-- Scale -->
+  <text class="label" x="170" y="202" text-anchor="middle">0</text>
+  <text class="label" x="270" y="202" text-anchor="middle">0.25</text>
+  <text class="label" x="370" y="202" text-anchor="middle">0.50</text>
+  <text class="label" x="470" y="202" text-anchor="middle">0.75</text>
+  <text class="label" x="570" y="202" text-anchor="middle">1.00</text>
+
+  <!-- MA: 0.978 -->
+  <text class="label" x="165" y="81" text-anchor="end">MA</text>
+  <rect class="bar-ma" x="170" y="65" width="391" height="24" rx="0 3 3 0"/>
+  <text class="value" x="567" y="81">0.978</text>
+
+  <!-- HolmesGPT: 0.956 -->
+  <text class="label" x="165" y="113" text-anchor="end">HolmesGPT</text>
+  <rect class="bar-holmes" x="170" y="97" width="382" height="24" rx="0 3 3 0"/>
+  <text class="value" x="558" y="113">0.956</text>
+
+  <!-- HolmesGPT-guided: 0.889 -->
+  <text class="label" x="165" y="145" text-anchor="end">HolmesGPT-guided</text>
+  <rect class="bar-guided" x="170" y="129" width="356" height="24" rx="0 3 3 0"/>
+  <text class="value" x="532" y="145">0.889</text>
+
+  <!-- B1: 0.867 -->
+  <text class="label" x="165" y="177" text-anchor="end">B1</text>
+  <rect class="bar-b1" x="170" y="161" width="347" height="24" rx="0 3 3 0"/>
+  <text class="value" x="523" y="177">0.867</text>
+
+  <!-- Stat callouts -->
+  <text x="40" y="216" fill="#5c6561" font-size="10"><tspan fill="#17211f" font-weight="600">$3.22</tspan><tspan> total · </tspan><tspan fill="#17211f" font-weight="600">180</tspan><tspan> runs · </tspan><tspan fill="#8fae1c" font-weight="600">+8.9 pts</tspan><tspan> HolmesGPT over B1 · </tspan><tspan fill="#17211f" font-weight="600">42%</tspan><tspan> of MA&apos;s cost</tspan></text>
+
+  <!-- Domain Advice Effect -->
+  <text class="section" x="40" y="238">Domain Advice Effect</text>
+
+  <!-- Left box: B1 -->
+  <rect class="box" x="40" y="248" width="260" height="50" rx="4"/>
+  <text fill="#17211f" font-size="12" font-weight="600" x="52" y="268">B1 (single agent)</text>
+  <text class="anno" x="52" y="283">2 advice bullets → 3 systematic misses</text>
+
+  <!-- Right box: HolmesGPT-guided -->
+  <rect class="box" x="410" y="248" width="250" height="50" rx="4"/>
+  <text fill="#17211f" font-size="12" font-weight="600" x="422" y="268">HolmesGPT-guided</text>
+  <text class="anno" x="422" y="283">2 advice bullets → 3 matching misses</text>
+
+  <!-- Connector -->
+  <line x1="304" y1="273" x2="406" y2="273" stroke="#b8402a" stroke-width="1" stroke-dasharray="4 2"/>
+  <text class="red" x="355" y="265" text-anchor="middle">Same advice</text>
+  <text class="red" x="355" y="289" text-anchor="middle">Same errors</text>
+
+  <!-- Annotation -->
+  <text fill="#5c6561" font-size="10" font-style="italic" x="40" y="316">Different runtime, different system prompt, identical wrong answers</text>
+</svg>

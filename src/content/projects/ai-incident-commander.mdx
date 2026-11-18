@@ -1,10 +1,10 @@
 ---
 title: "AI Incident Commander"
-headline: "I built a causal engine that finds what a multi-agent system cannot"
-description: "A pre-registered evaluation of three agent architectures for automated incident diagnosis — single agent, multi-agent commander, and a Bayesian causal engine — across 105 held-out incidents on two domains, with seven frozen experiments and ~1,100 runs for $48."
-lede: "Three architectures, 105 held-out incidents, seven frozen experiments. A single agent, a multi-agent commander with concurrent specialists, and a causal investigation engine that predicts outcomes before testing them. Each pre-registered, each run on a hard budget, each reporting what actually happened — including the negative results."
+headline: "I benchmarked my agents against HolmesGPT — and the results changed how I think about agent design"
+description: "A pre-registered evaluation of agent architectures for automated incident diagnosis — single agent, multi-agent commander, Bayesian causal engine, and HolmesGPT (CNCF) — across 150 held-out incidents on two domains, eight frozen experiments, and ~1,280 runs for $51."
+lede: "Three architectures I built, one open-source CNCF agent I didn't, 150 held-out incidents, eight frozen experiments. Each pre-registered, each run on a hard budget, each reporting what actually happened — including the result where the external agent beat mine."
 year: 2026
-updated: "2026-11-17"
+updated: "2026-11-18"
 order: 3
 kind: "Research"
 stack:
@@ -13,10 +13,11 @@ stack:
   - "Gemini Flash"
   - "LLM agents"
   - "Bayesian inference"
+  - "HolmesGPT"
   - "OpenTelemetry"
   - "asyncio"
   - "DuckDB"
-outcome: "Single agent topped overall accuracy (0.894), but the causal engine found 12× more retry-storm faults at 80% of the cost. When it answered confidently, it was right 88.5% of the time. Seven frozen experiments across two domains for $48."
+outcome: "An unmodified open-source agent matched my multi-agent system at 42% of the cost. Domain advice that felt right caused the same systematic errors in two different runtimes. The causal engine found 12× more retry-storm faults. Eight frozen experiments across two domains for $51."
 links: []
 ---
 
@@ -26,27 +27,32 @@ import IncidentResults from '../../components/explainers/IncidentResults.astro';
 import CausalEngine from '../../components/explainers/CausalEngine.astro';
 
 <StatStrip items={[
-  { value: '105', label: 'Held-out incidents' },
-  { value: '~1,100', label: 'Evaluation runs' },
-  { value: '$48', label: 'Total model spend' },
-  { value: '7', label: 'Frozen experiments' },
+  { value: '150', label: 'Held-out incidents' },
+  { value: '~1,280', label: 'Evaluation runs' },
+  { value: '$51', label: 'Total model spend' },
+  { value: '8', label: 'Frozen experiments' },
 ]} />
 
 **TL;DR**
 
-- I designed and ran a **pre-registered, equal-budget comparison** of three agent architectures for
-  automated incident root-cause analysis — a single agent, a multi-agent commander, and a Bayesian
-  causal investigation engine — across two domains (real microservice benchmarks and a simulated
-  AI-infrastructure platform), seven frozen experiments, and roughly 1,100 held-out runs.
+- I designed and ran a **pre-registered, equal-budget comparison** of agent architectures for
+  automated incident root-cause analysis — a single agent, a multi-agent commander, a Bayesian
+  causal investigation engine, and [HolmesGPT](https://github.com/robusta-dev/holmesgpt) (the
+  most widely deployed open-source SRE agent, a CNCF project) — across two domains, eight frozen
+  experiments, and roughly 1,280 held-out runs.
 - On 45 real microservice incidents, the **single agent matched the multi-agent system** at 1/3 the
   cost. A vote-of-three beat both. Four follow-up experiments showed the multi-agent advantage was
   **robustness, not reasoning**.
+- **HolmesGPT, run unmodified, beat my single agent by 8.9 points** and matched the multi-agent
+  system at **42% of its cost**. When I transplanted my agent's domain advice into HolmesGPT,
+  it reproduced the same systematic errors — the same wrong answers in a completely different
+  runtime.
 - On 60 simulated AI-infrastructure incidents, the **single agent led overall (0.894)**, but the
   **causal engine found what others could not**: on retry-storm faults, it scored 0.72 where the
   single agent scored 0.06 — a 12× improvement on the hardest stratum.
 - The causal engine's confidence signal actually works: at belief ≥ 0.80, **88.5% accuracy** vs
   66.4% below, while the single agent's self-reported "confident" was useless across 45 cases.
-- **The whole programme cost $48 in model calls.** Every experiment pre-registered, every protocol
+- **The whole programme cost $51 in model calls.** Every experiment pre-registered, every protocol
   frozen, every result reproducible from cassettes.
 
 ---
@@ -272,27 +278,107 @@ frontier. The single agent offers the best overall accuracy at moderate cost. Th
 pushes the frontier further. The causal engine is the cheapest arm and wins decisively where others
 fail — but its structured investigation loses flexibility on cases where free tool use is enough.
 
+---
+
+## Phase 3: benchmarking against an open-source SRE agent
+
+The first two phases compared systems I built against each other. That is useful for understanding
+tradeoffs, but it leaves a question: **how do they compare with something someone else built?**
+
+[HolmesGPT](https://github.com/robusta-dev/holmesgpt) is the most widely deployed open-source SRE
+agent — an Apache-2.0 CNCF project with its own investigation loop, tool management, and system
+prompt. I ran it **unmodified** (pinned at commit `7745255`) on the same 45 RE2 incidents, under
+the same protocol as my agents:
+
+- **Same model** for every arm: Claude Haiku 5.5
+- **Same tools**: the seven read-only telemetry tools, served over MCP
+- **Same limits**: $0.10, 24 model calls, and 600 seconds per incident
+- **Same scorer**: identical submission and evaluation pipeline
+
+Two variants: `holmes` (plain, with the task description but no investigation advice) and
+`holmes-guided` (with B1's two domain-advice bullets, verbatim).
+
+### Result: the external agent led my single agent at the lowest cost
+
+<StatStrip items={[
+  { value: '0.956', label: 'HolmesGPT AC@1' },
+  { value: '+8.9', label: 'Points over B1' },
+  { value: '$3.22', label: 'Phase spend (180 runs)' },
+  { value: '42%', label: 'Of MA cost' },
+]} />
+
+| | B1 (single agent) | MA (multi-agent) | HolmesGPT | HolmesGPT-guided |
+|---|---|---|---|---|
+| AC@1 | 0.867 | **0.978** | 0.956 | 0.889 |
+| AC@3 | 0.956 | 1.000 | 1.000 | 0.956 |
+| Mean cost per incident | $0.0166 | $0.0290 | **$0.0122** | $0.0138 |
+| Mean wall time | 16.5 s | 29.7 s | 24.8 s | 27.3 s |
+
+HolmesGPT beat the single agent by **+8.9 points (95% interval +0.0 to +20.0)** and matched the
+multi-agent system at 42% of its cost. It ran cleanly on all 90 runs, with no forced submit and
+no crash. It was cheaper because it batches tool calls — about three per model turn, resending its
+context a third fewer times than B1.
+
+On Claude Haiku (unlike the Phase 1 tie on Gemini Flash-Lite), coordination helped: **MA led B1 by
+11.1 points (+0.0 to +22.2)**. The multi-agent advantage depends on the model.
+
+### The finding that changed my assumptions
+
+B1's prompt includes two bullets of domain advice: *"a slow caller is often a symptom"* and
+*"follow calls downstream."* On 3 of its 5 misses, B1 followed this advice and blamed a downstream
+service instead of the true root: a delay in `recommendationservice` attributed to
+`productcatalogservice`, a delay in `checkoutservice` attributed to `shippingservice`.
+
+When I gave HolmesGPT the same two bullets, **it reproduced B1's exact wrong answers** on 3 of 5
+cases — including the `recommendationservice` miss. Two sentences of domain advice, transplanted
+into a completely different runtime with a different system prompt, investigation loop, and tool
+management, and the same systematic error appeared.
+
+**Domain heuristics that feel right can create systematic blind spots, and they transfer across
+runtimes.** This is the kind of result that changes how you design agent prompts: advice that is
+correct "most of the time" can be worse than no advice at all, because it creates a consistent
+failure mode instead of random errors that averaging can fix.
+
+### Integration engineering
+
+The largest dev-phase effect was not a model or prompt issue — it was a **schema-flattening bug in
+HolmesGPT's MCP integration**. HolmesGPT rebuilds tool schemas and strips nested `enum` and
+`description` fields, so its model saw `claims[].direction` as a free string instead of
+`for`/`against`. Every one of 26 dev runs needed its one allowed repair on `submit_diagnosis`. The
+fix: serve the project's own specs directly, bypassing HolmesGPT's schema processing. On the
+holdout, 8 of 90 runs used their repair — down from 100%.
+
+![HolmesGPT benchmark results](/images/ai-incident-commander/holmes-benchmark.svg)
+
 <IncidentResults />
 
 ---
 
 ## What this means for teams building agent systems
 
-1. **Perturb and vote a single agent before building a multi-agent system.** Three differently worded
+1. **Benchmark against an external system, not just your own.** HolmesGPT, unmodified and
+   untuned, beat my single agent and matched my multi-agent system at a fraction of the cost. If
+   you only test your systems against each other, you may be optimizing in a local minimum.
+2. **Domain advice can be worse than no advice.** Two sentences of investigation heuristics created
+   the same systematic errors in two completely different runtimes. Advice that is right "most of
+   the time" creates a consistent failure mode that averaging cannot fix.
+3. **Perturb and vote a single agent before building a multi-agent system.** Three differently worded
    runs of one agent matched or beat the multi-agent system's accuracy at the same or lower spend.
-2. **Know what coordination actually buys.** Here it was not better reasoning. It was stability
-   across prompt versions and robustness to timeouts on a slow model.
-3. **A structured investigation loop beats free tool use on hard, confounded cases.** When the
+4. **Know what coordination actually buys.** Here it was not better reasoning. It was stability
+   across prompt versions and robustness to timeouts on a slow model — and the effect was
+   model-dependent (appeared on Claude Haiku, not on Gemini Flash-Lite).
+5. **A structured investigation loop beats free tool use on hard, confounded cases.** When the
    symptom and the cause are separated by several hops, predict-then-test finds what open-ended
    investigation misses.
-4. **Get the abstention signal from disagreement or Bayesian belief, not from the model's words.**
+6. **Get the abstention signal from disagreement or Bayesian belief, not from the model's words.**
    Self-reported confidence was useless; the causal engine's posterior and cross-run agreement both
    caught real errors.
-5. **Coordination has its own failure modes; write its rules as code.** A follow-up that re-asks the
+7. **Coordination has its own failure modes; write its rules as code.** A follow-up that re-asks the
    dissenting specialist is not independent evidence. On dev it turned six right answers wrong.
-6. **Invest in the deterministic layer.** A five-line rule over the anomaly digest, with no model,
-   reached 0.76 on RE2 and 0.72 on SIM-AI.
-7. **Build the benchmark controls before the benchmark.** The decoy classes, the gate, the import
+8. **Fair comparison is mostly interface work.** The largest dev-phase effect was a schema-flattening
+   bug in the integration, not in any model or prompt: 100% of dev runs needed a repair before the
+   fix; 9% after.
+9. **Build the benchmark controls before the benchmark.** The decoy classes, the gate, the import
    fence and the prompt lint exist to make the results credible, not to make them better.
 
 ---
@@ -306,6 +392,11 @@ there:
   through one package only, enforced by an import-linter rule; for each experiment, a
   pre-registered analysis plan and a freeze file hashing the model, budget, prompts and every file
   on the decision path; a holdout runner that refuses to start if any hash differs.
+- **Sandboxed external agent.** HolmesGPT ran as its own process from a pinned venv, in a
+  temporary directory with its own `HOME`, no inherited environment and no credentials. It reached
+  only a loopback server serving an OpenAI-compatible endpoint (every call budgeted, ledgered and
+  journaled) and the MCP tools. Each request was checked against a tool allowlist: its shell,
+  internet and Kubernetes toolsets were switched off so it could not see anything B1 could not.
 - **Equal information.** Both systems get the same alert time through one shared header function,
   byte-identical across arms (`test_case_header_parity.py`).
 - **Money safety.** A fail-closed model registry, worst-case cost reservations, a ledger,
@@ -342,6 +433,9 @@ Things that went wrong, and were caught before they could bias a result:
 - **Asking for the answer you score.** The glossary told agents to name a fault class only when
   sure. That was harmless under the old metric, and a 5-of-10 error source under joint accuracy.
   Changing one sentence for every arm moved B1 from 0.75 to 0.93.
+- **A reporting bug hid HolmesGPT's cost.** The first generated report showed $0 for both
+  HolmesGPT arms; the journal reader looked for their charge on the wrong event. The reader was
+  fixed and the report regenerated — accuracy unchanged, cost rows corrected.
 
 ---
 
@@ -356,28 +450,35 @@ steps to the orchestrating agent within hard spend limits enforced in code, with
 decision labelled as such.
 
 <StatStrip items={[
-  { value: '9 + 7', label: 'Days (phase 1 + 2)' },
+  { value: '9+7+1', label: 'Days (3 phases)' },
   { value: '~200', label: 'Merged pull requests' },
   { value: '1,509', label: 'Offline tests' },
-  { value: '$48.17', label: 'Total model spend' },
+  { value: '$51.39', label: 'Total model spend' },
 ]} />
 
-| | Phase 1 (RE2) | Phase 2 (SIM-AI) |
-|---|---|---|
-| Duration | 9 days | 7 days |
-| Domain | Real microservice incidents | Simulated AI-infrastructure incidents |
-| Incidents | 45 held-out | 60 held-out |
-| Arms | 2 (B1, MA) + 2 baselines | 3 (B1, MA, CE) + 1 baseline |
-| Experiments | 3 frozen, pre-registered | 1 frozen, pre-registered |
-| Follow-ups | 4 (sampling, memorization, wording, calibration) | Variance study |
-| Model spend | $32.72 | $15.45 |
-| Models | Gemini Flash Lite, Gemini Flash | Claude Haiku 5.5 |
+| | Phase 1 (RE2) | Phase 2 (SIM-AI) | Phase 3 (HolmesGPT) |
+|---|---|---|---|
+| Duration | 9 days | 7 days | 1 day |
+| Domain | Real microservice incidents | Simulated AI-infrastructure | RE2 (same 45 incidents) |
+| Incidents | 45 held-out | 60 held-out | 45 (reused, disclosed) |
+| Arms | 2 (B1, MA) + 2 baselines | 3 (B1, MA, CE) + 1 baseline | 4 (B1, MA, Holmes, Holmes-guided) |
+| Experiments | 3 frozen, pre-registered | 1 frozen, pre-registered | 1 frozen, pre-registered |
+| Follow-ups | 4 (sampling, memorization, wording, calibration) | Variance study | Advice-transfer analysis |
+| Model spend | $32.72 | $15.45 | $3.22 |
+| Models | Gemini Flash Lite, Gemini Flash | Claude Haiku 5.5 | Claude Haiku 5.5 |
 
 **What this demonstrates**, for anyone hiring for senior or staff AI engineering:
 
-- **Designing and running a pre-registered evaluation** of agent architectures across two domains,
-  reporting a null result, a surprising positive result, a negative result, and the follow-ups that
-  explained each — correcting my own earlier claims when the evidence changed.
+- **Designing and running a pre-registered evaluation** of agent architectures across two domains
+  and an external baseline, reporting a null result, a surprising positive result, a negative
+  result, and the follow-ups that explained each — correcting my own earlier claims when the
+  evidence changed.
+- **Benchmarking against external systems** (HolmesGPT, a CNCF open-source agent), including
+  integration engineering (finding and fixing a schema-flattening bug in the MCP layer) and
+  reporting a result where the external system outperformed my own.
+- **Discovering transferable insights about agent design**: domain advice that creates systematic
+  errors regardless of the runtime it is embedded in — a finding with implications for any team
+  writing agent prompts.
 - **Building a novel agent architecture** (the causal engine) that outperforms established
   approaches on specific, measurable strata, with an honest calibration signal.
 - **Building production-shaped agent systems**: concurrency with `asyncio.TaskGroup`, budget guards,
@@ -385,7 +486,7 @@ decision labelled as such.
   observability with OpenTelemetry and Phoenix.
 - **Designing a simulated benchmark with controls against self-fulfilling results**: import fences,
   decoy classes, difficulty gates, prompt lints, and a freeze that covers the generator.
-- **Cost-aware engineering**: every call priced, capped and accounted for; seven experiments across
-  two domains for $48.
+- **Cost-aware engineering**: every call priced, capped and accounted for; eight experiments across
+  two domains for $51.
 - **Directing AI coding agents at scale** (~200 PRs) with guardrails, review checkpoints and an
   auditable decision trail.
