@@ -1,32 +1,34 @@
 ---
+// Animated walkthrough of the causal investigation engine's predict-then-test loop.
+// Each scene is a `data-scene` state on the figure; CSS drives the motion, the script only steps and times it.
 const scenes = [
 	{
 		title: 'Form hypotheses',
-		dur: 6000,
+		dur: 7000,
 		calc: 'prior: gateway 0.40, inference 0.35, index 0.10, other 0.15',
 		text: 'The engine forms hypotheses from the anomaly digest. Each starts with a prior proportional to its anomaly score. An "other" bucket (0.15) captures unlisted causes but is excluded from information-gain calculations.',
 	},
 	{
 		title: 'Design a discriminating test',
-		dur: 7000,
+		dur: 8000,
 		calc: 'best test: onset_order(gateway, inference) → gain 0.42 bits',
-		text: 'The engine designs tests that maximally discriminate between hypotheses, scoring each by expected information gain over a 0.05-bit threshold. It predicts each outcome before running the tool.',
+		text: 'The engine designs tests that maximally discriminate between hypotheses, scoring each by expected information gain. It predicts each outcome before running the tool — predictions are journaled so the "predict, then observe" claim is auditable.',
 	},
 	{
 		title: 'Predict, then observe',
-		dur: 7000,
-		calc: 'predict: gateway-first if root=gateway (0.85) | observe: gateway Δt = −2.3 s ✓',
+		dur: 9000,
+		calc: 'predict: gateway-first if root=gateway (0.85) | observe: gateway Δt = −2.3s ✓',
 		text: 'Predictions are written before the tool runs. The observation confirms the gateway-first prediction. The Bayesian update shifts belief toward gateway-overload.',
 	},
 	{
 		title: 'Belief update',
-		dur: 7000,
-		calc: 'posterior: gateway 0.72 ↑  inference 0.18 ↓ | threshold: 0.80, need 1 more test',
+		dur: 8000,
+		calc: 'posterior: gateway 0.72 ↑  inference 0.18 ↓  | threshold: 0.80, need 1 more test',
 		text: 'One confirming predicate moves belief to 0.72, below the 0.80 stop threshold. The engine needs at least one test and top belief ≥ 0.80 to declare confident. It designs another test.',
 	},
 	{
 		title: 'Confident diagnosis',
-		dur: 8000,
+		dur: 10000,
 		calc: '2 tests, 2 confirmed → gateway 0.87 ≥ 0.80 → CONFIDENT | cost: $0.007',
 		text: 'Two confirming predicates reach 0.87 and stop. The engine identifies both the root service and the fault type. At $0.007 per incident, it is the cheapest arm — and when it answers at belief ≥ 0.80, it is right 88.5% of the time.',
 	},
@@ -40,121 +42,108 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 		<span class="ce-now" aria-hidden="true"></span>
 	</figcaption>
 
-	<svg class="ce-stage" viewBox="0 0 760 340" role="img" aria-label="Causal engine: Bayesian belief bar updates as the engine runs discriminating tests, predicts outcomes, and converges on a confident diagnosis.">
-		<defs>
-			<linearGradient id="ce-gw" x1="0" x2="1"><stop offset="0%" stop-color="#8fae1c"/><stop offset="100%" stop-color="#a5c430"/></linearGradient>
-			<linearGradient id="ce-inf" x1="0" x2="1"><stop offset="0%" stop-color="#2d8a7e"/><stop offset="100%" stop-color="#3ca898"/></linearGradient>
-			<linearGradient id="ce-idx" x1="0" x2="1"><stop offset="0%" stop-color="#b4bdb8"/><stop offset="100%" stop-color="#c8d0cc"/></linearGradient>
-			<linearGradient id="ce-oth" x1="0" x2="1"><stop offset="0%" stop-color="#d9dfdc"/><stop offset="100%" stop-color="#e6ebe8"/></linearGradient>
-		</defs>
+	<svg class="ce-stage" viewBox="0 0 760 340" role="img" aria-label="A causal engine forms Bayesian hypotheses, designs discriminating tests, predicts outcomes before observing them, updates belief, and reaches a confident diagnosis of gateway-overload after two confirming predicates.">
 
-		<!-- Belief bar background -->
-		<rect class="bb-bg" x="60" y="20" width="640" height="32" rx="4" fill="var(--paper-2)" stroke="var(--line)" stroke-width="1"/>
+		<!-- ── belief bar ── -->
+		<rect class="bb-track" x="40" y="20" width="680" height="30" rx="5" />
+		<rect class="bb-seg bb-gw" x="40" y="20" width="0" height="30" rx="5" />
+		<rect class="bb-seg bb-inf" x="40" y="20" width="0" height="30" />
+		<rect class="bb-seg bb-idx" x="40" y="20" width="0" height="30" />
+		<rect class="bb-seg bb-oth" x="40" y="20" width="0" height="30" rx="5" />
+		<!-- belief labels (positioned by JS) -->
+		<text class="bb-lbl lbl-gw" x="176" y="62"></text>
+		<text class="bb-lbl lbl-inf" x="431" y="62"></text>
+		<text class="bb-lbl lbl-idx" x="584" y="62"></text>
+		<text class="bb-lbl lbl-oth" x="669" y="62"></text>
 
-		<!-- Belief bar: scene 1 (prior) -->
-		<g class="bb bb-s1">
-			<rect class="bb-gw" x="60" y="20" width="256" height="32" rx="4" fill="url(#ce-gw)"/>
-			<rect class="bb-inf" x="316" y="20" width="224" height="32" fill="url(#ce-inf)"/>
-			<rect class="bb-idx" x="540" y="20" width="64" height="32" fill="url(#ce-idx)"/>
-			<rect class="bb-oth" x="604" y="20" width="96" height="32" rx="0" fill="url(#ce-oth)"/>
-			<text class="bb-label" x="188" y="40" fill="#fff">gateway 0.40</text>
-			<text class="bb-label" x="428" y="40" fill="#fff">inference 0.35</text>
-			<text class="bb-label bb-sm" x="572" y="40" fill="var(--ink-soft)">0.10</text>
-			<text class="bb-label bb-sm" x="652" y="40" fill="var(--muted)">0.15</text>
+		<!-- threshold marker -->
+		<g class="thresh-mark">
+			<line x1="584" y1="15" x2="584" y2="54" />
+			<text x="584" y="12">0.80</text>
 		</g>
 
-		<!-- Belief bar: scene 3-4 (after test 1) -->
-		<g class="bb bb-s34">
-			<rect x="60" y="20" width="461" height="32" rx="4" fill="url(#ce-gw)"/>
-			<rect x="521" y="20" width="115" height="32" fill="url(#ce-inf)"/>
-			<rect x="636" y="20" width="38" height="32" fill="url(#ce-idx)"/>
-			<rect x="674" y="20" width="26" height="32" rx="0" fill="url(#ce-oth)"/>
-			<text class="bb-label" x="290" y="40" fill="#fff">gateway 0.72 ↑</text>
-			<text class="bb-label bb-sm" x="578" y="40" fill="#fff">0.18</text>
-		</g>
-
-		<!-- Belief bar: scene 5 (after test 2) -->
-		<g class="bb bb-s5">
-			<rect x="60" y="20" width="557" height="32" rx="4" fill="url(#ce-gw)"/>
-			<rect x="617" y="20" width="58" height="32" fill="url(#ce-inf)"/>
-			<rect x="675" y="20" width="25" height="32" rx="0" fill="url(#ce-idx)"/>
-			<text class="bb-label" x="338" y="40" fill="#fff" font-weight="700">gateway 0.87 — CONFIDENT</text>
-		</g>
-
-		<!-- Threshold line at 0.80 -->
-		<line class="threshold" x1="572" y1="16" x2="572" y2="56" stroke="#b8402a" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
-		<text class="threshold-label" x="576" y="12" fill="#b8402a" font-size="10" opacity="0.6">0.80</text>
-
-		<!-- Hypothesis table -->
+		<!-- ── hypothesis table ── -->
 		<g class="hyp-table">
-			<text class="ht-header" x="60" y="82">Hypotheses</text>
+			<text class="section-hdr" x="60" y="88">Hypotheses</text>
 			<g class="hyp h-gw">
-				<rect x="60" y="90" width="300" height="28" rx="3" fill="var(--paper-2)" stroke="var(--accent-deep)" stroke-width="1"/>
-				<text x="72" y="109" fill="var(--ink)" font-size="12" font-weight="600">gateway-overload</text>
-				<text class="hyp-prior" x="348" y="109" fill="var(--accent-deep)" font-size="12" text-anchor="end">0.40</text>
+				<rect x="40" y="94" width="320" height="30" rx="4" />
+				<text class="h-name" x="52" y="114">gateway-overload</text>
+				<text class="h-val h-gw-v" x="348" y="114">0.40</text>
 			</g>
 			<g class="hyp h-inf">
-				<rect x="60" y="124" width="300" height="28" rx="3" fill="var(--paper-2)" stroke="var(--line-strong)" stroke-width="1"/>
-				<text x="72" y="143" fill="var(--ink)" font-size="12">inference-oom</text>
-				<text class="hyp-prior" x="348" y="143" fill="var(--ink-soft)" font-size="12" text-anchor="end">0.35</text>
+				<rect x="40" y="130" width="320" height="30" rx="4" />
+				<text class="h-name" x="52" y="150">inference-oom</text>
+				<text class="h-val h-inf-v" x="348" y="150">0.35</text>
 			</g>
 			<g class="hyp h-idx">
-				<rect x="60" y="158" width="300" height="28" rx="3" fill="var(--paper-2)" stroke="var(--line)" stroke-width="1"/>
-				<text x="72" y="177" fill="var(--muted)" font-size="12">index-degraded</text>
-				<text class="hyp-prior" x="348" y="177" fill="var(--muted)" font-size="12" text-anchor="end">0.10</text>
+				<rect x="40" y="166" width="320" height="30" rx="4" />
+				<text class="h-name" x="52" y="186">index-degraded</text>
+				<text class="h-val h-idx-v" x="348" y="186">0.10</text>
 			</g>
-			<g class="hyp h-oth" opacity="0.4">
-				<rect x="60" y="192" width="300" height="28" rx="3" fill="var(--paper-2)" stroke="var(--line)" stroke-width="1" stroke-dasharray="4 3"/>
-				<text x="72" y="211" fill="var(--muted)" font-size="12" font-style="italic">other</text>
-				<text x="348" y="211" fill="var(--muted)" font-size="12" text-anchor="end">0.15</text>
-			</g>
-		</g>
-
-		<!-- Test design area -->
-		<g class="test-area">
-			<text class="ta-header" x="400" y="82">Test design</text>
-			<g class="test-card tc1">
-				<rect x="400" y="90" width="340" height="52" rx="4" fill="var(--paper-2)" stroke="var(--accent-deep)" stroke-width="1.5"/>
-				<text x="412" y="110" fill="var(--ink)" font-size="12" font-weight="600">onset_order(gateway, inference)</text>
-				<text x="412" y="128" fill="var(--accent-deep)" font-size="11">info gain: 0.42 bits ← selected</text>
-			</g>
-			<g class="test-card tc2">
-				<rect x="400" y="150" width="340" height="34" rx="4" fill="var(--paper-2)" stroke="var(--line)" stroke-width="1"/>
-				<text x="412" y="172" fill="var(--muted)" font-size="11">metric_change(inference, cpu) → 0.18 bits</text>
-			</g>
-			<g class="test-card tc3">
-				<rect x="400" y="190" width="340" height="34" rx="4" fill="var(--paper-2)" stroke="var(--line)" stroke-width="1"/>
-				<text x="412" y="212" fill="var(--muted)" font-size="11">flow_ratio(gateway, inference) → 0.12 bits</text>
+			<g class="hyp h-oth">
+				<rect x="40" y="202" width="320" height="30" rx="4" />
+				<text class="h-name faded" x="52" y="222">other</text>
+				<text class="h-val faded h-oth-v" x="348" y="222">0.15</text>
 			</g>
 		</g>
 
-		<!-- Prediction and observation boxes -->
-		<g class="predict-box">
-			<rect x="400" y="90" width="340" height="60" rx="4" fill="var(--paper-2)" stroke="var(--accent-deep)" stroke-width="1.5"/>
-			<text x="412" y="110" fill="var(--muted)" font-size="10" text-transform="uppercase" letter-spacing="0.06em">Prediction (journaled before tool runs)</text>
-			<text x="412" y="130" fill="var(--ink)" font-size="13" font-weight="600">if root=gateway → gateway onset first (p=0.85)</text>
-			<text x="412" y="148" fill="var(--ink-soft)" font-size="12">if root=inference → inference onset first (p=0.90)</text>
-		</g>
-		<g class="observe-box">
-			<rect x="400" y="160" width="340" height="44" rx="4" fill="var(--accent)" stroke="var(--accent-deep)" stroke-width="1.5"/>
-			<text x="412" y="180" fill="var(--on-accent)" font-size="10" text-transform="uppercase" letter-spacing="0.06em">Observation</text>
-			<text x="412" y="196" fill="var(--on-accent)" font-size="13" font-weight="700">gateway onset 2.3 s before inference ✓</text>
-		</g>
-
-		<!-- Confident badge -->
-		<g class="confident-badge">
-			<rect x="400" y="90" width="340" height="130" rx="6" fill="var(--accent)" stroke="var(--accent-deep)" stroke-width="2"/>
-			<text x="570" y="125" fill="var(--on-accent)" font-size="11" text-anchor="middle" text-transform="uppercase" letter-spacing="0.08em" font-weight="500">Diagnosis</text>
-			<text x="570" y="155" fill="var(--on-accent)" font-size="20" text-anchor="middle" font-weight="700">gateway-overload</text>
-			<text x="570" y="178" fill="var(--on-accent)" font-size="14" text-anchor="middle">(retry-storm)</text>
-			<text x="570" y="206" fill="var(--on-accent)" font-size="12" text-anchor="middle" opacity="0.8">2 tests · belief 0.87 · $0.007</text>
+		<!-- ── test design panel (scene 2) ── -->
+		<g class="test-design">
+			<rect class="td-box" x="400" y="78" width="320" height="156" rx="5" />
+			<text class="section-hdr" x="414" y="98">Test candidates</text>
+			<rect class="td-hl" x="404" y="104" width="312" height="24" rx="3" />
+			<text class="td-name" x="414" y="121">onset_order(gw, inf)</text>
+			<text class="td-score td-best" x="706" y="121">0.42 bits</text>
+			<text class="td-name" x="414" y="150">latency_ratio(gw, idx)</text>
+			<text class="td-score" x="706" y="150">0.28 bits</text>
+			<text class="td-name" x="414" y="179">mem_spike(inf)</text>
+			<text class="td-score" x="706" y="179">0.19 bits</text>
+			<text class="td-pick" x="414" y="218">▸ best: onset_order → 0.42 bits</text>
 		</g>
 
-		<!-- Below threshold indicator -->
-		<g class="below-thresh">
-			<rect x="400" y="250" width="340" height="30" rx="4" fill="none" stroke="#b8402a" stroke-width="1" stroke-dasharray="4 3"/>
-			<text x="570" y="270" fill="#b8402a" font-size="11" text-anchor="middle">belief 0.72 &lt; threshold 0.80 — designing next test</text>
+		<!-- ── predict / observe panel (scene 3) ── -->
+		<g class="pred-obs">
+			<rect class="po-box" x="400" y="78" width="320" height="92" rx="5" />
+			<text class="section-hdr" x="414" y="98">Predictions (journaled)</text>
+			<text class="po-line" x="414" y="120">if gateway → gw first</text>
+			<text class="po-prob" x="706" y="120">p=0.85</text>
+			<text class="po-line" x="414" y="144">if inference → inf first</text>
+			<text class="po-prob" x="706" y="144">p=0.90</text>
+
+			<rect class="po-obs-box" x="400" y="180" width="320" height="58" rx="5" />
+			<text class="section-hdr po-obs-hdr" x="414" y="200">Observation</text>
+			<text class="po-obs-txt" x="414" y="222">gw onset 2.3s before inference</text>
+			<text class="po-chk" x="706" y="222">✓</text>
+			<text class="po-match" x="414" y="256">matches gateway prediction</text>
 		</g>
+
+		<!-- ── threshold warning (scene 4) ── -->
+		<g class="need-more">
+			<rect class="nm-box" x="400" y="78" width="320" height="52" rx="5" />
+			<text class="nm-line1" x="560" y="100">belief 0.72 &lt; threshold 0.80</text>
+			<text class="nm-line2" x="560" y="120">designing next test …</text>
+		</g>
+
+		<!-- ── second test compressed (scene 5) ── -->
+		<g class="test2">
+			<rect class="t2-box" x="400" y="150" width="320" height="90" rx="5" />
+			<text class="section-hdr" x="414" y="172">Test 2: error_class(gateway)</text>
+			<text class="t2-line" x="414" y="196">predict: 5xx retry-storm</text>
+			<text class="t2-line t2-obs" x="414" y="218">observe: 503 burst ✓</text>
+		</g>
+
+		<!-- ── confident badge (scene 5) ── -->
+		<g class="conf-badge">
+			<rect class="conf-bg" x="400" y="78" width="320" height="58" rx="5" />
+			<text class="conf-label" x="560" y="100">CONFIDENT</text>
+			<text class="conf-detail" x="560" y="122">gateway-overload (retry-storm)</text>
+		</g>
+
+		<!-- final highlight on gateway row (scene 5) -->
+		<rect class="final-hl" x="38" y="92" width="324" height="34" rx="5" />
+
+		<!-- cost label (scene 5) -->
+		<text class="cost-lbl" x="200" y="310">2 tests · 2 confirmed · $0.007</text>
 	</svg>
 
 	<ol class="ce-steps">
@@ -167,9 +156,9 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 	</ol>
 
 	<div class="ce-controls" hidden>
-		<button type="button" class="ce-btn" data-act="prev" aria-label="Previous scene">←</button>
+		<button type="button" class="ce-btn" data-act="prev" aria-label="Previous scene">&larr;</button>
 		<button type="button" class="ce-btn ce-play" data-act="play">Play</button>
-		<button type="button" class="ce-btn" data-act="next" aria-label="Next scene">→</button>
+		<button type="button" class="ce-btn" data-act="next" aria-label="Next scene">&rarr;</button>
 		<div class="ce-segs">
 			{scenes.map((scene, i) => (
 				<button type="button" class="ce-seg" data-go={i} aria-label={`Scene ${i + 1}: ${scene.title}`}><span></span></button>
@@ -179,74 +168,183 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 </figure>
 
 <style>
+	/* ── container ── */
 	.ce {
+		--ce-gw: #4a90d9;
+		--ce-inf: #d9844a;
+		--ce-idx: #9b7ec8;
+		--ce-oth: #c3cbc7;
+		--ce-good: #55700d;
 		margin: 2.4em 0;
 		padding: 20px 20px 16px;
 		border: 1px solid var(--line);
 		border-radius: 8px;
 		background: #fff;
 	}
+
+	/* ── header ── */
 	.ce-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
 	.ce-eyebrow { color: var(--muted); }
 	.ce-now { color: var(--ink); text-align: right; }
 	.ce-stage { display: block; width: 100%; height: auto; font-family: var(--font-mono); }
 
-	/* Belief bar segments */
-	.bb { transition: opacity 0.6s; }
-	.bb-label { font-size: 12px; font-weight: 600; text-anchor: middle; }
-	.bb-sm { font-size: 10px; }
-	.bb-s1, .bb-s34, .bb-s5 { opacity: 0; }
+	/* ── shared text styles ── */
+	.section-hdr { fill: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
 
-	[data-scene='1'] .bb-s1,
-	[data-scene='2'] .bb-s1 { opacity: 1; }
-	[data-scene='3'] .bb-s34,
-	[data-scene='4'] .bb-s34 { opacity: 1; }
-	[data-scene='5'] .bb-s5 { opacity: 1; }
+	/* ══════════════════════════════════════
+	   BELIEF BAR
+	   ══════════════════════════════════════ */
+	.bb-track { fill: var(--paper-2); stroke: var(--line); stroke-width: 1; }
+	.bb-seg { transition: x 1.2s ease-in-out, width 1.2s ease-in-out; }
+	.bb-gw { fill: var(--ce-gw); }
+	.bb-inf { fill: var(--ce-inf); }
+	.bb-idx { fill: var(--ce-idx); }
+	.bb-oth { fill: var(--ce-oth); }
+	.bb-lbl { font-size: 11px; fill: var(--ink-soft); text-anchor: middle; opacity: 0; transition: opacity 0.5s 0.4s; }
 
-	/* Hypothesis table */
+	/* widths: 680px total.  gw|inf|idx|oth */
+	/* scene 1-3: 0.40=272, 0.35=238, 0.10=68, 0.15=102 */
+	[data-scene='1'] .bb-gw,
+	[data-scene='2'] .bb-gw,
+	[data-scene='3'] .bb-gw  { x: 40;  width: 272; }
+	[data-scene='1'] .bb-inf,
+	[data-scene='2'] .bb-inf,
+	[data-scene='3'] .bb-inf { x: 312; width: 238; }
+	[data-scene='1'] .bb-idx,
+	[data-scene='2'] .bb-idx,
+	[data-scene='3'] .bb-idx { x: 550; width: 68;  }
+	[data-scene='1'] .bb-oth,
+	[data-scene='2'] .bb-oth,
+	[data-scene='3'] .bb-oth { x: 618; width: 102; }
+
+	/* scene 4: 0.72=490, 0.18=122, 0.06=41, 0.04=27 */
+	[data-scene='4'] .bb-gw  { x: 40;  width: 490; }
+	[data-scene='4'] .bb-inf { x: 530; width: 122; }
+	[data-scene='4'] .bb-idx { x: 652; width: 41;  }
+	[data-scene='4'] .bb-oth { x: 693; width: 27;  }
+
+	/* scene 5: 0.87=592, 0.08=54, 0.03=20, 0.02=14 */
+	[data-scene='5'] .bb-gw  { x: 40;  width: 592; }
+	[data-scene='5'] .bb-inf { x: 632; width: 54;  }
+	[data-scene='5'] .bb-idx { x: 686; width: 20;  }
+	[data-scene='5'] .bb-oth { x: 706; width: 14;  }
+
+	/* labels visible in all scenes */
+	[data-scene='1'] .bb-lbl,
+	[data-scene='2'] .bb-lbl,
+	[data-scene='3'] .bb-lbl,
+	[data-scene='4'] .bb-lbl,
+	[data-scene='5'] .bb-lbl { opacity: 1; }
+	/* hide tiny labels in scene 5 */
+	[data-scene='5'] .lbl-idx,
+	[data-scene='5'] .lbl-oth { opacity: 0; }
+
+	/* ── threshold marker ── */
+	.thresh-mark { opacity: 0; transition: opacity 0.5s; }
+	.thresh-mark line { stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 4 3; }
+	.thresh-mark text { font-size: 10px; fill: var(--muted); text-anchor: middle; }
+	[data-scene='4'] .thresh-mark,
+	[data-scene='5'] .thresh-mark { opacity: 1; }
+
+	/* ══════════════════════════════════════
+	   HYPOTHESIS TABLE
+	   ══════════════════════════════════════ */
 	.hyp-table { opacity: 0; transition: opacity 0.5s; }
-	[data-scene='1'] .hyp-table { opacity: 1; }
-	[data-scene='2'] .hyp-table { opacity: 1; }
-	[data-scene='3'] .hyp-table { opacity: 0.4; }
-	[data-scene='4'] .hyp-table { opacity: 0.4; }
-	[data-scene='5'] .hyp-table { opacity: 0.3; }
-	.ht-header { fill: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
-	.hyp { transition: opacity 0.4s; }
-	[data-scene='1'] .h-gw { animation: ce-slideIn 0.4s 0.3s ease-out both; }
-	[data-scene='1'] .h-inf { animation: ce-slideIn 0.4s 0.5s ease-out both; }
-	[data-scene='1'] .h-idx { animation: ce-slideIn 0.4s 0.7s ease-out both; }
-	[data-scene='1'] .h-oth { animation: ce-slideIn 0.4s 0.9s ease-out both; }
+	[data-scene='1'] .hyp-table { opacity: 1; transition-delay: 0.2s; }
+	[data-scene='2'] .hyp-table,
+	[data-scene='3'] .hyp-table,
+	[data-scene='4'] .hyp-table,
+	[data-scene='5'] .hyp-table { opacity: 1; }
 
-	/* Test area */
-	.test-area { opacity: 0; transition: opacity 0.5s; }
-	.ta-header { fill: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
-	[data-scene='2'] .test-area { opacity: 1; }
-	[data-scene='2'] .tc1 { animation: ce-slideIn 0.3s 0.4s ease-out both; }
-	[data-scene='2'] .tc2 { animation: ce-slideIn 0.3s 0.6s ease-out both; }
-	[data-scene='2'] .tc3 { animation: ce-slideIn 0.3s 0.8s ease-out both; }
+	.hyp rect { fill: var(--paper-2); stroke: var(--line); stroke-width: 1; transition: stroke 0.5s, fill 0.5s; }
+	.h-gw rect { stroke: var(--ce-gw); }
+	.h-name { font-size: 13px; fill: var(--ink); }
+	.h-val { font-size: 13px; fill: var(--ink-soft); text-anchor: end; }
+	.faded { opacity: 0.45; }
 
-	/* Prediction + observation */
-	.predict-box, .observe-box { opacity: 0; transition: opacity 0.5s; }
-	[data-scene='3'] .predict-box { opacity: 1; transition-delay: 0.3s; }
-	[data-scene='3'] .observe-box { opacity: 1; transition-delay: 1.5s; }
+	/* staggered appearance in scene 1 */
+	.hyp { opacity: 0; transition: opacity 0.4s; }
+	[data-scene='1'] .h-gw  { opacity: 1; transition-delay: 0.5s; }
+	[data-scene='1'] .h-inf { opacity: 1; transition-delay: 1.0s; }
+	[data-scene='1'] .h-idx { opacity: 1; transition-delay: 1.5s; }
+	[data-scene='1'] .h-oth { opacity: 1; transition-delay: 2.0s; }
+	[data-scene='2'] .hyp,
+	[data-scene='3'] .hyp,
+	[data-scene='4'] .hyp,
+	[data-scene='5'] .hyp { opacity: 1; }
 
-	/* Below threshold */
-	.below-thresh { opacity: 0; transition: opacity 0.5s; }
-	[data-scene='4'] .below-thresh { opacity: 1; transition-delay: 0.5s; }
-	[data-scene='4'] .hyp-table { opacity: 0.4; }
+	/* ══════════════════════════════════════
+	   TEST DESIGN PANEL (scene 2)
+	   ══════════════════════════════════════ */
+	.test-design { opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+	[data-scene='2'] .test-design { opacity: 1; transition-delay: 0.4s; }
+	.td-box { fill: var(--paper-2); stroke: var(--line-strong); stroke-width: 1; }
+	.td-name { font-size: 12px; fill: var(--ink); }
+	.td-score { font-size: 12px; fill: var(--ink-soft); text-anchor: end; }
+	.td-best { fill: var(--accent-deep); font-weight: 700; }
+	.td-hl { fill: var(--accent); opacity: 0; }
+	[data-scene='2'] .td-hl { animation: ce-pulse 1.4s 1.6s ease-in-out 2 both; }
+	.td-pick { font-size: 12px; fill: var(--ce-good); font-weight: 600; opacity: 0; transition: opacity 0.5s; }
+	[data-scene='2'] .td-pick { opacity: 1; transition-delay: 3.5s; }
 
-	/* Confident badge */
-	.confident-badge { opacity: 0; transition: opacity 0.5s; }
-	[data-scene='5'] .confident-badge { opacity: 1; transition-delay: 0.6s; }
-	[data-scene='5'] .h-gw rect { stroke: var(--accent-deep); stroke-width: 2; fill: var(--accent); }
+	/* ══════════════════════════════════════
+	   PREDICT / OBSERVE (scene 3)
+	   ══════════════════════════════════════ */
+	.pred-obs { opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+	[data-scene='3'] .pred-obs { opacity: 1; transition-delay: 0.3s; }
+	.po-box { fill: var(--paper-2); stroke: var(--line-strong); stroke-width: 1; }
+	.po-line { font-size: 13px; fill: var(--ink); }
+	.po-prob { font-size: 13px; fill: var(--ink-soft); text-anchor: end; }
 
-	/* Threshold line */
-	.threshold { transition: opacity 0.4s; }
-	[data-scene='4'] .threshold { opacity: 1; }
-	[data-scene='5'] .threshold { opacity: 0.3; }
+	/* observation box appears later */
+	.po-obs-box { fill: var(--accent); stroke: var(--accent-deep); stroke-width: 1.5; opacity: 0; transition: opacity 0.6s; }
+	[data-scene='3'] .po-obs-box { opacity: 1; transition-delay: 3.0s; }
+	.po-obs-hdr { opacity: 0; transition: opacity 0.5s; }
+	[data-scene='3'] .po-obs-hdr { opacity: 1; transition-delay: 3.2s; }
+	.po-obs-txt { font-size: 13px; fill: var(--ink); font-weight: 600; opacity: 0; transition: opacity 0.5s; }
+	[data-scene='3'] .po-obs-txt { opacity: 1; transition-delay: 3.6s; }
+	.po-chk { font-size: 16px; fill: var(--ce-good); font-weight: 700; text-anchor: end; opacity: 0; transition: opacity 0.5s; }
+	[data-scene='3'] .po-chk { opacity: 1; transition-delay: 4.2s; }
+	.po-match { font-size: 11px; fill: var(--ce-good); font-weight: 600; opacity: 0; transition: opacity 0.5s; }
+	[data-scene='3'] .po-match { opacity: 1; transition-delay: 4.8s; }
 
-	@keyframes ce-slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+	/* ══════════════════════════════════════
+	   NEED MORE (scene 4)
+	   ══════════════════════════════════════ */
+	.need-more { opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+	[data-scene='4'] .need-more { opacity: 1; transition-delay: 1.4s; }
+	.nm-box { fill: var(--paper-2); stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 6 3; }
+	.nm-line1, .nm-line2 { font-size: 13px; fill: var(--ink-soft); text-anchor: middle; }
 
+	/* ══════════════════════════════════════
+	   SECOND TEST + CONFIDENT (scene 5)
+	   ══════════════════════════════════════ */
+	.test2 { opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+	[data-scene='5'] .test2 { opacity: 1; transition-delay: 0.5s; }
+	.t2-box { fill: var(--paper-2); stroke: var(--line); stroke-width: 1; }
+	.t2-line { font-size: 12px; fill: var(--ink); }
+	.t2-obs { fill: var(--ce-good); font-weight: 600; }
+
+	.conf-badge { opacity: 0; transition: opacity 0.6s; pointer-events: none; }
+	[data-scene='5'] .conf-badge { opacity: 1; transition-delay: 2.0s; }
+	.conf-bg { fill: var(--accent); stroke: var(--accent-deep); stroke-width: 2; }
+	.conf-label { font-size: 15px; fill: var(--ink); text-anchor: middle; font-weight: 700; letter-spacing: 0.08em; }
+	.conf-detail { font-size: 12px; fill: var(--ink-soft); text-anchor: middle; }
+
+	/* final glow on gateway row */
+	.final-hl { fill: none; stroke: var(--accent-deep); stroke-width: 2; opacity: 0; transition: opacity 0.6s; }
+	[data-scene='5'] .final-hl { opacity: 1; transition-delay: 2.4s; }
+
+	/* cost label */
+	.cost-lbl { font-size: 13px; fill: var(--ce-good); text-anchor: middle; font-weight: 600; opacity: 0; transition: opacity 0.5s; }
+	[data-scene='5'] .cost-lbl { opacity: 1; transition-delay: 3.2s; }
+
+	/* ── keyframes ── */
+	@keyframes ce-pulse { 0%, 100% { opacity: 0; } 30%, 70% { opacity: 0.4; } }
+
+	/* ══════════════════════════════════════
+	   STEP LIST + CONTROLS
+	   ══════════════════════════════════════ */
 	.ce-steps { margin: 16px 0 0; padding: 0; list-style: none; }
 	.ce-steps li { margin: 0 0 14px; }
 	.ce-calc {
@@ -264,10 +362,17 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 	.ce-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 	.ce-controls[hidden] { display: none; }
 	.ce-btn {
-		min-width: 40px; height: 34px; padding: 0 12px;
-		border: 1px solid var(--line-strong); border-radius: 999px;
-		background: var(--paper); color: var(--ink);
-		font: 500 12px/1 var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+		min-width: 40px;
+		height: 34px;
+		padding: 0 12px;
+		border: 1px solid var(--line-strong);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink);
+		font: 500 12px/1 var(--font-mono);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		cursor: pointer;
 	}
 	.ce-btn:hover { border-color: var(--ink); }
 	.ce-btn:disabled { opacity: 0.4; cursor: default; }
@@ -301,6 +406,23 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 		const last = steps.length - 1;
 		const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+		// Per-scene belief values and label positions (x center of each segment)
+		const vals: Record<string, [string, number][]> = {
+			gw:  [['0.40', 176], ['0.40', 176], ['0.40', 176], ['0.72', 285], ['0.87', 336]],
+			inf: [['0.35', 431], ['0.35', 431], ['0.35', 431], ['0.18', 591], ['0.08', 659]],
+			idx: [['0.10', 584], ['0.10', 584], ['0.10', 584], ['0.06', 672], ['0.03', 696]],
+			oth: [['0.15', 669], ['0.15', 669], ['0.15', 669], ['0.04', 706], ['0.02', 713]],
+		};
+
+		const lblGw  = fig.querySelector<SVGTextElement>('.lbl-gw')!;
+		const lblInf = fig.querySelector<SVGTextElement>('.lbl-inf')!;
+		const lblIdx = fig.querySelector<SVGTextElement>('.lbl-idx')!;
+		const lblOth = fig.querySelector<SVGTextElement>('.lbl-oth')!;
+		const hGwV   = fig.querySelector<SVGTextElement>('.h-gw-v')!;
+		const hInfV  = fig.querySelector<SVGTextElement>('.h-inf-v')!;
+		const hIdxV  = fig.querySelector<SVGTextElement>('.h-idx-v')!;
+		const hOthV  = fig.querySelector<SVGTextElement>('.h-oth-v')!;
+
 		let current = 0;
 		let playing = false;
 		let ended = false;
@@ -325,6 +447,16 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 			prev.disabled = n === 0;
 			next.disabled = n === last;
 			if (!playing) play.textContent = 'Play';
+
+			// Update belief bar labels + hypothesis values
+			lblGw.textContent  = vals.gw[n][0];  lblGw.setAttribute('x', String(vals.gw[n][1]));
+			lblInf.textContent = vals.inf[n][0]; lblInf.setAttribute('x', String(vals.inf[n][1]));
+			lblIdx.textContent = vals.idx[n][0]; lblIdx.setAttribute('x', String(vals.idx[n][1]));
+			lblOth.textContent = vals.oth[n][0]; lblOth.setAttribute('x', String(vals.oth[n][1]));
+			hGwV.textContent   = vals.gw[n][0];
+			hInfV.textContent  = vals.inf[n][0];
+			hIdxV.textContent  = vals.idx[n][0];
+			hOthV.textContent  = vals.oth[n][0];
 		};
 
 		const tick = (t: number) => {
@@ -363,6 +495,7 @@ const total = Math.round(scenes.reduce((sum, s) => sum + s.dur, 0) / 1000);
 		next.addEventListener('click', () => { touched = true; show(Math.min(current + 1, last)); });
 		segs.forEach((s, i) => s.addEventListener('click', () => { touched = true; show(i); }));
 
+		// Autoplay once the figure is mostly on screen; pause while it is scrolled away.
 		let pausedByScroll = false;
 		new IntersectionObserver(([entry]) => {
 			if (entry.isIntersecting) {
