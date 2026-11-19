@@ -16,13 +16,25 @@ stack:
   - "Claude Sonnet 5.5 / Haiku 5.5"
   - "AWS + Vertex AI"
   - "Langfuse + OpenTelemetry"
-outcome: "v1 in production at 90% top-setup hit rate for about $4.5 per 100-symbol scan; v2 multi-agent ranking in shadow evaluation."
+outcome: "v1 in production at 90% top-setup hit rate for about $4.5 per 1,000-symbol scan; v2 multi-agent ranking in shadow evaluation."
 links:
   - label: "Live product"
     href: "https://staging.marketlaneai.com"
 ---
 
 import MarketLaneScanEvolution from '../../components/explainers/MarketLaneScanEvolution.astro';
+
+> **TL;DR for founders**
+>
+> MarketLane AI is a solo-built, AI-native market intelligence platform that scans every NSE-listed equity daily and surfaces high-conviction swing setups with cited reasoning, replacing hours of manual screening with a single nightly pipeline.
+>
+> - **90% hit rate** on a star-weighted accuracy metric, measured against the most expensive analysis path as oracle, not self-reported.
+> - **$4.50 per 1,000 symbols** in production (v1), down from $7–9 in the multi-agent v2, with web search as a toggleable cost lever.
+> - **Sub-10-minute wall clock** for a full 100-symbol scan with two workers after optimisation, fast enough to publish before the next trading day.
+> - **Three pipeline generations designed, built and measured by one engineer** — prefilter → single-shot (v0), discover → analyze → validate → criticize (v1), and a full multi-agent ranking pipeline with frozen evidence bundles and deterministic scoring (v2). Each generation was promoted or held back on predeclared quality, cost and latency gates, not on a good demo.
+> - **Code owns every fact and every decision.** Models interpret charts and propose theses; deterministic validators recompute every claim; an adversarial critic challenges the thesis; code resolves the final verdict. No LLM ever decides what to publish.
+> - **Full production stack:** FastAPI, PostgreSQL, SQS-driven workers with lease fencing, multi-provider model gateway (Vertex AI + Anthropic), Langfuse traces, OpenTelemetry metrics, CloudWatch alarms and a cost ledger that reconciles to the provider bill.
+> - **Designed for a growing user base.** Bounded concurrency, atomic publication, circuit breakers, budget admission control, and a durable state machine that resumes partial scans — not a notebook, a product.
 
 ## What MarketLane does
 
@@ -44,7 +56,7 @@ hit rate  =  ──────────────────────�
                  Σ stars of all top setups that day
 ```
 
-The second and third numbers are the obvious ones: model cost per 100-symbol scan, and wall-clock time for the whole universe. Every architecture change below was judged on those three together.
+The second and third numbers are the obvious ones: model cost per 1,000-symbol scan, and wall-clock time for the whole universe. Every architecture change below was judged on those three together.
 
 ## Three generations side by side
 
@@ -90,7 +102,7 @@ Three ideas carry this design.
 
 The multimodal step is where Gemini earns its place: daily and weekly charts are analyzed together, which is how a discretionary trader reads structure and which the feature packet alone never captured. Reasoning stages run on Claude Sonnet 5.5 and the critic on Claude Haiku 5.5.
 
-The result was a hit rate of 90% at about $4.5 per 100 symbols with web search enabled, or $2 without it. Per-symbol latency roughly doubled against v0, which is acceptable for a nightly scan and is where the optimisations below were aimed.
+The result was a hit rate of 90% at about $4.5 per 1,000 symbols with web search enabled, or $2 without it. Per-symbol latency roughly doubled against v0, which is acceptable for a nightly scan and is where the optimisations below were aimed.
 
 ## v2: multi-agent analysis and ranking
 
@@ -131,7 +143,7 @@ In shadow evaluation v2 scores 87 to 88% on the hit rate, slightly below v1, at 
 | | v0 | v1 (prod) | v2 (shadow) |
 | --- | --- | --- | --- |
 | Hit rate, star-weighted | 81 to 85% | **90%** | 87 to 88% |
-| Cost per 100 symbols | $1.4 | $4.5 ($2 without web search) | $7 to 9 |
+| Cost per 1,000 symbols | $1.4 | $4.5 ($2 without web search) | $7 to 9 |
 | Per-symbol latency | ~9 s | ~20 s (~10 s optimised) | ~65 to 85 s (~22 s optimised) |
 | 100 symbols, two workers | ~8 min | ~17 min (~9 min optimised) | ~55 min to 1.2 h (~20 to 25 min optimised) |
 | Model calls per symbol | 1 | 3 to 4 | 5, up to 10 with correction |
