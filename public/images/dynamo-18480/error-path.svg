@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 350" width="760" height="350" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">An SGLang validation error on the multimodal path, before and after</title>
+<desc id="d">Before: SGLang's verify() raises a ValueError on the first read of the stream. The multimodal worker handler catches it and yields an in-band chunk with finish_reason error and an error key. The Rust frontend has no error field, drops the message and the client sees "backend emitted finish_reason=error without a message". After: the handler re-raises the ValueError as a typed InvalidArgument, the encode worker passes it through, and the frontend returns a 400 with SGLang's own message.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.box{fill:#f3f2ef;stroke:#d6d5d0}.bad{fill:#fbe9e5;stroke:#d0452b}.good{fill:#e6effa;stroke:#2a78d6}.badt{fill:#b3361f}.goodt{fill:#1f5fae}.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace}.line{stroke:#9b9a95;fill:none}.arrow{fill:#9b9a95}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.box{fill:#24241f;stroke:#3d3d38}.bad{fill:#3a201b;stroke:#ef6a4f}.good{fill:#1b2a3d;stroke:#3987e5}.badt{fill:#ef8a73}.goodt{fill:#79acef}.line{stroke:#6f6e69}.arrow{fill:#6f6e69}}</style>
+<defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<rect class="bg" x="0" y="0" width="760" height="350" rx="8"/>
+<text class="ink" x="40" y="34" font-size="17" font-weight="600">A rejected multimodal request now keeps its reason</text>
+<text class="ink2" x="40" y="54" font-size="12.5">Request with logit_bias {"999999": 4} on an SGLang multimodal deployment</text>
+
+<text class="ink" x="40" y="84" font-size="14" font-weight="600">Before</text>
+<rect class="box" x="40" y="96" width="160" height="56" rx="6"/>
+<text class="ink" x="120" y="119" font-size="12.5" font-weight="600" text-anchor="middle">SGLang verify()</text>
+<text class="ink2 mono" x="120" y="138" font-size="11" text-anchor="middle">raises ValueError</text>
+<line class="line" x1="200" x2="222" y1="124" y2="124" marker-end="url(#a)"/>
+<rect class="bad" x="224" y="96" width="160" height="56" rx="6" stroke-width="1.5"/>
+<text class="badt" x="304" y="119" font-size="12.5" font-weight="600" text-anchor="middle">MM worker handler</text>
+<text class="badt mono" x="304" y="138" font-size="11" text-anchor="middle">except Exception</text>
+<line class="line" x1="384" x2="406" y1="124" y2="124" marker-end="url(#a)"/>
+<rect class="bad" x="408" y="96" width="160" height="56" rx="6" stroke-width="1.5"/>
+<text class="badt" x="488" y="119" font-size="12.5" font-weight="600" text-anchor="middle">In-band chunk</text>
+<text class="badt mono" x="488" y="138" font-size="11" text-anchor="middle">"error": msg</text>
+<line class="line" x1="568" x2="590" y1="124" y2="124" marker-end="url(#a)"/>
+<rect class="bad" x="592" y="96" width="128" height="56" rx="6" stroke-width="1.5"/>
+<text class="badt" x="656" y="119" font-size="12.5" font-weight="600" text-anchor="middle">Rust frontend</text>
+<text class="badt mono" x="656" y="138" font-size="11" text-anchor="middle">drops "error"</text>
+<text class="ink2" x="40" y="178" font-size="12">Client sees:</text>
+<text class="badt mono" x="118" y="178" font-size="11">backend emitted finish_reason=error without a message</text>
+
+<line class="line" x1="40" x2="720" y1="200" y2="200" stroke-width="1"/>
+
+<text class="ink" x="40" y="230" font-size="14" font-weight="600">After</text>
+<rect class="box" x="40" y="242" width="160" height="56" rx="6"/>
+<text class="ink" x="120" y="265" font-size="12.5" font-weight="600" text-anchor="middle">SGLang verify()</text>
+<text class="ink2 mono" x="120" y="284" font-size="11" text-anchor="middle">raises ValueError</text>
+<line class="line" x1="200" x2="222" y1="270" y2="270" marker-end="url(#a)"/>
+<rect class="good" x="224" y="242" width="160" height="56" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="304" y="265" font-size="12.5" font-weight="600" text-anchor="middle">MM worker handler</text>
+<text class="goodt mono" x="304" y="284" font-size="11" text-anchor="middle">InvalidArgument(msg)</text>
+<line class="line" x1="384" x2="406" y1="270" y2="270" marker-end="url(#a)"/>
+<rect class="good" x="408" y="242" width="160" height="56" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="488" y="265" font-size="12.5" font-weight="600" text-anchor="middle">Encode worker</text>
+<text class="goodt mono" x="488" y="284" font-size="11" text-anchor="middle">re-raises typed</text>
+<line class="line" x1="568" x2="590" y1="270" y2="270" marker-end="url(#a)"/>
+<rect class="good" x="592" y="242" width="128" height="56" rx="6" stroke-width="1.5"/>
+<text class="goodt" x="656" y="265" font-size="12.5" font-weight="600" text-anchor="middle">Rust frontend</text>
+<text class="goodt mono" x="656" y="284" font-size="11" text-anchor="middle">400 + message</text>
+<text class="ink2" x="40" y="324" font-size="12">Client sees:</text>
+<text class="goodt mono" x="118" y="324" font-size="11">400 logit_bias must has keys in [0, 151935], got 999999.</text>
+</svg>

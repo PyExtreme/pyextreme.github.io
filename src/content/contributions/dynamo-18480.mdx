@@ -1,0 +1,139 @@
+---
+title: "Keeping SGLang's validation errors on Dynamo's multimodal path"
+description: "Making NVIDIA Dynamo return a 400 with SGLang's own message when SGLang rejects a multimodal request, instead of a generic 'finish_reason=error without a message'."
+lede: "When SGLang rejected a bad multimodal request, the client got a generic backend error with no hint of what was wrong. The issue assumed SGLang reported it as an abort chunk, but reading SGLang's source showed it raises a plain ValueError on the first read of the stream, which the Dynamo handlers then flattened into a message the frontend could not read."
+project: "NVIDIA Dynamo"
+repository: "ai-dynamo/dynamo"
+repositoryUrl: "https://github.com/ai-dynamo/dynamo"
+issueNumber: "#18480"
+contributionType: "Error handling fix"
+technicalArea: "LLM serving / multimodal SGLang backend"
+status: "PR Open"
+prMerged: false
+date: "2026-11-10"
+complexity: "Simple"
+impact: 8
+issueUrl: "https://github.com/ai-dynamo/dynamo/issues/18480"
+prUrl: "https://github.com/ai-dynamo/dynamo/pull/18515"
+stack:
+  - "Python"
+  - "asyncio"
+  - "SGLang"
+  - "Rust"
+shortSummary: "Made Dynamo's SGLang multimodal handlers re-raise SGLang request-validation errors as a typed InvalidArgument, so clients get a 400 with SGLang's message instead of a generic backend error."
+concepts:
+  - "Error propagation across services"
+  - "Typed errors vs in-band error payloads"
+  - "Async stream semantics"
+  - "Reading upstream dependency source"
+  - "Scoped fixes"
+---
+
+## Context
+
+[NVIDIA Dynamo](https://github.com/ai-dynamo/dynamo) is an open-source framework for serving LLMs across many GPU workers. A Rust frontend takes the HTTP request, and Python workers run the inference engine, here [SGLang](https://github.com/sgl-project/sglang). For multimodal models (images or video plus text), the request passes through an encode worker and then either one combined prefill/decode worker (E/PD) or separate prefill and decode workers (E/P/D).
+
+[Issue #18480](https://github.com/ai-dynamo/dynamo/issues/18480) came out of a maintainer's review of a related PR that forwards `logit_bias` on this path. A bias key outside the model's vocabulary passes the frontend's checks, reaches SGLang, and SGLang rejects it. The client should get a 400 explaining why. It got something else.
+
+## Symptom
+
+The client saw a generic backend failure:
+
+```text
+backend emitted finish_reason=error without a message
+```
+
+SGLang's actual reason, `logit_bias must has keys in [0, 151935], got 999999.`, was lost. Nothing in the response told the user their request was invalid, let alone which field.
+
+The `logit_bias` trigger itself was not reachable on `main` yet, because the parent PR had not merged. But the bug applied to any request SGLang rejects during validation (bad `top_k`, min tokens above max, context too long). So I built a local repro that imports the real handler code with import stubs for SGLang, torch and Dynamo's compiled core, and a fake engine whose stream raises SGLang's exact error. Both topologies produced the same broken chunk:
+
+```text
+E/PD  PD worker -> frontend:     [{'token_ids': [], 'finish_reason': 'error', 'error': 'logit_bias must has keys in [0, 151935], got 999999.'}]
+E/P/D decode worker -> frontend: [{'token_ids': [], 'finish_reason': 'error', 'error': 'logit_bias must has keys in [0, 151935], got 999999.'}]
+```
+
+![Before the fix, SGLang's ValueError becomes an in-band error chunk whose message the Rust frontend drops. After the fix, it becomes a typed InvalidArgument that reaches the client as a 400 with SGLang's message](/images/dynamo-18480/error-path.svg)
+
+## Root cause
+
+The issue assumed SGLang reports validation failures as an abort chunk with a status code and message. I read SGLang v0.5.23, the version Dynamo pins, and that is not what happens. `async_generate(stream=True)` returns a lazy generator, and `sampling_params.verify()` runs inside it. So the `ValueError` is raised on the **first `__anext__`** of the stream, before any output.
+
+On the Dynamo side, two places caught it as a generic exception:
+
+- `StreamProcessor.process_sglang_stream` in `multimodal/worker_handler.py` (the E/PD worker and the E/P/D decode worker) turned it into an in-band `{"finish_reason": "error", "error": msg}` chunk.
+- `MultimodalPrefillWorkerHandler._consume_results` (the E/P/D prefill worker) did the same through its error response builder.
+
+On the Rust side, `LLMEngineOutput` has no `error` field, so the message was silently dropped during deserialization. `FinishReason::from_str("error")` then produced the generic text above, classified as an internal error rather than an invalid request.
+
+So two things were lost: the message, and the 400 classification.
+
+## Constraints
+
+- **Don't promote internal errors to 400.** A catch-all that turns every `ValueError` into a client error would also expose Dynamo's own internal and pydantic failures as "your request was invalid". An earlier fix in the repo had deliberately avoided exactly that.
+- **Errors after output are different.** If the stream had already produced tokens, a failure is not a validation problem and should stay on the existing in-band path.
+- **The prefill worker races with registration.** SGLang registers the request ID before running `verify()`, and the prefill handler reads the first result at two sites, before and after it hands the decode worker a bootstrap. The error can land at either one.
+
+## Design
+
+| Option | Decision |
+| --- | --- |
+| **Re-raise SGLang's `ValueError` as `InvalidArgument` at the stream boundary, only before any output** | **Chosen.** `InvalidArgument` already crosses the worker, encode worker and frontend with its public message, and both `generate()` methods already re-raise it. Same shape as an earlier text-path fix. |
+| Also route abort chunks through the text path's `_raise_if_sglang_error` | Rejected for this PR: not needed for the `ValueError` trigger, and it changes how 5xx aborts behave. Left as a follow-up. |
+| Convert `ValueError` in `generate()`'s catch-all | Rejected: exposes Dynamo-internal errors as public 400s. |
+| Validate `logit_bias` up front in the encode worker or frontend | Rejected: duplicates SGLang's rules, covers one field only, and the frontend doesn't know the vocabulary size. |
+| Teach the Rust side to read the `error` key | Rejected: it would still be classified as internal (500), not 400. |
+
+A design review agreed with the first option and asked me to drop the abort-chunk change, write the tests before the fix, and be explicit in the PR that streaming clients get a 200 followed by an error event (now with the right message) unless the frontend's pre-commit error peek is enabled.
+
+## The fix
+
+About 10 lines in one file. In the stream processor:
+
+```python
+received_output = False
+try:
+    async for res in stream_source:
+        received_output = True
+        ...
+except Exception as e:
+    if isinstance(e, ValueError) and not received_output:
+        raise InvalidArgument(str(e)) from e
+    # existing in-band error path unchanged
+```
+
+And at both first-result reads in the prefill handler:
+
+```python
+except ValueError as e:
+    raise InvalidArgument(str(e)) from e
+```
+
+I converted both prefill sites rather than just the pre-registration one. Because SGLang registers the request before validating it, the post-registration site is actually the common case, and its error can still arrive before the bootstrap is sent. If the bootstrap has already gone out, the extra raise is harmless.
+
+After the fix, the repro raises `InvalidArgument` with SGLang's message for both E/PD and E/P/D, and the frontend maps that to a 400.
+
+## Verification
+
+I wrote the tests first. The four covering the fix failed on `main` (`DID NOT RAISE`, or a raw `ValueError`):
+
+| Test | What it checks |
+| --- | --- |
+| `test_multimodal_stream_raises_sglang_validation_errors_as_invalid_argument` | A stream that raises on first read becomes `InvalidArgument` with SGLang's message |
+| `test_multimodal_stream_keeps_errors_after_output_in_band` | An error after output stays in-band (passes on `main`, guards the condition) |
+| `test_multimodal_prefill_rejects_invalid_request_before_bootstrap` | Prefill rejects before registration: typed error, no bootstrap sent |
+| `test_multimodal_prefill_rejects_invalid_request_after_registration` | Same after registration, with named events to pin the ordering |
+| `test_multimodal_worker_rejects_invalid_request[agg, decode]` | The aggregated and decode `generate()` paths raise `InvalidArgument` |
+
+An independent code review ran mutation checks: removing either prefill site, or the "before any output" guard, made exactly the matching test fail. The new tests passed 30 out of 30 repeated runs. Both multimodal test files went from 34 passed to 40 passed, with the same 9 failures before and after that come from the import stubs, not the change. Pre-commit and mypy were clean.
+
+What ran and what didn't: I work on a Mac without SGLang, torch or a GPU, so all of this ran against the real handler code under import stubs. The Rust side that maps `InvalidArgument` to a 400 is existing code I read but did not run. There was no live multimodal deployment test, and the PR offers a serve-level HTTP test now that the `logit_bias` forwarding PR has merged. After that merge I rechecked the branch on a temporary merge with `main`: no conflicts, same test results.
+
+Side findings, out of scope: the text SGLang path also loses the message (generic "Invalid request"), and scheduler-side abort chunks with a status code still go in-band on the multimodal path.
+
+## Core concepts this exercised
+
+- **Reading the dependency, not the assumption.** The issue described an abort chunk. Reading SGLang's generator showed a `ValueError` on first iteration, which changed where the fix belonged.
+- **Typed errors over in-band payloads.** A typed exception that every hop already understands carried the message and status end to end, where a dict key was silently dropped by the Rust deserializer.
+- **Narrow conditions keep fixes safe.** Converting only `ValueError` before any output avoided turning internal failures into client errors, and a guard test pins that boundary.
+- **Async ordering matters.** The prefill handler's two first-result sites meant the error could arrive on either side of request registration, so both needed the same handling and their own test.
+- **Honest test scope.** The PR states that tests ran under import stubs, that the Rust mapping was read but not run, and that a live GPU run is left to CI and maintainers.
