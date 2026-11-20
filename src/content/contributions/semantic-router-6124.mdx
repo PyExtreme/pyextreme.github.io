@@ -1,0 +1,170 @@
+---
+title: "Serving Claude Code and Codex from one vLLM Semantic Router gateway"
+description: "Added per-entrypoint accepted translation losses to vLLM Semantic Router, so a deferred-tool permission granted for Claude Code no longer applies to Codex requests on the same gateway."
+lede: "vLLM Semantic Router translates between LLM wire formats and refuses fields it cannot carry across unless the operator accepts the loss. That list was Router-wide, so a gateway that accepted Claude Code's deferred tools accepted them for Codex too. Scoping it per entrypoint was hard because the codec decides those losses while decoding the body, before the Router knows which entrypoint the request is for."
+project: "vLLM Semantic Router"
+repository: "vllm-project/semantic-router"
+repositoryUrl: "https://github.com/vllm-project/semantic-router"
+issueNumber: "#6124"
+contributionType: "Feature"
+technicalArea: "LLM request routing / protocol translation"
+status: "PR Open"
+prMerged: false
+date: "2026-11-20"
+complexity: "Hard"
+impact: 9
+issueUrl: "https://github.com/vllm-project/semantic-router/issues/6124"
+prUrl: "https://github.com/vllm-project/semantic-router/pull/7206"
+stack:
+  - "Go"
+  - "Envoy ExtProc"
+  - "Anthropic Messages API"
+  - "OpenAI Responses API"
+  - "Python"
+  - "TypeScript"
+highlight: "Let one router gateway serve Claude Code and Codex with separate translation-loss policies"
+shortSummary: "global.router.allow_lossy_translation applied to every request because the ingress codec accepts or refuses tools.defer_loading inside prepareProtocolRequest, which ran before the entrypoint was resolved. Added entrypoints[].allow_lossy_translation (unset inherits global, [] accepts nothing, a list replaces global), resolved the entrypoint from the body's model before decode, and made protocolEngine take the request context so every codec, projection, hop and cache key reads one helper. Handler-level tests for both harnesses, narrowing, hops and count_tokens failed first and pass, with mutation checks on the hop paths."
+concepts:
+  - "Ordering constraints in a request pipeline"
+  - "Making the compiler find every call site"
+  - "Optional fields that distinguish unset from empty"
+  - "Agreeing on semantics with the maintainer before coding"
+  - "Tests that fail when the fix is removed"
+---
+
+## Context: one router in front of several agent harnesses
+
+[vLLM Semantic Router](https://github.com/vllm-project/semantic-router) is an Envoy ExtProc router that picks a model backend for each LLM request. Clients reach it through **entrypoints**: public model names such as `vllm-sr/claude-code` or `vllm-sr/codex`, each mapped to a routing recipe.
+
+The router decodes every request (Anthropic Messages, OpenAI Chat, OpenAI Responses) into one neutral form and encodes it again for the chosen backend. Some fields cannot survive that translation. By default the router refuses them, and an operator can accept specific losses with `global.router.allow_lossy_translation`. The agent harness guide recommends `[tools.defer_loading]` for Claude Code, which marks some tools as deferred.
+
+[Issue #6124](https://github.com/vllm-project/semantic-router/issues/6124) asked for one gateway to serve several harnesses, each with its own settings. The maintainer scoped it to per-entrypoint overrides of the accepted losses and the protection identity, with the global settings staying the default.
+
+## Symptom: Codex inherits Claude Code's permissions
+
+I reproduced it with one router, two entrypoints and a global `[tools.defer_loading]`. The same Messages request with a deferred tool was decoded through `prepareProtocolRequest` for each model:
+
+```
+model=vllm-sr/claude-code decode refused=false diagnostics=[... tools.defer_loading dropped ...]
+model=vllm-sr/codex       decode refused=false diagnostics=[... tools.defer_loading dropped ...]
+per-entrypoint allow_lossy_translation: err=config contains unknown fields:
+  unknown field "allow_lossy_translation" in entrypoints[0]
+```
+
+The Codex entrypoint accepted Claude Code's deferred tools, and there was no way to scope the setting. The only workaround was a second router.
+
+![One Router with a global tools.defer_loading list receives a Codex request with a deferred tool. Before, the decode runs with the global list and accepts it. After, the router resolves the vllm-sr/codex entrypoint and its empty list first, and the decode refuses the request with a 400.](/images/semantic-router-6124/entrypoint-losses.svg)
+
+## Root cause: the list lives on the router, and decode runs first
+
+`allow_lossy_translation` existed only on `global.router`. `CanonicalEntrypoint` in `pkg/config/canonical_recipes.go` had no field for it, and the runtime read `r.Config.AllowLossyTranslation` directly.
+
+Adding a field was not enough. The codec accepts or refuses `tools.defer_loading` and `tool_reference` inside the ingress decode (`prepareProtocolRequest`, called from `processor_req_body.go`). The entrypoint was resolved later, in `processor_req_body_prepare.go`, from the decoded model. So at the moment the decision is made, the router does not yet know which entrypoint's list applies.
+
+## Constraints
+
+- **Many readers.** Accepted losses were read by the ingress decode, the dispatch encoder, the response engine, four backend projections (`reasoning.signature`, `messages[].role`, `store`, `content.file`), the memory worker and the refusal hint. Miss one and that path quietly falls back to the global list.
+- **Hops.** Looper decisions and context-recovery follow-ups make extra model calls that name a concrete model, not an entrypoint, so they cannot resolve one themselves.
+- **Narrowing.** The docs recommend a global `[tools.defer_loading]`. A Codex entrypoint has to be able to accept less than that, not only more.
+- **Compatibility.** A config that sets only the global list must behave exactly as before, including its response cache keys.
+
+## Design
+
+**Chosen: a field on the entrypoint, resolved before decode.** `entrypoints[].allow_lossy_translation` is a `*[]string`: unset inherits the global list, `[]` accepts nothing, and a list replaces the global one. The router reads `model` from the raw body (after the Azure deployment rewrite and the unserved-model route, so it sees the name routing will see), resolves the entrypoint, and decodes with that entrypoint's list. The field is rejected on `systemone` entrypoints, which have no wire codec.
+
+I posted this as a design note on the issue with two open questions: replace or union, and whether to split the identity override into a second PR. The maintainer agreed with replace semantics and the split, so this PR covers losses only.
+
+**Rejected: a field on the recipe.** Hops would inherit it for free, but Claude Code and Codex usually share a recipe, so operators would have to duplicate signals and decisions.
+
+**Rejected: decode with the union of all lists, then check diagnostics.** `tool_reference` produces no diagnostic, diagnostics are capped at 64, and it would add a second refusal path.
+
+**Rejected: union semantics, or rejecting `[]`.** Either way an entrypoint could not narrow the recommended global list.
+
+**Rejected: keeping `protocolEngine()` without arguments.** A missed or future call site would silently use the global list. A design review pushed for making the signature change so the compiler finds them all.
+
+**Out of scope:** the per-entrypoint identity override is a follow-up PR, as agreed on the issue. The default identity already reads both Claude Code's and Codex's headers.
+
+## The fix
+
+The config side is one reader:
+
+```go
+func (c *RouterConfig) AcceptedLosses(entrypoint *EntrypointMapping) []string {
+	if c == nil {
+		return nil
+	}
+	if entrypoint != nil && entrypoint.AllowLossyTranslation != nil {
+		return *entrypoint.AllowLossyTranslation
+	}
+	return c.AllowLossyTranslation
+}
+```
+
+The ingress path resolves the entrypoint before the codec is built, and every engine now takes the request context:
+
+```diff
+ 	body = withAzureDeploymentModel(body, ctx.Headers[":path"])
+-	engine, err := r.protocolEngine()
++	r.resolveIngressEntrypoint(body, ctx)
++	engine, err := r.protocolEngine(ctx)
+```
+
+```diff
+-func (r *OpenAIRouter) protocolEngine() (*protocolcodec.Engine, error) {
+-	return r.protocolEngineForReply("", nil)
++func (r *OpenAIRouter) protocolEngine(ctx *RequestContext) (*protocolcodec.Engine, error) {
++	return r.protocolEngineForReply(ctx, "", nil)
+ }
+```
+
+Looper hops and context-recovery follow-ups carry the client request's entrypoint through a context value (`withHopEntrypoint`), read when the hop's routing session starts. The response cache key includes an entrypoint's own list, so two entrypoints never share an answer made under the other's policy, and the key is unchanged when only the global list is set. The refusal hint now also names the entrypoint setting.
+
+An operator can now write:
+
+```yaml
+entrypoints:
+  - model_names: [vllm-sr/claude-code]
+    recipe: agents
+    allow_lossy_translation: [tools.defer_loading, tool_result.is_error, "messages[].role", content.file]
+  - model_names: [vllm-sr/codex]
+    recipe: agents
+    allow_lossy_translation: [reasoning.signature]
+```
+
+The field is carried through the generated schema, the DSL, the Python CLI's config model, validator and `connect` check, and the dashboard. The agent harness guide gained a "One gateway for Claude Code and Codex" section whose YAML block is parsed by a config test. In all, 76 files, +1060/-88.
+
+## Verification
+
+The config and extproc tests were written first. On unchanged code they failed for the expected reason (`unknown field "allow_lossy_translation" in entrypoints[i]`), or did not build because the new types did not exist.
+
+| Test | What it checks |
+|---|---|
+| `TestEntrypointAcceptsDeferredToolsOnlyForItsHarness` | A Messages turn with a deferred tool and `tool_reference` is accepted on Claude Code's entrypoint and refused on Codex's |
+| `TestEmptyEntrypointListNarrowsTheGlobalLosses` | `[]` refuses what the global list accepts |
+| `TestSignedThinkingFollowsTheEntrypoint` | `reasoning.signature` toward a Chat backend follows the entrypoint after routing |
+| `TestLooperHopKeepsItsClientEntrypoint` | A real ratings decision for `vllm-sr/codex`: every hop session accepts no losses |
+| `TestContextRecoveryFollowupHopKeepsItsClientEntrypoint` | A context-recovery follow-up keeps the client's list |
+| `TestCountTokensFollowsTheEntrypoint`, `TestUnservedModelTakesTheLossesOfItsRoute` | Side paths that resolve the model differently |
+| `TestResponsesDeferredToolsFollowTheEntrypoint`, `TestResponseCacheKeepsEntrypointLossesApart` | Responses decode and cache key, unit level |
+
+Three rounds of independent code review shaped the tests more than the code:
+
+- **Round 1** found that context-recovery follow-ups ran without the entrypoint and fell back to the global list. The new test failed without the fix (`accepts [], want [content.file]`) and passes with it.
+- **Round 2** found that the looper hop test built the hop context by hand, so removing the fix left it green. I rewrote it to run a real ratings decision. Removing `withHopEntrypoint` from the looper now fails it (`Should be empty, but was [tools.defer_loading]`).
+- **Round 3** found a data race in that test under `-race`. Fixed in the test, and the new tests are `-race` clean over three runs.
+
+Ran locally on macOS with Go 1.25, the version CI uses:
+
+- `go test` on `pkg/config`, `pkg/configschema`, `pkg/dsl`, `pkg/llmprotocol`, `pkg/protocolcodec`, `pkg/extproc`: pass, except `TestFallbackHTTPDispatchTrustsTheBackendCA/system_roots`, which fails on unmodified main too (macOS trust roots)
+- vllm-sr pytest, dashboard vitest for the changed layout: new tests pass; the failures I saw also fail on clean main
+- `make check CI_STATIC_ONLY=true`, golangci-lint on the changed packages (0 issues), schema, generated-contract, docs and E2E build checks: pass
+
+The extproc tests run through the request handler with stubbed backends, not a deployed gateway. I added an E2E case, `protocol-codec-defer-loading-per-entrypoint`, to the response-api profile; the kind cluster run, the native `test-semantic-router` build and the dashboard type-check on Linux are left to CI. The Azure deployment path has no test.
+
+## Core concepts this exercised
+
+- **Ordering constraints in a request pipeline.** The policy was needed at a stage that ran before the information it depends on. Reading one field from the raw body, the way routing would read it, moved the decision early without decoding twice.
+- **Making the compiler find every call site.** Changing `protocolEngine()` to `protocolEngine(ctx)` turned about two dozen silent fallbacks to the global list into build errors, and keeps future callers from reintroducing them.
+- **Optional fields that distinguish unset from empty.** A `*[]string` lets `[]` mean "accept nothing" while unset still means "inherit", which is what makes narrowing possible.
+- **Agreeing on semantics with the maintainer before coding.** Replace versus union and the PR split were settled on the issue first, so the PR implements an agreed contract.
+- **Tests that fail when the fix is removed.** Two review rounds were about tests that passed for the wrong reason. Running the real looper path and reverting the fix line to watch it fail is what makes the hop tests worth keeping.
