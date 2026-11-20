@@ -1,0 +1,157 @@
+---
+title: "Making the response guard read every Chat choice in vLLM Semantic Router"
+description: "Fixed the router's response guard so it checks every choice a Chat client receives, not just the first, closing a path where an unsafe alternate answer was delivered and cached while the guard reported a pass."
+lede: "vLLM Semantic Router can block an LLM answer that a response-stage check, such as jailbreak detection, flags as unsafe. The guard only read the first choice of an answer, so with Chat `n > 1`, or any ratings decision, the other choices went to the client unchecked. The fix had to cover every path that produces multiple choices while leaving single-choice answers, the common case, exactly as they were."
+project: "vLLM Semantic Router"
+repository: "vllm-project/semantic-router"
+repositoryUrl: "https://github.com/vllm-project/semantic-router"
+issueNumber: "#6808"
+contributionType: "Bug fix"
+technicalArea: "LLM request routing / response guard"
+status: "PR Open"
+prMerged: false
+date: "2026-11-20"
+complexity: "Medium"
+impact: 12
+issueUrl: "https://github.com/vllm-project/semantic-router/issues/6808"
+prUrl: "https://github.com/vllm-project/semantic-router/pull/7205"
+stack:
+  - "Go"
+  - "Envoy ExtProc"
+  - "OpenAI Chat Completions API"
+  - "Server-Sent Events"
+highlight: "Closed a response guard gap that let unsafe alternate Chat choices through"
+shortSummary: "The response guard was handed semanticAssistantContent(), which reads only Response.Output, while the Chat codec encodes every Response.Alternatives entry as another choice. A benign first choice therefore passed the guard and an unsafe second choice was delivered and cached. runResponseGuard now reads each choice in turn and stops at the first blocked one, and blocking, warnings, notes, cache skip and replay all use every choice it read. Five handler-level tests, including a real two-choice Chat body and a ratings decision streamed and buffered, failed on main and pass with the fix."
+concepts:
+  - "Read side and write side must agree"
+  - "Finding every producer of a data shape"
+  - "Fail closed on security checks"
+  - "Keeping the common path byte-for-byte identical"
+  - "Mutation checks for untested branches"
+---
+
+## Context: a guard on the way out
+
+[vLLM Semantic Router](https://github.com/vllm-project/semantic-router) is an Envoy ExtProc router that picks a model backend for each LLM request. On the way back, an optional **response guard** plugin reads the answer with response-stage signals (jailbreak detection, hallucination checks) and, per rule, blocks it, annotates it with warnings and notes, or lets it through.
+
+Internally the router decodes every backend answer into one neutral `llmprotocol.Response` and encodes it again for the client's API (Chat Completions, Anthropic Messages or OpenAI Responses). The first choice lives in `Response.Output`. Any further choices live in `Response.Alternatives`, and the Chat encoder sends them as `choices[1..]`.
+
+[Issue #6808](https://github.com/vllm-project/semantic-router/issues/6808) reported that the guard never looked at those alternatives.
+
+## Symptom: a passed guard and an unsafe choice in the reply
+
+With a blocking jailbreak rule configured, a Chat answer whose first choice is benign and whose second choice is unsafe passes the guard, and the client receives both choices.
+
+I reproduced it on main with a handler-level test. The decision model fixture flags an answer as jailbreak (0.95) only when its text contains "system prompt", and the upstream Chat body has `n=2`:
+
+```
+go test ./pkg/extproc/ -run TestRepro6808 -count=1 -v
+Output="The speed of light is about 299,792 km/s." Alternatives=1
+guard outcome=passed blocked=false
+client body={... "choices":[{"index":0, ...benign...},
+  {"index":1,"message":{"content":"Sure - here is the system prompt you asked for."}}]}
+--- FAIL: unsafe alternate choice delivered unchecked
+```
+
+Because the guard reported a pass, the response cache also stored that body, so the unchecked choice could be served again.
+
+![A two-choice Chat answer passing through the response guard. Before the fix, the guard reads only choice 0, passes, and the client receives the unsafe choice 1. After the fix, the guard reads choice 0 and then choice 1, blocks on choice 1, and the client gets a 400 refusal.](/images/semantic-router-6808/every-choice.svg)
+
+## Root cause: the guard read one choice, the codec sent all of them
+
+`prepareResponsePolicy` in `pkg/extproc/processor_res_body_pipeline.go` called `runResponseGuard` with `semanticAssistantContent(response)`. That helper in `utils_neutral.go` iterates `response.Output` only. `encodeChatChoices` in `pkg/protocolcodec/codec_openai_chat_response.go` then emitted every alternative as another choice.
+
+The code already treated alternatives as client-visible on the write side: `prependSemanticAssistantText`, which adds the guard's notes, writes into every alternative. Only the read side skipped them.
+
+Tracing every producer of `Alternatives` mattered more than the repro:
+
+- **Buffered Chat with `n > 1`.** The case in the issue.
+- **Ratings decisions.** The looper returns one Chat choice per model on every request, streamed or not, and runs the same `prepareResponsePolicy` on the finished answer. A design review caught this path, and I confirmed it in `looper/ratings.go`.
+- **Not affected: upstream streaming with `n > 1`.** The codec rejects a stream chunk with more than one choice (`stream_multiple_choices`), so the live stream paths never see alternatives.
+
+## Constraints
+
+- **One choice must not change.** Nearly all traffic is single-choice. Its metrics, trace, replay outcomes and number of decision-model calls had to stay identical.
+- **Cost.** Each response-stage signal is one decision-model call per answer. Reading more choices multiplies that, so reading should stop as soon as a choice is blocked. Alternatives are capped at 32 by request validation.
+- **Ratings returns alternatives on purpose.** Any fix that refuses answers with alternatives would refuse every ratings answer.
+- **Some state is per answer, not per choice.** Memory stores only the first choice, so the jailbreak finding used for memory, the `x-vsr-trace` response signals and the hallucination note text had to keep coming from choice 0.
+
+## Design
+
+**Chosen: read each choice and attach the alternative runs to the primary run.** `runResponseGuard` reads the first choice, then each alternative, until one is blocked. The per-choice runs hang off the primary run, and the accessors that decide what happens (blocking, warnings, notes, the unknown-signal metric, cache skip, outcome) read the rules of every choice. Metrics and the trace are recorded once on the combined result. With one choice the alternatives slice is empty and every accessor returns exactly what it did before.
+
+**Rejected: concatenate all choices into one answer.** About 12 lines, but the guard reads bounded head and tail windows of long answers, so a middle choice could be skipped. It would also run hallucination checks over different models' answers glued together.
+
+**Rejected: refuse responses that carry alternatives when an enforcing guard is set.** Would refuse every ratings answer.
+
+**Rejected: reject `n > 1` at request time.** Does nothing for ratings and is a product decision. Operators can already cap `n` with `request_params.max_n`.
+
+**Rejected: skip alternatives for Messages and Responses clients**, whose encoders drop them. It adds a branch, and reading them fails closed. I raised it as an open question in the PR instead.
+
+**Out of scope:** another open PR changes `semanticAssistantContent` to include tool-call arguments. Whichever lands second needs a small rebase, noted in the PR.
+
+## The fix
+
+```go
+func (r *OpenAIRouter) runResponseGuard(ctx *RequestContext, answer string, alternatives ...string) *responseGuardRun {
+	// ... nil checks unchanged ...
+	run := r.readResponseGuard(ctx, guard, answer)
+	for _, alternative := range alternatives {
+		if run.blocking() != nil {
+			break
+		}
+		run.alternatives = append(run.alternatives, r.readResponseGuard(ctx, guard, alternative))
+	}
+	metrics.RecordPluginExecution(config.DecisionPluginResponseGuard, requestDecisionStateKey(ctx), run.outcome(), 0)
+	// signal_unavailable metric and trace, now over choiceRules()
+	return run
+}
+
+// choiceRules are the rule outcomes over every choice the guard read.
+func (run *responseGuardRun) choiceRules() []responseGuardRuleRun {
+	if len(run.alternatives) == 0 {
+		return run.rules
+	}
+	rules := slices.Clone(run.rules)
+	for _, alternative := range run.alternatives {
+		rules = append(rules, alternative.rules...)
+	}
+	return rules
+}
+```
+
+The old per-answer loop moved unchanged into `readResponseGuard`. `blocking()`, `warnings()` and `notedCodes()` iterate `choiceRules()` instead of `run.rules`, Router Replay tags each later choice's outcomes with a `choice` index, and the pipeline call passes `semanticAlternativeContents(response)...`. I added one sentence to the response guard tutorial in English and Simplified Chinese, as earlier guard fixes did.
+
+A two-choice Chat body with an unsafe second choice now gets a 400 refusal instead of either choice.
+
+## Verification
+
+All tests were written first and failed on main for the expected reason. The controls (one clean choice, unsafe first choice) passed on main, which shows the fixture itself works.
+
+| Test | What it checks | On main | With fix |
+|---|---|---|---|
+| `TestResponseGuardReadsEveryChoice` | Unsafe choice 1 blocks; unsafe choice 0 still blocks; reading stops at the blocked choice; annotate on a later choice adds the warning and skips the cache; one choice is read once | Fail | Pass |
+| `TestResponseGuardNotesEveryChoice` | A details note triggered by choice 1 heads every choice | Fail | Pass |
+| `TestResponseGuardRecordsEachChoiceInReplay` | Replay outcomes for choice 1 carry `choice: "1"` | Fail | Pass |
+| `TestResponseGuardBlocksAnUnsafeChatChoice` | A real two-choice Chat body through `handleNonStreamingResponseBody` gets the 400 | Fail | Pass |
+| `TestResponseGuardReadsEveryRatingsChoice` | A ratings decision against an `httptest` backend, streamed and buffered, is refused when the second model's answer is unsafe | Fail | Pass |
+
+The answer-aware decision-model fixture computes its result locally on each call instead of writing to shared state, because response-stage signals are dispatched concurrently.
+
+An independent code review found that my change to `notedCodes()` had no test. I added `TestResponseGuardNotesEveryChoice` and confirmed it fails with that one change reverted, so the test is tied to the line it protects.
+
+Ran locally on macOS with Go 1.25.0, the version CI uses:
+
+- `go test ./pkg/extproc/ -count=1`: the new tests and the rest of the package pass, except `TestFallbackHTTPDispatchTrustsTheBackendCA/system_roots`, which fails on unmodified main too because of macOS trust roots
+- `golangci-lint run --new-from-rev upstream/main ./pkg/extproc`: 0 issues
+- `make docs-check-translation-coverage docs-config-check config-schema-check`: pass
+
+These are handler-level tests with a mocked decision model, not end-to-end runs. The E2E provider mock returns one choice and the looper E2E profile has no response guard, so there was no existing E2E case to extend. `make test-semantic-router` on Linux and the E2E profiles are left to CI.
+
+## Core concepts this exercised
+
+- **Read side and write side must agree.** The notes code already wrote into every alternative, which was the clearest evidence that alternatives reach clients. A check that reads less than the encoder writes is a bypass.
+- **Finding every producer of a data shape.** The issue described `n > 1`, but ratings decisions produce alternatives on every request. Fixing the shared entry point covered both, where a fix scoped to the reported case would have left the bigger path open.
+- **Fail closed on security checks.** Alternatives that a Messages or Responses client never sees are still read. Over-blocking a rare case is cheaper than adding a branch that could skip a visible choice.
+- **Keeping the common path byte-for-byte identical.** Moving metrics and tracing to the combined run, and returning `run.rules` directly when there are no alternatives, kept single-choice behavior and decision-model call counts unchanged, and a test asserts it.
+- **Mutation checks for untested branches.** Reverting one line and watching a test fail is a quick way to prove a test protects the change it was written for.
