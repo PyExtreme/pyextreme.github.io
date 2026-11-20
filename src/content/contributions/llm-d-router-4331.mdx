@@ -1,0 +1,135 @@
+---
+title: "Stopping speculative prefix-cache entries at the engine block in llm-d-router"
+description: "Fixed the precise prefix cache in llm-d-router crediting endpoints with cached tokens the engine could not reuse, by cutting speculative entries per endpoint at the last whole engine block it reports."
+lede: "llm-d's router guesses which pod holds a prompt's KV cache by seeding speculative index entries right after it routes a request. It seeded them in its own 16 or 64-token blocks, while the engine can only reuse whole engine blocks, which on hybrid Mamba models are 4224 tokens. Short prompts got a full fake cache match, so all same-prefix traffic piled onto one replica that recomputed everything anyway. The fix is a few lines; the work was picking the right block size source and keeping the change out of the event path."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#4331"
+contributionType: "Bug fix"
+technicalArea: "LLM request routing / KV cache-aware scheduling"
+status: "PR Open"
+prMerged: false
+date: "2026-11-19"
+complexity: "Medium"
+impact: 11
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/4331"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/4376"
+stack:
+  - "Go"
+  - "Kubernetes"
+  - "vLLM"
+  - "KV cache"
+highlight: "Stopped llm-d's router from crediting replicas with prefix-cache hits the engine could never serve"
+shortSummary: "Speculative prefix-cache entries were seeded for every router block of a prompt, ignoring the endpoint's engine block size. With a 64-token engine block and 16-token router block, a 48-token prompt was credited 48 cached tokens against 0 reusable. I cut the seeded keys per target at the last whole engine block, using CacheBlockSize from endpoint metrics, with no change when the endpoint reports none. Tests written first failed on upstream main (credited 3 and 6 blocks) and pass with the fix (0 and 4)."
+concepts:
+  - "Matching granularity across system boundaries"
+  - "Choosing a trustworthy source for a config value"
+  - "Fail-open defaults for missing data"
+  - "Scoping a fix against neighbouring open work"
+  - "Observability for silent decisions"
+---
+
+## Context: a router that predicts where the cache is
+
+The [llm-d router](https://github.com/llm-d/llm-d-router) is a Kubernetes inference gateway. Its Endpoint Picker chooses which vLLM (or SGLang) pod serves each request, and one of its strongest signals is prefix-cache affinity: send a request to the pod that already holds the KV cache for the start of its prompt, so the engine skips that prefill work.
+
+The `precise-prefix-cache-producer` plugin keeps an index of which pod holds which prompt blocks. Real entries arrive as KV events from the engines. Because events lag, it can also seed **speculative** entries in `PreRequest`, right after a routing decision, predicting that the chosen pod will soon hold the prompt. The index is keyed by router blocks of `blockSizeTokens` tokens (call it R). [Issue #4331](https://github.com/llm-d/llm-d-router/issues/4331) reported that those speculative entries ignore the engine's own block size (E).
+
+## Symptom: affinity with no cache hits
+
+An engine reuses a prefix only in whole engine blocks. For hybrid Mamba models, vLLM raises the attention block size so one page can hold the Mamba state; for Nemotron-3 Nano it reports `block_size="4224"`. The issue author sent 8 requests sharing a ~2,460-token prefix to two replicas. With speculative indexing on, all 8 went to one replica and vLLM reported 0 prefix-cache hit tokens. With it off, the requests split 4/4, also with 0 hits, which is correct since nothing under one engine block is cacheable. The router had been concentrating load for no benefit.
+
+I reproduced it with a unit test against the real plugin and in-memory index, R=16 and E=64 in the endpoint metrics, routing a prompt and then scoring the same prompt again:
+
+| Prompt tokens | Credited by router | Reusable by engine |
+|---|---|---|
+| 48 | 48 | 0 |
+| 100 | 96 | 64 |
+| 128 | 128 | 128 |
+
+![A 100-token prompt with 16-token router blocks and a 64-token engine block. Before, all 6 router keys are seeded and keys 5 and 6 credit tokens the engine recomputes. After, only the 4 keys inside the whole engine block are seeded.](/images/llm-d-router-4331/engine-block-cut.svg)
+
+## Root cause: seeding at the wrong granularity
+
+In `preciseprefixcache/prerequest.go`, `PreRequest` built `perPodKeys` from every router-block key of every prompt for each target pod. That map feeds the speculative leases, their TTL release, and `index.Add`. Nothing in the loop looked at the endpoint's engine block size, so whenever E > R the pod was credited keys past its last whole engine block, and a prompt shorter than E got a complete fake match.
+
+The engine block size was already available: the default metrics extractor scrapes it per endpoint into `GetMetrics().CacheBlockSize` (from `vllm:cache_config_info`, SGLang's page size, or TRT-LLM's tokens per block).
+
+## Constraints
+
+- **Events can't supply E.** The index learns per-group block sizes from KV events, but a prompt shorter than E never produces a stored-block event. In the worst case from the issue, E would never be learned.
+- **Leave the event path alone.** Rounding matches in the matcher would also change scoring for confirmed event entries, which is the territory of an open PR (#2899) and a broader issue (#2889).
+- **Shared slices.** The per-format key slice is shared between the decode and prefill targets in disaggregated serving, so trimming it in place for one target would trim it for the other.
+- **Unknown E must not regress.** Before the first scrape, or for engines that don't report a block size, behavior should stay exactly as it was.
+
+## Design
+
+**Chosen: truncate per target in `PreRequest`.** For each target, read E from its metrics and keep `floor(N*R/E)*E/R` keys per prompt, building a new outer slice per target. A pod with nothing left gets no lease, no index entry and no TTL work. E of 0 or no metrics keeps every key.
+
+**`CacheBlockSize`, not `CachePrefixMatchUnit`.** A sibling plugin (approximate prefix) prefers the prefix match unit. A design review flagged that vLLM's metrics report the *configured* `prefix_match_unit` even when vLLM ignores it, as it does for single-group models and for Mamba modes other than `align`, which the issue's setup used. Preferring it would bring the over-claim back. I called this out in the PR as a question for maintainers, and a reviewer agreed with `CacheBlockSize`.
+
+Rejected:
+- **Skip seeding whenever E > R.** Simple, but throws away correct speculation for long prompts.
+- **Carry a retrieval span on speculative entries.** Depends on the open #2899 and can't express E that isn't a multiple of R.
+- **Round matches in the matcher.** Changes event-path scoring, out of scope.
+- **A warning or metric for E != R.** New surface area; left as a follow-up.
+
+## The fix
+
+The core is one helper and a per-target loop:
+
+```go
+func engineReusableKeys(numKeys, blockSize, engineBlockSize int) int {
+	if engineBlockSize <= 0 {
+		return numKeys
+	}
+	return numKeys * blockSize / engineBlockSize * engineBlockSize / blockSize
+}
+```
+
+```go
+format := p.kvCacheIndexer.CacheFormat(podID)
+engineBlockSize := 0
+if metrics := target.GetMetrics(); metrics != nil {
+	engineBlockSize = metrics.CacheBlockSize
+}
+var prompts [][]kvblock.BlockHash
+for _, promptKeys := range state.perFormatKeys[format] {
+	n := engineReusableKeys(len(promptKeys), format.BlockSize, engineBlockSize)
+	if n > 0 {
+		prompts = append(prompts, promptKeys[:n])
+	}
+}
+if len(prompts) > 0 {
+	perPodKeys[podID] = prompts
+	podIDs = append(podIDs, podID)
+}
+```
+
+In review, the issue author asked for the cut to be visible, since "every key dropped" otherwise looks the same as speculative indexing being off. I added a per-target TRACE log with the pod, router and engine block sizes, and kept and dropped key counts. The README row for `speculativeIndexing` now states the cap.
+
+## Verification
+
+Tests were written first and confirmed failing on upstream main before the fix:
+
+| Test | Upstream main | With fix |
+|---|---|---|
+| Table: shorter than one engine block, partial tail, whole blocks, E not a multiple of R, E < R, E not scraped, no metrics, per-prompt cut | 4 of 8 cases fail | pass |
+| Disaggregated: decode (E=64) and prefill (no metrics) cut independently | 4 keys vs 6 | pass |
+| Real in-memory index, route then repeat (48 and 100 tokens) | 3 and 6 blocks matched | 0 and 4 |
+| TRACE log reports kept and dropped counts | empty log | pass |
+
+An independent code review caught that the first version of the log test only covered the "everything dropped" case, so a mutant that logged the wrong count survived. I changed it to a two-prompt case (keep 4, drop 5).
+
+Ran locally: `go test -race` on the `preciseprefixcache`, `kvevents` and `kvcache` packages, `make format`, golangci-lint with the default and security configs on the package, typos, and the signed-commits, go-mod and boilerplate checks. The tests use hand-built endpoint metrics; I did not run a hybrid vLLM model, so an end-to-end check on real hardware is left to the issue author, and full-repo lint is left to CI.
+
+Known gaps, stated in the PR: a short request sharing only part of an engine block with a longer seeded prompt is still credited for it (the same partial-span problem exists for event entries, #2889), and an exact repeat of a whole-block prompt is credited one block more than vLLM serves because vLLM caps a hit at `prompt_len - 1` (tracked in #4373).
+
+## Core concepts this exercised
+
+- **Matching granularity across system boundaries.** The router and the engine both talk in "blocks", but different sizes of them. Any prediction one side makes about the other has to be rounded to the coarser unit, or it promises something that can't be delivered.
+- **Choosing a trustworthy source for a config value.** The more precise-sounding metric (`prefix_match_unit`) reflects configuration, not what the engine actually does. Reading the engine source to check which value is honoured decided the design.
+- **Fail-open defaults for missing data.** When the engine block size is unknown, the code keeps today's behavior instead of guessing, so the fix can't make an unscraped endpoint worse.
+- **Scoping a fix against neighbouring open work.** Two open efforts touched the same matcher and index. Keeping the change inside `PreRequest` fixed the reported bug without colliding with them, and the remaining gaps went into the PR as named follow-ups.
+- **Observability for silent decisions.** A fix that drops data on purpose should say so; the TRACE log separates "trimmed to zero" from "feature off".

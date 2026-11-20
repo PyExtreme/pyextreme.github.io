@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 340" width="760" height="340" role="img" aria-labelledby="t d" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">Speculative keys before and after the engine block cut</title>
+<desc id="d">A 100-token prompt with a 16-token router block has 6 router keys. The engine block is 64 tokens, so only the first 4 keys fall inside a whole engine block. Before: all 6 keys are seeded as speculative entries, and keys 5 and 6 credit tokens the engine recomputes. After: only the first 4 keys are seeded, so the credited prefix matches what the engine can reuse.</desc>
+<style>.bg{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.box{fill:#f3f2ef;stroke:#d6d5d0}.bad{fill:#fbe9e5;stroke:#d0452b}.good{fill:#e6effa;stroke:#2a78d6}.badt{fill:#b3361f}.goodt{fill:#1f5fae}.mono{font-family:ui-monospace, SFMono-Regular, Menlo, monospace}.line{stroke:#9b9a95;fill:none}.arrow{fill:#9b9a95}@media (prefers-color-scheme: dark){.bg{fill:#1a1a19}.ink{fill:#ffffff}.ink2{fill:#c3c2b7}.box{fill:#24241f;stroke:#3d3d38}.bad{fill:#3a201b;stroke:#ef6a4f}.good{fill:#1b2a3d;stroke:#3987e5}.badt{fill:#ef8a73}.goodt{fill:#79acef}.line{stroke:#6f6e69}.arrow{fill:#6f6e69}}</style>
+<defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 z"/></marker></defs>
+<rect class="bg" x="0" y="0" width="760" height="340" rx="8"/>
+<text class="ink" x="40" y="34" font-size="17" font-weight="600">Speculative entries now stop at the last whole engine block</text>
+<text class="ink2" x="40" y="54" font-size="12.5">100-token prompt, router block 16 tokens, engine block 64 tokens</text>
+<text class="ink" x="40" y="96" font-size="13" font-weight="600">Engine</text>
+<text class="ink2" x="40" y="113" font-size="12">reuses whole blocks</text>
+<rect class="box" x="170" y="80" width="328" height="40" rx="6"/>
+<text class="ink mono" x="334.0" y="105" font-size="11.5" text-anchor="middle">engine block 1 · tokens 0-63 · reusable</text>
+<rect class="box" x="506" y="80" width="160" height="40" rx="6" stroke-dasharray="5 4"/>
+<text class="ink2 mono" x="586.0" y="105" font-size="11.5" text-anchor="middle">partial · recomputed</text>
+<text class="ink" x="40" y="166" font-size="14" font-weight="600">Before</text>
+<text class="ink2" x="40" y="184" font-size="12">6 keys seeded</text>
+<rect class="box" x="170" y="150" width="76" height="44" rx="6"/>
+<text class="ink mono" x="208.0" y="177" font-size="11.5" text-anchor="middle">key 1</text>
+<rect class="box" x="254" y="150" width="76" height="44" rx="6"/>
+<text class="ink mono" x="292.0" y="177" font-size="11.5" text-anchor="middle">key 2</text>
+<rect class="box" x="338" y="150" width="76" height="44" rx="6"/>
+<text class="ink mono" x="376.0" y="177" font-size="11.5" text-anchor="middle">key 3</text>
+<rect class="box" x="422" y="150" width="76" height="44" rx="6"/>
+<text class="ink mono" x="460.0" y="177" font-size="11.5" text-anchor="middle">key 4</text>
+<rect class="bad" x="506" y="150" width="76" height="44" rx="6" stroke-width="1.5"/>
+<text class="badt mono" x="544.0" y="177" font-size="11.5" text-anchor="middle">key 5</text>
+<rect class="bad" x="590" y="150" width="76" height="44" rx="6" stroke-width="1.5"/>
+<text class="badt mono" x="628.0" y="177" font-size="11.5" text-anchor="middle">key 6</text>
+<text class="badt" x="170" y="216" font-size="12">Credits 96 tokens. Keys 5 and 6 point at tokens the engine recomputes.</text>
+<line class="line" x1="40" x2="720" y1="236" y2="236" stroke-width="1"/>
+<text class="ink" x="40" y="266" font-size="14" font-weight="600">After</text>
+<text class="ink2" x="40" y="284" font-size="12">4 keys seeded</text>
+<rect class="good" x="170" y="250" width="76" height="44" rx="6" stroke-width="1.5"/>
+<text class="goodt mono" x="208.0" y="277" font-size="11.5" text-anchor="middle">key 1</text>
+<rect class="good" x="254" y="250" width="76" height="44" rx="6" stroke-width="1.5"/>
+<text class="goodt mono" x="292.0" y="277" font-size="11.5" text-anchor="middle">key 2</text>
+<rect class="good" x="338" y="250" width="76" height="44" rx="6" stroke-width="1.5"/>
+<text class="goodt mono" x="376.0" y="277" font-size="11.5" text-anchor="middle">key 3</text>
+<rect class="good" x="422" y="250" width="76" height="44" rx="6" stroke-width="1.5"/>
+<text class="goodt mono" x="460.0" y="277" font-size="11.5" text-anchor="middle">key 4</text>
+<rect class="box" x="506" y="250" width="76" height="44" rx="6" stroke-dasharray="4 4" fill-opacity="0"/>
+<text class="ink2 mono" x="544.0" y="277" font-size="11.5" text-anchor="middle">skipped</text>
+<rect class="box" x="590" y="250" width="76" height="44" rx="6" stroke-dasharray="4 4" fill-opacity="0"/>
+<text class="ink2 mono" x="628.0" y="277" font-size="11.5" text-anchor="middle">skipped</text>
+<text class="goodt" x="170" y="316" font-size="12">Credits 64 tokens, exactly what the engine can reuse.</text>
+</svg>
