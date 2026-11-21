@@ -1,0 +1,132 @@
+---
+title: "Letting a paused agent session resume on another pod in llm-d-router"
+description: "Added an opt-in resumeOnOtherPod option to the thunder-agent admission gate, so a paused agent session can resume on a pod with room instead of waiting for its own full pod."
+lede: "The llm-d router's thunder-agent plugin pauses agent sessions when a pod runs out of room, and a paused session could only resume on its own pod. If that pod stayed full, the session waited even while another pod sat idle. The change itself is a few lines in one branch. The work was a race between two turns of the same session that would have silently dropped a reservation, and a benchmark the maintainer asked for that had to be honest about what a simulation can show."
+project: "llm-d"
+repository: "llm-d/llm-d-router"
+repositoryUrl: "https://github.com/llm-d/llm-d-router"
+issueNumber: "#3221"
+contributionType: "Feature"
+technicalArea: "LLM request routing / agentic session admission"
+status: "Merged"
+prMerged: true
+date: "2026-11-14"
+complexity: "Medium"
+impact: 8
+issueUrl: "https://github.com/llm-d/llm-d-router/issues/3221"
+prUrl: "https://github.com/llm-d/llm-d-router/pull/4251"
+stack:
+  - "Go"
+  - "Kubernetes"
+  - "Envoy ext_proc"
+  - "Python"
+highlight: "Let paused agent sessions in llm-d-router resume on a pod with room instead of waiting"
+shortSummary: "thunder-agent's admission gate only let a paused session resume on its own pod, so a full pod held it for up to forceAdmitTimeout while other pods had room. Added resumeOnOtherPod (default off): when the own pod does not fit even after reclaiming idle sessions, the session falls back to the same pod search new sessions use and is rebound there. A guard keeps a second queued turn of the same session from being moved again before the first is charged, which would have dropped the first turn's reservation. Merged as item 3 of the #3221 refactor, with a simulation benchmark the maintainer asked for."
+concepts:
+  - "Reusing an existing code path instead of adding one"
+  - "Races between pick and commit"
+  - "Opt-in defaults for behavior changes"
+  - "Benchmarks that state their own limits"
+  - "Mutation checks on guards"
+---
+
+## Context: an admission gate for agent sessions
+
+The [llm-d router](https://github.com/llm-d/llm-d-router) is the request scheduler in front of a pool of vLLM pods. Its Endpoint Picker (EPP) chooses a pod for every request through a chain of plugins.
+
+**thunder-agent** is an EPP plugin for agentic workloads, where a session sends many turns separated by tool calls and its prompt prefix grows each turn. It keeps a per-pod ledger of session token footprints. When a pod runs out of room, it pauses sessions in its accounting and gates their next turns in flow control, so a full pod is not overloaded. Each turn is pinned to the session's pod so the warm prefix cache is reused.
+
+[Issue #3221](https://github.com/llm-d/llm-d-router/issues/3221) is the plugin author's refactor umbrella. Item 3 asked for an option to resume a paused session on another pod, and the code already carried a `TODO(#3221)` in `fairness.go` for it. I posted a plan on the issue, and the maintainer approved it and asked for a small benchmark showing a workload where moving helps.
+
+## Symptom: a session waits next to an idle pod
+
+A paused session's next turn could dispatch only when its own pod had room again. If that pod stayed full, the turn held in the queue until `forceAdmitTimeout` forced it through, even when another pod could take it right away. The existing test `TestPausedResumesOnlyOnItsOwnPod` pinned exactly that: session paused on `pod-a` with 400 tokens of room against a 500-token turn, `pod-b` empty, and `Pick` returns nil.
+
+![A paused session whose own pod-a is full. Before, its next turn can only go back to pod-a and waits while pod-b has room. After, with resumeOnOtherPod, the turn is reserved on pod-b and resumes there, recomputing its history.](/images/llm-d-router-3221/resume-on-other-pod.svg)
+
+## Root cause: one branch only checked the own pod
+
+In `sizeAndFitLocked` in `pkg/epp/framework/plugins/thunderagent/fairness.go`, the `classPaused` case checked the session's own pod (free room plus room reclaimable from idle sessions) and nothing else. If that failed, the candidate held unless it was starving.
+
+The rest of the machinery already supported a move. New sessions get a pod from a search over all pods, `admitLocked` reclaims room on that pod and calls `bindLocked`, which can rebind a session between pods, and the scorer pins the turn to whatever pod the session is bound to.
+
+## Constraints
+
+- **Default behavior must not change.** Staying on the own pod keeps the warm prefix. Moving recomputes the whole history on the new pod, so the issue specified the option as off by default, and with it on the own pod still wins whenever it fits.
+- **Pick happens before commit.** A turn is picked in flow control and charged to the ledger later, in `PreRequest`. Anything decided in between sees stale state.
+- **Scope.** A draft PR from the maintainer was rewriting the same files for item 1 of the refactor. The change had to stay small enough to rebase either way.
+
+## Design
+
+**Chosen: fall back to the new-session pod search.** With `resumeOnOtherPod` on, a paused session that does not fit its own pod, even after reclaim, gets its pod from the same search new sessions use: the fitting pod with the most free room. `admitLocked` then rebinds and reserves it there exactly as for a new session. A session that fits no pod keeps waiting for its own pod, as before.
+
+**The guard.** A design review found a race I then confirmed with a probe test. If two turns of the same paused session are queued and the second is picked before `PreRequest` charges the first, the session still looks paused, and the first turn's reservation already uses up its pod's room. Without a guard the second turn is moved again and the first turn's reservation is lost. The fix only moves a session when it has no live reservation.
+
+**Rejected: prefer another pod's free room over reclaiming on the own pod.** It contradicts the issue's "old pod if there is space" and causes more recomputes.
+
+**Rejected: rank in-place resumes ahead of moves.** Extra policy the issue did not ask for. I raised it in the plan, and the maintainer said no extra ranking was needed.
+
+**Out of scope:** a new metric for moves, and the same second-turn rebind for new sessions, which is pre-existing on main.
+
+## The fix
+
+```go
+case classPaused:
+	if rooms[s.endpoint]+spare[s.endpoint] >= a.fitTokens(s.endpoint, c.tokens) {
+		c.fitPod = s.endpoint
+	} else if a.resumeOnOtherPod && !now.Before(s.reservedUntil) {
+		// A live reservation is an earlier turn of this session picked
+		// but not yet charged; moving now would drop it.
+		c.fitPod = a.findFitPod(c.tokens, rooms, spare)
+	}
+case classNew:
+	c.fitPod = a.findFitPod(c.tokens, rooms, spare)
+```
+
+Plus the config field, the plugin wiring, and README and doc comment updates that no longer describe strict own-pod affinity. In the maintainer's review I renamed `newSessionPod` to `findFitPod`, since it now serves both cases, and took their wording for the `Pick` doc comment. In all, 7 files, +163/-21.
+
+Known limits, stated in the PR: the move only lands if the thunder-agent scorer decides the pick. If another scorer outweighs it, `PreRequest` rebinds the session to its old pod. A request cancelled before `PreRequest` leaves the session bound to the new pod, the same as a new session today.
+
+## Verification
+
+Tests went into `fairness_test.go` before the fix:
+
+| Test | What it checks |
+|---|---|
+| `TestPausedResumesOnOtherPodWhenOwnPodFull` | Moves to the pod with room; old pod's working set unchanged, scorer pins the new pod, resume counted |
+| `TestPausedResumesOnOtherPodByReclaim` | A moved session can reclaim an idle session on the target pod |
+| `TestPausedPrefersOwnPodWhenItFitsByReclaim` | Own pod is kept when reclaim there makes it fit |
+| `TestPausedHoldsWhenNoPodFits` | Holds when no pod fits |
+| `TestPausedSecondTurnNotMovedBeforePreRequest` | A second turn picked before `PreRequest` stays put, in place and after a move |
+
+The move tests failed on main because `Pick` returned nil. The second-turn test passes on main, where nothing moves, but both its variants failed with the fix minus the guard. Mutants that drop the guard or the fallback are both caught. The existing `TestPausedResumesOnlyOnItsOwnPod` stays as the default-off regression.
+
+**Benchmark.** The maintainer asked for a comparison with the option on and off. I wrote a small Go simulation that drives the plugin's real `Saturation`, `Pick`, `Score`, `PreRequest` and `ResponseBody` hooks in scaled wall-clock time, with completion times from a synthetic prefill-plus-decode cost. The workload is built so moving can help: two 20000-token pods, short sessions that fill `pod-b` and finish, long sessions that outgrow `pod-a`. Tool delays are fixed per (seed, session, turn), and the harness fails if off and on see different delays. Each row is 5 seeds times 3 repetitions.
+
+Pausing only changes the plugin's accounting, not what vLLM evicts, so I ran two hypothetical cache scenarios: the prefix is lost on pause, or it stays on the last pod and only a move recomputes, which favors staying.
+
+| Cache scenario | Compute | Prefill (us/token) | Completion change per pair, median | Pairs slower with option on |
+|---|---|---|---|---|
+| lost on pause | independent | 2 | -44% | 0 of 15 |
+| kept | independent | 8 | -37% | 0 of 15 |
+| kept | shared prefill | 8 | -34% | 0 of 15 |
+| kept | shared prefill | 40 | -10% (range -20% to +10%) | 2 of 15 |
+| no pressure (10x capacity) | independent | 2 | 0% | 3 of 15 |
+
+At 2 and 8 us/token the option was faster in all 75 pairs. When recompute is expensive and prefill is shared, the result is mixed, and repeats of the same run differ by up to 15%. With no memory pressure the option does nothing. An earlier version of the harness drew tool delays from one shared random stream, so changing the option changed each session's workload. I caught that, fixed it, and reran before publishing numbers. The PR states that these are simulated timings under one constructed workload and say nothing about real GPU throughput.
+
+Ran locally on macOS:
+
+- `go test -race ./pkg/epp/framework/plugins/thunderagent/ ./cmd/epp/runner/`, also with `-count=3 -shuffle`: pass
+- gofmt, vet: clean
+- golangci-lint in the project's builder container, scoped to the plugin package: 0 issues; typos: clean
+
+The full-repo lint ran out of memory in my local Docker VM, and vulncheck was not run locally. Those and the e2e image builds were left to upstream CI.
+
+## Core concepts this exercised
+
+- **Reusing an existing code path instead of adding one.** The new-session pod search, `admitLocked` and `bindLocked` already handled reserving and rebinding. Routing paused sessions into that path kept the change to one branch and inherited behavior that was already tested.
+- **Races between pick and commit.** State read at pick time is stale until the commit step charges it. The guard came from asking what a second pick of the same session would see in that window.
+- **Opt-in defaults for behavior changes.** Moving trades prefix-cache reuse for lower wait. Shipping it off by default, with the own pod still preferred when it fits, means no existing deployment changes behavior.
+- **Benchmarks that state their own limits.** Fixed per-session randomness, paired runs, a no-pressure control, and keeping the table rows where the option loses make the result something a reviewer can check rather than take on trust.
+- **Mutation checks on guards.** A guard that no test fails without is decoration. Removing it and watching both second-turn variants fail is what proves it is needed.
