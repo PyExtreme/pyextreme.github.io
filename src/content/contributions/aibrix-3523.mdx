@@ -1,0 +1,145 @@
+---
+title: "Why a recreated AIBrix pod inherited the old pod's blacklist block"
+description: "Fixing the AIBrix gateway pod blacklist so a pod recreated under the same name starts with a clean slate, by tying each entry to the pod UID and resetting it in place without breaking the exclusion count."
+lede: "The AIBrix gateway keeps a per-pod blacklist keyed by namespace and name, so a StatefulSet replica that was deleted and recreated inherited the old pod's quarantine, probe counts and backoff. The obvious fix, putting the UID in the map key, would have left the dead pod's block counted against the exclusion cap for up to an hour. The fix had to change identity without disturbing the counters that decide when the gateway gives up on filtering."
+project: "AIBrix"
+repository: "vllm-project/aibrix"
+repositoryUrl: "https://github.com/vllm-project/aibrix"
+issueNumber: "#3523"
+contributionType: "Bug fix"
+technicalArea: "AI gateway / Pod health blacklist"
+status: "PR Open"
+prMerged: false
+date: "2026-11-21"
+complexity: "Medium"
+impact: 11
+issueUrl: "https://github.com/vllm-project/aibrix/issues/3523"
+prUrl: "https://github.com/vllm-project/aibrix/pull/3531"
+stack:
+  - "Go"
+  - "Kubernetes"
+  - "Concurrency"
+shortSummary: "Fixed the AIBrix gateway pod blacklist carrying a block, quarantine and failure counts over to a pod recreated under the same name. Each entry now records the pod UID: readers ignore an entry from another UID, and every writer resets it in place on a mismatch so the exclusion count stays exact. 10 new tests, 9 of them failing on main first, plus mutation checks on each reset site."
+concepts:
+  - "Identity vs name in Kubernetes"
+  - "Keeping shared counters exact"
+  - "Read-only hot paths"
+  - "Mutation checks on tests"
+  - "Rebasing onto a moving upstream"
+---
+
+## Context: a gateway that stops sending traffic to sick pods
+
+[AIBrix](https://github.com/vllm-project/aibrix) is a control plane for serving LLMs on Kubernetes. Its gateway picks a model pod for every request, and before it picks it filters out pods it has decided are unhealthy. That decision lives in `pkg/plugins/gateway/blacklist`: a `PodBlacklist` that holds one `podFailureState` per pod with a circuit breaker, a one-hour quarantine from a background probe sweep, a load-outlier flag, request-failure probation and the counters behind them.
+
+The blacklist also keeps a running count of excluded pods. If too many pods are excluded, the gateway stops filtering and routes to every pod, dead ones included, rather than refuse traffic.
+
+## Symptom: a fresh pod arrives already blocked
+
+[Issue #3523](https://github.com/vllm-project/aibrix/issues/3523) reported that a pod deleted and recreated under the same name kept the old pod's quarantine. I reproduced it on upstream main with a temporary test: three dead probe sweeps on an old pod with UID `uid-old`, then a new pod with the same namespace and name and UID `uid-new`:
+
+```
+allow=false blacklisted=true quarantined=true excluded=1 reason="background probe found it dead 3 sweeps in a row (connection refused); blacklisted for 1h0m0s"
+new pod blacklisted on its first dead probe: true quarantined=true
+```
+
+The second line is a variant the issue did not mention. If the old pod had only two dead sweeps, below the threshold of three, the new pod's first dead probe completed the count and quarantined it for an hour. So it was not only an open block that carried over, but every counter and the escalated backoff.
+
+In practice a healthy recreated pod gets back in after two healthy probe sweeps, about 5 to 10 minutes rather than the full hour. During that window the cache does not scrape its metrics and the load sweep skips it, and the stale exclusion can push the gateway over its exclusion cap.
+
+![Before: the blacklist entry is keyed by namespace and name, so the recreated pod web-0 with UID B reads the old pod's quarantine and is refused. After: the entry records UID A, the new pod's UID B does not match, so it is admitted while the old pod stays quarantined](/images/aibrix-3523/recreated-pod.svg)
+
+## Root cause: an entry with a name but no identity
+
+`PodKey` in `pod_blacklist.go` is `namespace/name`, and `podFailureState` had no field saying which pod it was observed on. Every reader (`Allow`, `IsBlacklisted`, `IsQuarantined`, `BlacklistReason`) and every writer (`SetLoadExcluded`, `OnPodFlakyReAdd`, `recordHealthySweep`, `RecordProbeResult`, and after a rebase `RecordResponse`) loaded the entry by name only. An entry lives until 30 minutes after its last update or the end of its block, which is far longer than it takes a StatefulSet to recreate a replica.
+
+The cache already treats a same-name pod with a different IP as a real recreation. The informer's flaky re-add path, on the other hand, re-delivers the same Kubernetes object after a watch gap, so the UID does not change there. That made the UID the right identity signal: it changes on delete and recreate, and stays put on a watch gap.
+
+I also checked the issue's list of affected workloads. It included non-PD RoleSet pods, but `renderStormServicePod` always sets the storm-service-name label and `ignoredPod` skips those pods entirely. The real exposure is user StatefulSets and pods recreated by hand.
+
+## Constraints: identity is easy, the counters are not
+
+- **`excluded` must stay exact.** It drives the exclusion cap and the excluded-pods gauge. Every writer ends in `syncCountLocked`, which adds or removes the entry from the count. Any fix that leaves a stale exclusion counted, or double-removes one, changes routing for the whole model.
+- **`Allow` is on the request path.** It takes only a read lock and does not allocate for typical names. It should stay read-only.
+- **A watch gap is not a recreation.** `OnPodFlakyReAdd` exists so a quarantine survives the informer deleting and re-adding the same pod. That must keep working.
+- **Static discovery pods have no UID.** Existing tests also use empty UIDs, so the comparison has to behave the same when both sides are empty.
+
+## Design: record the UID, reset in place
+
+A design review compared three options, plus two smaller ones:
+
+- **Chosen: a `uid` field, readers ignore a mismatch, writers reset in place.** Readers treat an entry from another UID as absent, so the new pod is admitted immediately. The first write for the new pod calls `adoptLocked`, which resets the entry, and the existing `syncCountLocked` then drops the stale exclusion from the count. `Allow` stays read-only. This also matches the pod metrics backoff in `pkg/cache/cache_metrics.go`, which already stores a UID in per-pod state keyed by name, and it is what the issue author suggested.
+- **Rejected: UID in the map key.** Isolation by construction, but the old pod's block would stay counted in `excluded` until it expired, up to an hour, and a longer key costs an extra allocation per `Allow`.
+- **Rejected: reset only in writers.** Readers would keep returning the stale verdict until the first write, and since quarantined pods are skipped by the load sweep, that could be the next 300 s probe sweep.
+- **Rejected: a cache delete hook, or swapping the entry on mismatch.** The hook needs a new listener method and a relist after a watch gap can deliver an update from one UID to another with no delete. Swapping the entry means a writer holding the old pointer loses its verdict and needs a retry loop.
+
+A reset is not reported as a recovery, since the old pod did not get better. That matches how the existing code clears load exclusions for pods that left.
+
+## The fix
+
+The core is one helper, called first under the write lock in every writer that is given the pod:
+
+```go
+func (state *podFailureState) adoptLocked(pod *v1.Pod) {
+	if state.uid == string(pod.UID) {
+		return
+	}
+	state.uid = string(pod.UID)
+	state.state = circuitClosed
+	state.tripCount = 0
+	state.openUntil = time.Time{}
+	state.loadExcluded = false
+	state.probeDeadSweeps = 0
+	state.quarantinedUntil = time.Time{}
+	state.requestBlockedUntil = time.Time{}
+	// ... remaining probe and request-failure counters
+}
+```
+
+It keeps the lock, the `counted` and `removed` bookkeeping and `lastUpdated`, so the entry's place in the count and its age-out are untouched. The readers each gain one comparison:
+
+```go
+return state.uid != string(pod.UID) || !state.blocksLocked(time.Now())
+```
+
+Before I opened the PR, upstream merged request-failure tracking (`RecordResponse` and seven new fields on `podFailureState`). Rebasing meant adding the new fields to the reset and an `adoptLocked` call in `RecordResponse` before its own block check, with two new tests for that path. The package README now documents that an entry belongs to the pod UID it was observed on.
+
+## Verification
+
+I wrote the tests first and ran them against upstream source before the fix. Ten new tests across `pod_blacklist_test.go`, `pod_load_blacklist_test.go` and `pod_request_failure_test.go`:
+
+| Test | On main | With fix |
+| --- | --- | --- |
+| Recreated pod does not inherit the block | fail | pass |
+| Recreated pod starts the probe counts over | fail | pass |
+| Recreated pod starts the backoff over | fail | pass |
+| Excluded count follows a recreation | fail | pass |
+| Healthy recreated pod clears the old exclusion | fail | pass |
+| Recreated pod is excluded for its own reason | fail | pass |
+| Load sweep scores the recreated pod, clears old exclusion | fail | pass |
+| `RecordResponse`: not blocked by the old pod | fail | pass |
+| `RecordResponse`: not on the old pod's probation | fail | pass |
+| Same-UID flaky re-add keeps the quarantine (guard) | pass | pass |
+
+An independent code review found that removing the reset from `SetLoadExcluded(true)` or `OnPodFlakyReAdd` left the suite green. I added a test with one subtest per path and confirmed that each subtest fails when its own reset call is removed. The same check after the rebase caught a missing reset in `RecordResponse` and a missing request-field reset. The review also caught the RoleSet claim above, which I removed from the README and commit message.
+
+Ran locally on macOS, all passing:
+
+```
+go vet ./pkg/plugins/gateway/blacklist/
+go test ./pkg/plugins/gateway/blacklist/ -count=1
+go test -race ./pkg/plugins/gateway/blacklist/ -count=1
+golangci-lint run ./pkg/plugins/gateway/blacklist/...   # 0 issues
+go test ./pkg/cache/ -run 'Quarantine|LifecycleListener|Recreation|FlakyReAdd'
+go test ./pkg/plugins/gateway/
+```
+
+One test in `pkg/plugins/gateway` fails identically on upstream main without my change, from JSON error text that differs on my local Go version, so it is unrelated. Not run locally: the full `make test`, end-to-end tests and a real StatefulSet recreation in a kind cluster, which are left to CI and review. There is no dedicated test for a UID reset racing the stale-entry sweep; the reset happens under the same write lock.
+
+## Core concepts this exercised
+
+- **A name is not an identity.** Kubernetes reuses pod names for StatefulSets, so state keyed by name has to carry the UID if it describes one instance. Checking the informer's flaky re-add path showed the UID also gives the right answer for watch gaps.
+- **Change identity without breaking the counters.** The simple re-keying fix was correct for each pod but wrong for the aggregate count that controls the exclusion cap. Resetting in place let the existing count bookkeeping do the right thing.
+- **Keep the hot path read-only.** Readers only gained a comparison, and all state changes stayed on writers that already held the write lock.
+- **Make sure each test can fail.** Removing each reset call one at a time showed two sites were untested, which a green suite alone would not have revealed.
+- **Re-verify after upstream moves.** A rebase onto new request-failure tracking added new state that had to be reset, and the tests and mutation checks were rerun on the rebased code before the PR went up.
