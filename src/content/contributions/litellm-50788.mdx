@@ -99,7 +99,7 @@ With the issue's config, startup now fails on each worker, the parent logs "Chil
 
 An automated reviewer on the PR then found a real gap: if the class was imported into the module under an alias, the hint pointed at a name that would not load. I added a failing test case for it, then a small `_class_path` helper that uses the config entry's module only when the class was defined there, and the class's own module otherwise. With that, the hinted path for an aliased import boots cleanly.
 
-Before merging, the maintainer extended the change on the same branch: any non-callable value now stops startup, factories written as functions or callable instances are tested, a plain `CustomLogger` instance is pointed at `litellm_settings.callbacks` rather than told to use its class (it would not work as a guardrail anyway), and a class whose `__init__` takes no arguments gets a note to accept `**kwargs`. The merged diff is 209 additions and 1 deletion, mostly tests.
+The final version widens the check in a few ways: any non-callable value now stops startup, factories written as functions or callable instances are tested, a plain `CustomLogger` instance is pointed at `litellm_settings.callbacks` rather than told to use its class (it would not work as a guardrail anyway), and a class whose `__init__` takes no arguments gets a note to accept `**kwargs`. The merged diff is 209 additions and 1 deletion, mostly tests.
 
 ## Verification
 
@@ -120,7 +120,7 @@ What ran locally:
 - **`make check`.** Passed on both of my commits.
 - **A live proxy.** Two workers, before at the merge base and after on the branch, with the issue's config plus a master key. Before: both workers logged the skip, liveliness returned 200 and `/guardrails/list` listed `my-guard`. After: both workers raised `CustomGuardrailPathError` and the proxy exited. No provider key or Redis was needed, since the bug is at startup.
 
-The maintainer's follow-up commits were checked by upstream CI, not rerun by me. Side findings, out of scope: `proxy_cli` exits with code 0 after a failed startup, and `--reload` keeps the reloader alive after the child fails.
+The widened checks in the final version were verified in upstream CI. Side findings, out of scope: `proxy_cli` exits with code 0 after a failed startup, and `--reload` keeps the reloader alive after the child fails.
 
 ## Core concepts this exercised
 
