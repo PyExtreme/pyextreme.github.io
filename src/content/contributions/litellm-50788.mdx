@@ -1,0 +1,131 @@
+---
+title: "Stopping LiteLLM from booting without a guardrail it was told to run"
+description: "A fix so a custom guardrail path that points at an instance instead of a class stops proxy startup with a clear error, instead of being skipped while the proxy reports healthy."
+lede: "A LiteLLM proxy configured with a custom guardrail could start, pass its health check and list the guardrail, while never actually running it. The startup code skips bad guardrails on purpose so one broken integration cannot take the proxy down, and this mistake looked exactly like that kind of bad config."
+project: "LiteLLM"
+repository: "BerriAI/litellm"
+repositoryUrl: "https://github.com/BerriAI/litellm"
+issueNumber: "#50788"
+contributionType: "Bug fix"
+technicalArea: "LLM gateway / guardrail loading"
+status: "Merged"
+prMerged: true
+date: "2026-11-10"
+complexity: "Medium"
+impact: 12
+issueUrl: "https://github.com/BerriAI/litellm/issues/50788"
+prUrl: "https://github.com/BerriAI/litellm/pull/50838"
+stack:
+  - "Python"
+  - "pytest"
+  - "FastAPI"
+  - "Uvicorn"
+concepts:
+  - "Fail closed on security config"
+  - "Exception types as control flow"
+  - "Actionable error messages"
+  - "Following merged precedent"
+  - "Mutation testing"
+shortSummary: "Added CustomGuardrailPathError, raised right after LiteLLM resolves a custom guardrail's dotted path when the path names an instance rather than a class. It is deliberately not a ValueError or TypeError, so the per-guardrail skip in init_guardrails_v2 lets it through and startup stops with an error that names the guardrail and shows the class path to use. Verified with a failing-first test, four mutations, and a live two-worker proxy before and after."
+---
+
+## Context: guardrails in the LiteLLM proxy
+
+[LiteLLM](https://github.com/BerriAI/litellm) is a gateway that puts one OpenAI-style API in front of many model providers. Its proxy can run guardrails on each request, for example to block prompts or redact output. Besides the built-in integrations, an operator can write their own guardrail as a Python class and point the config at it with a dotted path:
+
+```yaml
+guardrails:
+  - guardrail_name: my-guard
+    litellm_params:
+      guardrail: custom_callbacks.MyCustomHandler
+      mode: pre_call
+```
+
+The proxy imports that path and constructs the guardrail itself, passing in the name, event hook and the rest of `litellm_params`. That is a different shape from `litellm_settings.callbacks`, the other place custom code plugs in, where the config names a ready-made instance such as `custom_callbacks.proxy_handler_instance`.
+
+[Issue #50788](https://github.com/BerriAI/litellm/issues/50788) reported what happens when an operator uses the callback shape in the guardrail slot.
+
+## Symptom: healthy proxy, missing guardrail
+
+With the issue's config, where `guardrail:` points at `custom_callbacks.proxy_handler_instance`, the proxy starts normally. Each worker logs one error line and carries on:
+
+```
+ERROR: init_guardrails.py:38 - Skipping guardrail 'my-guard': invalid configuration,
+proxy is starting WITHOUT this guardrail: 'MyCustomHandler' object is not callable
+```
+
+After that, `/health/liveliness` returns 200 and `/guardrails/list` still lists `my-guard`, because it reads from the config. Nothing an operator would normally check says the guardrail is gone. The proof in the PR also ran a guardrail that blocks every request, given as an instance: before the fix, the proxy booted and a chat request went through with a 200.
+
+I reproduced it first with a short script that calls `init_guardrails_v2` on the issue's config. It returned normally with no registered guardrails.
+
+![Before: the dotted path resolves to an instance, calling it raises TypeError, init_guardrails_v2 treats that as skippable config and the proxy boots healthy without the guardrail. After: a check right after the path is resolved raises CustomGuardrailPathError, which the skip does not catch, so startup stops with the class path to use](/images/litellm-50788/instance-path.svg)
+
+## Root cause: a TypeError that looked like bad config
+
+`initialize_custom_guardrail` in `litellm/proxy/guardrails/guardrail_registry.py` resolves the dotted path with `get_instance_fn` and then calls the result to build the guardrail. When the path names an instance, that call raises `TypeError: 'MyCustomHandler' object is not callable`.
+
+One level up, `init_guardrails_v2` in `init_guardrails.py` wraps each guardrail in `except (ValueError, TypeError)`, logs "Skipping guardrail" and moves on. That skip was added on purpose in an earlier PR so that one integration with an invalid parameter combination does not crash the whole proxy. The instance mistake raised one of the two exception types the skip was written for, so it was treated the same way.
+
+## Constraints: keep the skip, stop this case
+
+- **The skip is wanted.** Removing `TypeError` from it would also stop startup for any guardrail class whose constructor rejects a parameter, which goes past what the earlier change intended.
+- **Other bad paths already stop startup.** A missing module or attribute raises `ImportError` or `AttributeError`, which the skip does not catch. An instance path belongs with those, since it is a wrong path rather than a wrong setting.
+- **Factories must keep working.** The resolved value is typed as `Callable[..., CustomGuardrail]`, so a factory function is a legitimate target. The check could not just require a class.
+- **Only the config file path loads dotted guardrails.** The API and database paths never pass a config file path and fail earlier, so the new error only fires at config load. I confirmed nothing wraps `load_config` at startup and swallows it.
+
+## Design: a dedicated exception that the skip does not catch
+
+The codebase already had the pattern I needed. `CustomCodeCompilationError` is documented as "deliberately not a ValueError" so a config guardrail whose code does not compile stops startup instead of being skipped. I followed it.
+
+- **A new `CustomGuardrailPathError(Exception)` raised right after the path is resolved (chosen).** It is the smallest change, it matches merged precedent, and it puts the instance case next to the other wrong-path errors that already stop startup.
+- **A `ValueError` subclass plus a re-raise inside `init_guardrails_v2`.** Same effect, more code, and it reverses the precedent. Rejected.
+- **A shared classifier with the callbacks loader.** The two call sites want opposite shapes, one a class and one an instance, so it would be a single-use abstraction. Rejected.
+- **Raising `ImportError`.** Wrong meaning, and it trips the repo's strict lint rule on type-check exceptions. Rejected.
+
+A design review approved this approach and asked for one change: build the suggested class path from the config entry rather than from the class's `__module__`, so paths loaded from S3 or GCS still get a hint that works.
+
+## The fix
+
+The check sits directly after the path is resolved:
+
+```python
+_guardrail_class = get_instance_fn(guardrail_type, config_file_path=config_file_path)
+path_error = _guardrail_path_error(guardrail["guardrail_name"], guardrail_type, _guardrail_class)
+if path_error is not None:
+    raise path_error
+```
+
+With the issue's config, startup now fails on each worker, the parent logs "Child process failed to start, stopping the parent process", and the proxy exits. The error names the guardrail and the path, shows the class-shaped path to use, and says that instances belong under `litellm_settings.callbacks`. A side effect the PR calls out: `--validate_config` now reports this config as failed instead of OK.
+
+An automated reviewer on the PR then found a real gap: if the class was imported into the module under an alias, the hint pointed at a name that would not load. I added a failing test case for it, then a small `_class_path` helper that uses the config entry's module only when the class was defined there, and the class's own module otherwise. With that, the hinted path for an aliased import boots cleanly.
+
+Before merging, the maintainer extended the change on the same branch: any non-callable value now stops startup, factories written as functions or callable instances are tested, a plain `CustomLogger` instance is pointed at `litellm_settings.callbacks` rather than told to use its class (it would not work as a guardrail anyway), and a class whose `__init__` takes no arguments gets a note to accept `**kwargs`. The merged diff is 209 additions and 1 deletion, mostly tests.
+
+## Verification
+
+I wrote the regression test first. With only the exception class added, `test_init_guardrails_v2_stops_boot_when_a_custom_guardrail_path_names_an_instance` failed with `DID NOT RAISE`. It writes a real module into a temp directory, runs `init_guardrails_v2` against it, and checks that the error names the guardrail and entry and shows the class path.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Issue config, instance path | Boots, guardrail skipped | Startup stops with class hint |
+| Class imported under an alias | Boots, guardrail skipped | Hint names the defining module, and that path boots |
+| Path names a class | Loads | Loads |
+| Constructor rejects a parameter | Skipped | Still skipped, as intended |
+
+Four mutations each failed the new test: making the exception a `ValueError`, making it a `TypeError`, narrowing the check to `CustomGuardrail` only, and building the hint by repeating the entry.
+
+What ran locally:
+
+- **Unit tests.** `test_init_guardrails.py`, `test_guardrail_registry.py`, `test_guardrail_endpoints.py` and the Noma guardrail tests: 327 passed, and 328 after the alias fix.
+- **`make check`.** Passed on both of my commits.
+- **A live proxy.** Two workers, before at the merge base and after on the branch, with the issue's config plus a master key. Before: both workers logged the skip, liveliness returned 200 and `/guardrails/list` listed `my-guard`. After: both workers raised `CustomGuardrailPathError` and the proxy exited. No provider key or Redis was needed, since the bug is at startup.
+
+The maintainer's follow-up commits were checked by upstream CI, not rerun by me. Side findings, out of scope: `proxy_cli` exits with code 0 after a failed startup, and `--reload` keeps the reloader alive after the child fails.
+
+## Core concepts this exercised
+
+- **Fail closed on security config.** A guardrail that silently does not run is worse than a proxy that refuses to start, because every health signal says things are fine.
+- **Exception types are control flow.** The bug was not in the code that raised, it was that the error happened to match a deliberate `except` one frame up. The fix picks a type that the skip will not catch.
+- **Follow the precedent that is already merged.** `CustomCodeCompilationError` had solved the same problem, so matching it made the change small and easy to review.
+- **Error messages should say what to type.** The message shows the exact YAML line to use, and a reviewer catching the aliased-import case made sure that line actually loads.
+- **Mutation testing checks the test.** Each plausible wrong version of the fix, including the obvious `ValueError` subclass, fails the test.
